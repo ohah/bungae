@@ -1,0 +1,90 @@
+name: Publish to npm
+
+on:
+  push:
+    tags:
+      - 'bungae-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  detect-version:
+    name: Detect Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.detect.outputs.version }}
+      should-publish: ${{ steps.detect.outputs.should-publish }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect version
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION_INPUT="${{ github.event.inputs.version }}"
+            echo "version=$VERSION_INPUT" >> $GITHUB_OUTPUT
+            echo "should-publish=true" >> $GITHUB_OUTPUT
+          else
+            # Tag push event
+            TAG_NAME="${{ github.ref_name }}"
+            if [[ "$TAG_NAME" == bungae-v* ]]; then
+              VERSION="${TAG_NAME#bungae-v}"
+              echo "version=$VERSION" >> $GITHUB_OUTPUT
+              echo "should-publish=true" >> $GITHUB_OUTPUT
+            else
+              echo "Unknown tag format: $TAG_NAME"
+              exit 1
+            fi
+          fi
+
+  publish:
+    name: Publish to npm
+    needs: detect-version
+    if: needs.detect-version.outputs.should-publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build package
+        run: bun run build
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Update version in package.json
+        working-directory: packages/bungae
+        run: |
+          npm version ${{ needs.detect-version.outputs.version }} --no-git-tag-version
+
+      - name: Publish to npm
+        working-directory: packages/bungae
+        run: |
+          npm publish --provenance --access public --tag latest
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

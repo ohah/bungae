@@ -1,0 +1,65 @@
+name: Lint and Format Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: Check if should run
+    runs-on: ubuntu-latest
+    outputs:
+      should-run: ${{ steps.changes.outputs.ts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            ts:
+              - 'packages/**/*.ts'
+              - 'packages/**/*.tsx'
+              - 'packages/**/*.js'
+              - 'packages/**/*.jsx'
+              - '*.ts'
+              - '*.js'
+              - 'oxlint.json'
+              - '.oxfmtrc.json'
+              - '.github/workflows/lint.yml'
+
+  lint:
+    name: Lint TypeScript/JavaScript
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Skip if no changes
+        if: needs.check.outputs.should-run != 'true'
+        run: echo "No TypeScript/JavaScript changes, skipping lint"
+        continue-on-error: false
+
+      - name: Setup Bun
+        if: needs.check.outputs.should-run == 'true'
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        if: needs.check.outputs.should-run == 'true'
+        run: bun install
+
+      - name: Run oxlint
+        if: needs.check.outputs.should-run == 'true'
+        run: bun run lint
+
+      - name: Check formatting
+        if: needs.check.outputs.should-run == 'true'
+        run: bun run format:check
+
+      - name: Type check
+        if: needs.check.outputs.should-run == 'true'
+        run: bun run typecheck
