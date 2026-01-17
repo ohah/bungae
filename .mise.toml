@@ -1,0 +1,9 @@
+[tools]
+bun = "latest"
+node = "24.11.1"
+ruby = "3.3"
+java = "17"
+maestro = "latest"
+
+[env]
+BUN_DEBUG = "0"
