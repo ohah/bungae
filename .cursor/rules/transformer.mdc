@@ -1,0 +1,172 @@
+---
+description: "코드 변환 전략 및 Babel 선택적 통합 가이드. Bun 트랜스파일러 우선 사용, 특수 플러그인이 필요한 경우만 Babel 사용."
+globs: ["**/transformer/**/*.ts", "**/transformer/**/*.tsx", "**/*transformer*.ts", "**/*transformer*.tsx"]
+alwaysApply: false
+---
+
+# Transformer
+
+코드 변환 전략 및 Babel 선택적 통합 가이드.
+
+> **참고**: 상세 내용은 `.claude/skills/bungae-bundler/rules/transformer.md`를 참조하세요.
+
+---
+
+## 기본 전략: Bun 트랜스파일러
+
+Bun은 Zig로 작성된 네이티브 트랜스파일러를 내장.
+Babel/SWC보다 훨씬 빠름.
+
+### 지원 변환
+
+- TypeScript → JavaScript
+- TSX/JSX → JavaScript
+- ES Modules 구문 처리
+
+### 사용법
+
+```typescript
+const transpiler = new Bun.Transpiler({
+  loader: 'tsx',
+  target: 'browser',
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('development'),
+    '__DEV__': 'true',
+  },
+});
+
+const output = transpiler.transformSync(sourceCode);
+```
+
+---
+
+## Babel 선택적 통합
+
+특수 플러그인이 필요한 경우만 Babel 사용.
+
+### 설정
+
+```typescript
+transformer: {
+  // 기본: Bun
+  default: 'bun',
+
+  // Babel 필요한 패키지만 지정
+  babel: {
+    include: [
+      '**/node_modules/react-native-reanimated/**',
+      '**/node_modules/react-native-gesture-handler/**',
+    ],
+    plugins: [
+      'react-native-reanimated/plugin',
+    ],
+    presets: [
+      // 필요 시 추가
+    ],
+  },
+}
+```
+
+---
+
+## Babel이 필요한 케이스
+
+### 1. react-native-reanimated
+
+**이유**: `'worklet'` 디렉티브가 있는 함수를 UI 스레드용 코드로 분리
+
+```javascript
+// 변환 전
+function MyComponent() {
+  const style = useAnimatedStyle(() => {
+    'worklet';
+    return { opacity: sv.value };
+  });
+}
+
+// 변환 후 (worklet 추출)
+function MyComponent() {
+  const style = useAnimatedStyle(_worklet_factory_1);
+}
+// _worklet_factory_1은 UI 스레드에서 실행
+```
+
+**플러그인**: `react-native-reanimated/plugin`
+
+### 2. styled-components / Emotion
+
+**이유**: 디버깅용 displayName, componentId 주입
+
+```javascript
+// 변환 전
+const Button = styled.View`...`;
+
+// 변환 후
+const Button = styled.View.withConfig({
+  displayName: "Button",
+  componentId: "sc-abc123"
+})`...`;
+```
+
+**플러그인**: `babel-plugin-styled-components`
+
+### 3. Decorator 문법
+
+**이유**: TypeScript/JavaScript 데코레이터 변환
+
+```typescript
+// MobX 등
+@observable
+class Store {
+  @action doSomething() {}
+}
+```
+
+**플러그인**: `@babel/plugin-proposal-decorators`
+
+### 4. Flow 코드
+
+**이유**: Bun은 Flow 타입을 지원하지 않음
+
+```javascript
+// @flow
+function add(a: number, b: number): number {
+  return a + b;
+}
+```
+
+**프리셋**: `@babel/preset-flow`
+
+---
+
+## 구현 전략
+
+```typescript
+async function transform(filePath: string, code: string): Promise<string> {
+  // 1. Babel 필요 여부 확인
+  if (shouldUseBabel(filePath)) {
+    return babelTransform(code, getBabelConfig(filePath));
+  }
+
+  // 2. 기본: Bun 트랜스파일러
+  const transpiler = new Bun.Transpiler({ loader: getLoader(filePath) });
+  return transpiler.transformSync(code);
+}
+
+function shouldUseBabel(filePath: string): boolean {
+  const { include } = config.transformer.babel;
+  return include.some(pattern => minimatch(filePath, pattern));
+}
+```
+
+---
+
+## 성능 비교
+
+| 트랜스파일러 | 상대 속도 | 사용 시점 |
+|-------------|----------|----------|
+| Bun 내장 | 1x (기준) | 대부분의 파일 |
+| SWC | ~2-3x 느림 | - |
+| Babel | ~10-20x 느림 | 특수 플러그인 필요 시만 |
+
+**원칙**: Babel은 정말 필요한 파일에만 사용
