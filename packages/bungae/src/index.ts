@@ -24,6 +24,7 @@ export {
   resolveConfig,
   getDefaultConfig,
   mergeConfig,
+  defineConfig,
   DEFAULT_RESOLVER,
   DEFAULT_TRANSFORMER,
   DEFAULT_SERIALIZER,
@@ -32,15 +33,6 @@ export {
 // Re-export resolver
 export { createPlatformResolverPlugin } from './resolver';
 export type { PlatformResolverOptions } from './resolver';
-
-/**
- * Define configuration with type safety
- */
-export function defineConfig(
-  config: import('./config/types').BungaeConfig,
-): import('./config/types').BungaeConfig {
-  return config;
-}
 
 export async function build(config: import('./config/types').ResolvedConfig): Promise<void> {
   console.log('Bungae build started...', config);

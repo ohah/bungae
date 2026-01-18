@@ -35,17 +35,9 @@ export function createPlatformResolverPlugin(options: PlatformResolverOptions): 
   return {
     name: 'bungae-platform-resolver',
     setup(build) {
-      build.onResolve({ filter: /.*/ }, (args) => {
-        // Skip absolute paths (already resolved)
-        if (args.path.startsWith('/')) {
-          return undefined;
-        }
-
-        // Only handle relative paths (./, ../)
-        // Package imports are handled by Bun's built-in resolution
-        if (!args.path.startsWith('.')) {
-          return undefined;
-        }
+      // Only match relative paths (./, ../) for better performance
+      // Package imports and absolute paths are handled by Bun's built-in resolution
+      build.onResolve({ filter: /^\.\.?/ }, (args) => {
 
         const importerDir = args.importer ? dirname(args.importer) : process.cwd();
         const basePath = args.path;

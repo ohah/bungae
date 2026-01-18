@@ -13,4 +13,12 @@ export {
 export { loadConfig, resolveConfig } from './load';
 export { mergeConfig } from './merge';
 export { validateConfig, ConfigValidationError } from './validate';
-export { defineConfig } from '../index';
+
+/**
+ * Define configuration with type safety
+ */
+export function defineConfig(
+  config: import('./types').BungaeConfig,
+): import('./types').BungaeConfig {
+  return config;
+}
