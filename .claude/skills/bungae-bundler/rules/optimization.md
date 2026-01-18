@@ -8,11 +8,11 @@
 
 ### 캐시 대상
 
-| 대상 | 키 | 값 |
-|------|-----|-----|
-| Transform | 파일경로 + 내용해시 + 옵션 | 변환된 코드 |
-| Resolution | 모듈경로 + 컨텍스트 | 해석된 파일경로 |
-| Bundle | 엔트리 + 의존성해시 | 번들 결과 |
+| 대상       | 키                         | 값              |
+| ---------- | -------------------------- | --------------- |
+| Transform  | 파일경로 + 내용해시 + 옵션 | 변환된 코드     |
+| Resolution | 모듈경로 + 컨텍스트        | 해석된 파일경로 |
+| Bundle     | 엔트리 + 의존성해시        | 번들 결과       |
 
 ### 캐시 키 생성
 
@@ -25,7 +25,7 @@ function createCacheKey(filePath: string, content: string): string {
       version: config.cache.version,
       platform: config.platform,
       dev: config.mode === 'development',
-    })
+    }),
   ).toString(16);
 }
 ```
@@ -64,8 +64,8 @@ class FileCache {
 
 ```typescript
 interface DependencyGraph {
-  dependencies: Map<string, Set<string>>;  // 파일 → 의존 모듈
-  dependents: Map<string, Set<string>>;    // 파일 → 역의존 모듈
+  dependencies: Map<string, Set<string>>; // 파일 → 의존 모듈
+  dependents: Map<string, Set<string>>; // 파일 → 역의존 모듈
 }
 ```
 

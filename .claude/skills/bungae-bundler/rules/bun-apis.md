@@ -91,7 +91,7 @@ const transpiler = new Bun.Transpiler({
   loader: 'tsx',
   target: 'browser',
   define: {
-    '__DEV__': 'true',
+    __DEV__: 'true',
   },
 });
 
@@ -110,8 +110,8 @@ const imports = transpiler.scanImports(code);
 ### Bun.hash()
 
 ```typescript
-const hash = Bun.hash(content);           // number (64-bit)
-const hashStr = hash.toString(16);        // hex string
+const hash = Bun.hash(content); // number (64-bit)
+const hashStr = hash.toString(16); // hex string
 
 // 특정 알고리즘
 const sha256 = Bun.sha(content, 'sha256');
@@ -159,9 +159,9 @@ await proc.exited;
 import.meta.resolve('./module');
 
 // 현재 파일 경로
-import.meta.path;  // 절대 경로
-import.meta.dir;   // 디렉토리
+import.meta.path; // 절대 경로
+import.meta.dir; // 디렉토리
 
 // sleep
-await Bun.sleep(100);  // ms
+await Bun.sleep(100); // ms
 ```
