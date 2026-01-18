@@ -50,4 +50,5 @@ jobs:
 
       - name: Build packages
         if: needs.check.outputs.should-run == 'true'
+        working-directory: packages/bungae
         run: bun run build
