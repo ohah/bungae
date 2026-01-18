@@ -1,0 +1,66 @@
+// Bun Snapshot v1, https://bun.sh/docs/test/snapshots
+
+exports[`Build Integration Tests should build and execute a simple bundle 1`] = `
+{
+  "Bar": {
+    "bar": "bar",
+    "getBar": [Function],
+  },
+  "Foo": {
+    "foo": "foo",
+    "getFoo": [Function],
+  },
+}
+`;
+
+exports[`Build Integration Tests should build bundle with dependencies correctly 1`] = `
+{
+  "Bar": {
+    "bar": "bar",
+    "getBar": [Function],
+  },
+  "Foo": {
+    "foo": "foo",
+    "getFoo": [Function],
+  },
+}
+`;
+
+exports[`Build Integration Tests should build bundle for different platforms 1`] = `
+{
+  "Bar": {
+    "bar": "bar",
+    "getBar": [Function],
+  },
+  "Foo": {
+    "foo": "foo",
+    "getFoo": [Function],
+  },
+}
+`;
+
+exports[`Build Integration Tests should build bundle for different platforms 2`] = `
+{
+  "Bar": {
+    "bar": "bar",
+    "getBar": [Function],
+  },
+  "Foo": {
+    "foo": "foo",
+    "getFoo": [Function],
+  },
+}
+`;
+
+exports[`Build Integration Tests should build bundle for different platforms 3`] = `
+{
+  "Bar": {
+    "bar": "bar",
+    "getBar": [Function],
+  },
+  "Foo": {
+    "foo": "foo",
+    "getFoo": [Function],
+  },
+}
+`;
