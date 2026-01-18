@@ -22,10 +22,23 @@ export function createModuleIdFactory(): (path: string) => number {
 /**
  * Get default run module statement (Metro-compatible)
  * Returns the default statement to execute a module
+ *
+ * Note: Metro's metro-runtime sets up:
+ * - global.__r = metroRequire (always, no prefix)
+ * - global[`${__METRO_GLOBAL_PREFIX__}__d`] = define (with prefix)
+ *
+ * So __r() always uses no prefix, but __d() uses the prefix.
+ *
+ * @param moduleId - Module ID to require
+ * @param globalPrefix - Global prefix (ignored for __r, but kept for API compatibility)
+ * @returns Run module statement
  */
 export function getRunModuleStatement(
   moduleId: number | string,
-  globalPrefix: string = '',
+  _globalPrefix: string = '',
 ): string {
-  return `${globalPrefix}__r(${JSON.stringify(moduleId)});`;
+  // __r() always uses no prefix, regardless of globalPrefix
+  // Only __d() uses the prefix
+  // globalPrefix parameter is kept for API compatibility but not used
+  return `__r(${JSON.stringify(moduleId)});`;
 }

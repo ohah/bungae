@@ -5,6 +5,7 @@
 import type { Module } from '../types';
 import type { SerializerOptions } from '../types';
 import { addParamsToDefineCall } from './addParamsToDefineCall';
+import { convertRequirePaths } from './convertRequirePaths';
 
 /**
  * Wrap module code with __d() call
@@ -12,12 +13,29 @@ import { addParamsToDefineCall } from './addParamsToDefineCall';
 export async function wrapModule(module: Module, options: SerializerOptions): Promise<string> {
   // Script modules (polyfills, prelude, metro-runtime) should not be wrapped with parameters
   // Metro treats js/script type modules as scripts that run as-is
+  // Note: Modern Node.js (v12+) supports const/let in vm.runInNewContext, so no transformation needed
+  // Metro's metro-runtime also uses const/let, and it works fine
   if (isScriptModule(module)) {
     return module.code;
   }
 
+  // For regular modules, wrap code in function and add __d() call
+  // Metro format: __d(function(global, require, metroImportDefault, metroImportAll, module, exports, dependencyMap) { ... }, moduleId, dependencies)
+  //
+  // Step 1: Convert require paths to dependencyMap lookups
+  // Metro converts require("./Bar") to require(dependencyMap[0])
+  // Use original dependency paths (as they appear in source code) for conversion
+  const dependencyPaths = module.originalDependencies || module.dependencies;
+  let convertedCode = convertRequirePaths(
+    module.code,
+    dependencyPaths,
+    'require', // require parameter name
+    'dependencyMap', // dependencyMap parameter name
+  );
+
+  // Step 2: Wrap in function and add __d() call
   const params = await getModuleParams(module, options);
-  return addParamsToDefineCall(module.code, ...params);
+  return addParamsToDefineCall(convertedCode, options.globalPrefix, ...params);
 }
 
 /**
