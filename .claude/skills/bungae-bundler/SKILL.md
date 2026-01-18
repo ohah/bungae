@@ -117,8 +117,20 @@ Bun.Transpiler; // 코드 변환
   - ✅ `.ios.js`, `.android.js`, `.native.js` 지원
   - ✅ TypeScript 확장자 지원 (`.ios.tsx`, `.android.ts` 등)
   - ✅ `preferNativePlatform` 옵션 지원
-- [ ] 코드 변환 (Transformation) - Bun.Transpiler 기본 + 선택적 Babel
-- [ ] Serialization - Metro 호환 번들 형식
+- [x] **코드 변환 (Transformation)** - Bun.Transpiler 기본 + 선택적 Babel
+  - ✅ Bun.Transpiler 기반 변환 구현
+  - ✅ TypeScript/TSX/JSX → JavaScript 변환
+  - ✅ 의존성 추출 (require, import, dynamic import)
+  - ✅ Babel 선택적 통합 스켈레톤 (Phase 2에서 구현)
+  - ✅ Metro 스타일 테스트 코드 (10개 테스트 케이스 모두 통과)
+- [x] **Serialization** - Metro 호환 번들 형식
+  - ✅ baseJSBundle 구현 (Metro 호환)
+  - ✅ metro-runtime 번들 포함
+  - ✅ prelude, polyfills 지원
+  - ✅ **d(), **r() 형식 지원
+  - ✅ 모듈 ID 생성 및 정렬
+  - ✅ Source map URL 지원
+  - ✅ Metro 스타일 테스트 코드 (15개 테스트 케이스 모두 통과)
 
 **⚠️ Resolution 구현 전략**:
 
@@ -160,6 +172,21 @@ Bun.Transpiler; // 코드 변환
 - [ ] Lazy/Async 모듈
 
 ## Metro 호환성 및 제외된 기능
+
+### Phase 1-3에서 구현하지 않은 기능 (Phase 2 또는 Phase 3에서 구현 예정)
+
+다음 기능들은 Metro에 있지만 Phase 1-3에서는 구현하지 않았으며, Phase 2 또는 Phase 3에서 구현할 예정입니다:
+
+1. **inlineSourceMap 옵션**
+   - **Metro에서의 용도**: Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
+   - **구현 시점**: Phase 2 또는 Phase 3
+   - **관련 테스트**: `should add an inline source map to a very simple bundle` (Metro 테스트)
+
+2. **x_google_ignoreList 생성**
+   - **Metro에서의 용도**: Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외하기 위한 source map 메타데이터
+   - **구현 시점**: Phase 2 또는 Phase 3
+   - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트)
+   - **참고**: `shouldAddToIgnoreList` 옵션은 이미 있지만, `x_google_ignoreList` 생성 로직은 미구현
 
 ### 구현하지 않는 Metro 기능
 
