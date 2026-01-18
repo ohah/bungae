@@ -9,7 +9,7 @@ import { getLoader } from './utils';
  * Transform code using Bun.Transpiler
  */
 export function transformWithBun(options: TransformOptions): TransformResult {
-  const { code, filePath, platform, dev, projectRoot } = options;
+  const { code, filePath, platform, dev } = options;
   const loader = getLoader(filePath);
 
   const transpiler = new Bun.Transpiler({

@@ -15,7 +15,7 @@ export async function transform(
   options: TransformOptions,
   config: TransformerConfig,
 ): Promise<TransformResult> {
-  const { filePath, code } = options;
+  const { filePath } = options;
 
   // Check if Babel is needed
   if (shouldUseBabel(filePath, config)) {
