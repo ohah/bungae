@@ -18,7 +18,7 @@
     "directory": "packages/bungae"
   },
   "bin": {
-    "bungae": "./dist/cli.js"
+    "bungae": "./dist/cli.cjs"
   },
   "files": [
     "dist"
