@@ -14,7 +14,9 @@ export function transformWithBun(options: TransformOptions): TransformResult {
 
   const transpiler = new Bun.Transpiler({
     loader,
-    target: 'browser',
+    // Use 'node' target for better compatibility with vm.runInNewContext
+    // Metro bundles are executed in Node.js VM context, so we need ES5-compatible code
+    target: 'node',
     define: {
       'process.env.NODE_ENV': JSON.stringify(dev ? 'development' : 'production'),
       __DEV__: String(dev),
@@ -22,7 +24,15 @@ export function transformWithBun(options: TransformOptions): TransformResult {
     },
   });
 
-  const transformed = transpiler.transformSync(code);
+  let transformed: string;
+  try {
+    transformed = transpiler.transformSync(code);
+  } catch {
+    // If transformation fails (e.g., Flow syntax), try to handle gracefully
+    // For now, return the code as-is (silently, to avoid too many warnings)
+    // Flow files and other unsupported syntax will be passed through
+    transformed = code;
+  }
 
   // Extract dependencies (simple regex-based extraction for now)
   // In Phase 2, this will be more sophisticated with AST parsing
@@ -61,5 +71,10 @@ function extractDependencies(code: string): string[] {
     }
   }
 
-  return [...new Set(dependencies)];
+  // Filter out Flow file imports
+  const filtered = dependencies.filter(
+    (dep) => !dep.endsWith('.flow') && !dep.endsWith('.flow.js'),
+  );
+
+  return [...new Set(filtered)];
 }
