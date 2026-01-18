@@ -14,18 +14,20 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 3단계 파이프라인: `Entry → [Resolution] → [Transformation] → [Serialization] → Bundle`
 
 ### Resolution (모듈 해석)
-- Node.js 모듈 해석 알고리즘
-- 플랫폼별 확장자 (`.ios.js`, `.android.js`, `.native.js`)
-- Package Exports 지원
-- `node_modules` 계층적 탐색
+
+- **Bun.build() 기본 해석 활용**: Node.js 표준 모듈 해석, Package Exports 지원
+- **Platform Resolver Plugin**: React Native 플랫폼 확장자 (`.ios.js`, `.android.js`, `.native.js`) 처리
+- **구현 전략**: Bun의 내장 해석을 활용하고, 플랫폼 확장자만 Plugin으로 추가
 
 ### Transformation (코드 변환)
+
 - **기본**: Bun 내장 트랜스파일러 사용 (가장 빠름)
 - **선택적**: Babel 통합 (react-native-reanimated 등 필요한 경우만)
 - TypeScript/TSX, JSX 변환
 - ES Modules → CommonJS
 
 ### Serialization (번들 직렬화)
+
 - Plain Bundle (기본)
 - RAM Bundle (Indexed/File) - iOS/Android 최적화
 
@@ -33,11 +35,11 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ```typescript
 // ✅ Good: Bun 네이티브 API 사용
-Bun.file()          // 파일 I/O
-Bun.serve()         // HTTP 서버
-Bun.Transpiler      // 코드 변환
-Bun.worker()        // 병렬 처리
-Bun.hash()          // 캐시 키 생성
+Bun.file(); // 파일 I/O
+Bun.serve(); // HTTP 서버
+Bun.Transpiler; // 코드 변환
+Bun.worker(); // 병렬 처리
+Bun.hash(); // 캐시 키 생성
 
 // ❌ Avoid: 불필요한 Babel 사용
 // Bun 내장 트랜스파일러로 충분한 경우 Babel 사용 지양
@@ -58,8 +60,70 @@ Bun.hash()          // 캐시 키 생성
 - 번들 크기: Tree-shaking으로 10-20% 감소
 - 메모리: 대규모 프로젝트에서도 안정적
 
+## 구현 현황
+
+### Phase 1: 핵심 번들링
+
+#### ✅ 완료된 기능
+
+1. **Config 시스템** (Phase 1-1)
+   - Config 파일 로딩 (`bungae.config.ts/js/json`, `package.json`)
+   - Config 병합 및 기본값 처리
+   - Config 검증 로직 (타입 및 값 검증)
+   - Server config 추가 (port, useGlobalHotkey, forwardClientLogs 등)
+   - Metro-compatible API (`loadConfig({ config, cwd })`)
+   - Metro 스타일 테스트 코드 (11개 테스트 케이스 모두 통과)
+
+2. **Platform Resolver Plugin** (Phase 1-2)
+   - Bun Plugin으로 플랫폼 확장자 처리
+   - `.ios.js`, `.android.js`, `.native.js` 지원
+   - TypeScript 확장자 지원 (`.ios.tsx`, `.android.ts` 등)
+   - `preferNativePlatform` 옵션 지원
+   - 테스트 코드 작성 완료 (5개 테스트 케이스 모두 통과)
+
+#### 🔄 진행 중
+
+- 코드 변환 (Transformation) - Bun.Transpiler 기본 + 선택적 Babel
+- Serialization - Metro 호환 번들 형식
+
+## Metro 호환성 및 제외된 기능
+
+### 구현하지 않는 Metro 기능
+
+다음 기능들은 Metro에 있지만 Bungae에서는 구현하지 않습니다:
+
+#### 1. cacheStores (callback 패턴)
+
+**Metro에서의 용도**:
+
+- 변환 결과 캐싱을 위한 커스텀 캐시 백엔드 지원
+- `cacheStores: (MetroCache) => [new CustomStore()]` 형태로 `MetroCache`를 주입받아 커스텀 스토어 생성
+- FileStore 외에도 메모리 캐시, Redis 등 다양한 캐시 백엔드 지원
+
+**Bungae에서 제외하는 이유**:
+
+- Bun은 자체 캐시 시스템을 제공하거나 다른 방식으로 캐시를 관리할 수 있음
+- 롤리팝도 자체 캐시 시스템(`FileSystemCache`)을 사용하며 Metro의 `cacheStores` 패턴을 사용하지 않음
+- Bun의 내장 기능을 활용하는 것이 더 효율적
+
+#### 2. YAML config 지원
+
+**Metro에서의 용도**:
+
+- 레거시 프로젝트 호환성: 과거에 YAML config를 사용하던 프로젝트 지원
+- **Deprecated 상태**: 경고 메시지를 표시하며 JavaScript config로 마이그레이션을 권장
+
+**Bungae에서 제외하는 이유**:
+
+- 레거시 지원이 필요 없음 (새로운 프로젝트)
+- JavaScript/TypeScript config만 지원해도 충분
+- 롤리팝도 YAML을 지원하지 않음
+- Metro에서도 deprecated 상태이므로 새 프로젝트에서 구현할 필요 없음
+
 ## 참고 자료
 
 - Metro 문서: `reference/metro/docs/`
 - Metro 소스: `reference/metro/packages/`
+- Re.Pack 소스: `reference/repack/` - Webpack/Rspack 기반 React Native 번들러
+- Rollipop 소스: `reference/rollipop/` - Rolldown 기반 React Native 번들러
 - 상세 가이드: `.claude/skills/bungae-bundler/`
