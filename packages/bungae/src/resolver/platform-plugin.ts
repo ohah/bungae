@@ -38,7 +38,6 @@ export function createPlatformResolverPlugin(options: PlatformResolverOptions): 
       // Only match relative paths (./, ../) for better performance
       // Package imports and absolute paths are handled by Bun's built-in resolution
       build.onResolve({ filter: /^\.\.?/ }, (args) => {
-
         const importerDir = args.importer ? dirname(args.importer) : process.cwd();
         const basePath = args.path;
 
