@@ -9,7 +9,7 @@ describe('Serializer Helpers', () => {
   describe('addParamsToDefineCall', () => {
     test('should add parameters to __d() call', () => {
       const code = '__d(function() { return 1; });';
-      const result = addParamsToDefineCall(code, 0, [1, 2]);
+      const result = addParamsToDefineCall(code, '', 0, [1, 2]);
 
       expect(result).toContain('0');
       expect(result).toContain('[1,2]');
@@ -18,7 +18,7 @@ describe('Serializer Helpers', () => {
 
     test('should handle code without __d wrapper', () => {
       const code = 'function() { return 1; }';
-      const result = addParamsToDefineCall(code, 0, [1]);
+      const result = addParamsToDefineCall(code, '', 0, [1]);
 
       expect(result).toContain('__d');
       expect(result).toContain('0');
@@ -26,7 +26,7 @@ describe('Serializer Helpers', () => {
 
     test('should handle undefined parameters', () => {
       const code = '__d(function() { return 1; });';
-      const result = addParamsToDefineCall(code, 0, undefined, 'path');
+      const result = addParamsToDefineCall(code, '', 0, undefined, 'path');
 
       expect(result).toContain('undefined');
       expect(result).toContain('"path"');
