@@ -14,24 +14,33 @@ Entry File → [Resolution] → [Transformation] → [Serialization] → Bundle
 
 ### 지원 기능
 
-| 기능 | 설명 | 예시 |
-|------|------|------|
-| 상대 경로 | `./`, `../` | `import './utils'` |
-| npm 패키지 | node_modules 탐색 | `import 'lodash'` |
-| 스코프 패키지 | @scope/package | `import '@react-native/core'` |
-| 플랫폼별 확장자 | `.ios.js`, `.android.js`, `.native.js` | `Button.ios.tsx` |
-| Package exports | `package.json` exports 필드 | `"exports": { ".": "./src/index.js" }` |
-| Browser field | `package.json` browser 필드 | `"browser": { "fs": false }` |
-| react-native field | RN 전용 진입점 | `"react-native": "./src/native.js"` |
+| 기능               | 설명                                   | 예시                                   |
+| ------------------ | -------------------------------------- | -------------------------------------- |
+| 상대 경로          | `./`, `../`                            | `import './utils'`                     |
+| npm 패키지         | node_modules 탐색                      | `import 'lodash'`                      |
+| 스코프 패키지      | @scope/package                         | `import '@react-native/core'`          |
+| 플랫폼별 확장자    | `.ios.js`, `.android.js`, `.native.js` | `Button.ios.tsx`                       |
+| Package exports    | `package.json` exports 필드            | `"exports": { ".": "./src/index.js" }` |
+| Browser field      | `package.json` browser 필드            | `"browser": { "fs": false }`           |
+| react-native field | RN 전용 진입점                         | `"react-native": "./src/native.js"`    |
 
 ### 해석 우선순위
 
 ```typescript
 // platform: 'ios' 일 때 해석 순서
 const extensions = [
-  '.ios.tsx', '.ios.ts', '.ios.jsx', '.ios.js',
-  '.native.tsx', '.native.ts', '.native.jsx', '.native.js',
-  '.tsx', '.ts', '.jsx', '.js',
+  '.ios.tsx',
+  '.ios.ts',
+  '.ios.jsx',
+  '.ios.js',
+  '.native.tsx',
+  '.native.ts',
+  '.native.jsx',
+  '.native.js',
+  '.tsx',
+  '.ts',
+  '.jsx',
+  '.js',
   '.json',
 ];
 ```
@@ -88,12 +97,12 @@ transformer: {
 
 ### Babel이 필요한 케이스
 
-| 라이브러리 | 이유 | 플러그인 |
-|-----------|------|---------|
-| react-native-reanimated | worklet 변환 (UI 스레드 분리) | `react-native-reanimated/plugin` |
-| styled-components | displayName 주입 | `babel-plugin-styled-components` |
-| @babel/plugin-proposal-decorators | 데코레이터 문법 | `@babel/plugin-proposal-decorators` |
-| Flow 코드 | Flow 타입 제거 | `@babel/preset-flow` |
+| 라이브러리                        | 이유                          | 플러그인                            |
+| --------------------------------- | ----------------------------- | ----------------------------------- |
+| react-native-reanimated           | worklet 변환 (UI 스레드 분리) | `react-native-reanimated/plugin`    |
+| styled-components                 | displayName 주입              | `babel-plugin-styled-components`    |
+| @babel/plugin-proposal-decorators | 데코레이터 문법               | `@babel/plugin-proposal-decorators` |
+| Flow 코드                         | Flow 타입 제거                | `@babel/preset-flow`                |
 
 ---
 
@@ -103,26 +112,36 @@ transformer: {
 
 ### 번들 형식
 
-| 형식 | 용도 | 특징 |
-|------|------|------|
-| **Plain Bundle** | 기본, 개발용 | 모든 모듈을 하나의 JS 파일로 |
-| **Indexed RAM Bundle** | iOS 프로덕션 | 바이너리 형식, 빠른 로딩 |
-| **File RAM Bundle** | Android 프로덕션 | 모듈별 파일 분리 |
+| 형식                   | 용도             | 특징                         |
+| ---------------------- | ---------------- | ---------------------------- |
+| **Plain Bundle**       | 기본, 개발용     | 모든 모듈을 하나의 JS 파일로 |
+| **Indexed RAM Bundle** | iOS 프로덕션     | 바이너리 형식, 빠른 로딩     |
+| **File RAM Bundle**    | Android 프로덕션 | 모듈별 파일 분리             |
 
 ### Plain Bundle 구조
 
 ```javascript
 // 1. Polyfills
-(function() { /* polyfill code */ })();
+(function () {
+  /* polyfill code */
+})();
 
 // 2. Module definitions
-__d(function(require, module, exports) {
-  // module 0: entry
-}, 0, [1, 2]);
+__d(
+  function (require, module, exports) {
+    // module 0: entry
+  },
+  0,
+  [1, 2],
+);
 
-__d(function(require, module, exports) {
-  // module 1: dependency
-}, 1, []);
+__d(
+  function (require, module, exports) {
+    // module 1: dependency
+  },
+  1,
+  [],
+);
 
 // 3. Entry point execution
 __r(0);

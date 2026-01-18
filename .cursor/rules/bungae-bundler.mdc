@@ -26,11 +26,14 @@ Metro 호환성을 유지하면서 Bun의 성능 이점을 최대한 활용.
 |----------|------|-------------|
 | Overview | `rules/overview.md` | 프로젝트 구조 및 로드맵 |
 | Bundling | `rules/bundling.md` | 3단계 번들링 프로세스 |
+| Resolution | `rules/resolution.md` | 모듈 해석 전략 (Bun.build + Plugin) |
 | Config | `rules/config.md` | 설정 시스템 스키마 |
 | Transformer | `rules/transformer.md` | 코드 변환 및 Babel 통합 |
 | Dev Server | `rules/dev-server.md` | 개발 서버 및 HMR |
 | Optimization | `rules/optimization.md` | 캐싱 및 성능 최적화 |
 | Bun APIs | `rules/bun-apis.md` | Bun API 활용 가이드 |
+| Bunup | `rules/bunup.md` | Bunup 빌드 도구 가이드 |
+| Testing | `rules/testing.md` | 테스트 코드 작성 가이드 (Metro 스타일) |
 
 ## Quick Reference
 
@@ -41,6 +44,14 @@ Metro 호환성을 유지하면서 Bun의 성능 이점을 최대한 활용.
 | 런타임 | Bun | 빠른 JS 런타임, 내장 트랜스파일러 |
 | 빌드 | Bunup | Bun 네이티브 라이브러리 빌드 |
 | Lint/Format | oxlint, oxfmt | 빠른 린팅/포매팅 |
+
+**⚠️ Bunup 사용 시 주의사항**
+
+bunup 관련 작업(설정, 옵션, 플러그인 등)을 할 때는 **반드시** 공식 웹 스펙 문서를 참조하세요:
+
+- **공식 문서**: https://bunup.dev/docs/guide/options.html
+- bunup의 옵션, 설정, 플러그인 시스템 등은 공식 문서를 기준으로 사용해야 합니다.
+- 프로젝트 내부 문서보다 공식 스펙 문서가 최신이고 정확합니다.
 
 ### 번들링 3단계
 

@@ -23,7 +23,7 @@ const transpiler = new Bun.Transpiler({
   target: 'browser',
   define: {
     'process.env.NODE_ENV': JSON.stringify('development'),
-    '__DEV__': 'true',
+    __DEV__: 'true',
   },
 });
 
@@ -95,8 +95,8 @@ const Button = styled.View`...`;
 
 // 변환 후
 const Button = styled.View.withConfig({
-  displayName: "Button",
-  componentId: "sc-abc123"
+  displayName: 'Button',
+  componentId: 'sc-abc123',
 })`...`;
 ```
 
@@ -147,7 +147,7 @@ async function transform(filePath: string, code: string): Promise<string> {
 
 function shouldUseBabel(filePath: string): boolean {
   const { include } = config.transformer.babel;
-  return include.some(pattern => minimatch(filePath, pattern));
+  return include.some((pattern) => minimatch(filePath, pattern));
 }
 ```
 
@@ -155,10 +155,10 @@ function shouldUseBabel(filePath: string): boolean {
 
 ## 성능 비교
 
-| 트랜스파일러 | 상대 속도 | 사용 시점 |
-|-------------|----------|----------|
-| Bun 내장 | 1x (기준) | 대부분의 파일 |
-| SWC | ~2-3x 느림 | - |
-| Babel | ~10-20x 느림 | 특수 플러그인 필요 시만 |
+| 트랜스파일러 | 상대 속도    | 사용 시점               |
+| ------------ | ------------ | ----------------------- |
+| Bun 내장     | 1x (기준)    | 대부분의 파일           |
+| SWC          | ~2-3x 느림   | -                       |
+| Babel        | ~10-20x 느림 | 특수 플러그인 필요 시만 |
 
 **원칙**: Babel은 정말 필요한 파일에만 사용

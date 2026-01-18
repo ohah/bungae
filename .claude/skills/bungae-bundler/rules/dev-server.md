@@ -36,9 +36,15 @@ const server = Bun.serve({
 
   // WebSocket (HMR)
   websocket: {
-    message(ws, message) { /* HMR 메시지 처리 */ },
-    open(ws) { /* 클라이언트 연결 */ },
-    close(ws) { /* 클라이언트 연결 해제 */ },
+    message(ws, message) {
+      /* HMR 메시지 처리 */
+    },
+    open(ws) {
+      /* 클라이언트 연결 */
+    },
+    close(ws) {
+      /* 클라이언트 연결 해제 */
+    },
   },
 });
 ```
@@ -50,6 +56,7 @@ GET /index.bundle?platform=ios&dev=true
 ```
 
 쿼리 파라미터:
+
 - `platform`: ios | android
 - `dev`: true | false
 - `minify`: true | false
@@ -74,7 +81,7 @@ interface HMRUpdate {
   body: {
     added: Module[];
     modified: Module[];
-    deleted: number[];  // module IDs
+    deleted: number[]; // module IDs
   };
 }
 
@@ -109,10 +116,10 @@ ws.onmessage = (event) => {
 
 function applyUpdate({ added, modified, deleted }) {
   // 1. 삭제된 모듈 제거
-  deleted.forEach(id => delete modules[id]);
+  deleted.forEach((id) => delete modules[id]);
 
   // 2. 수정/추가된 모듈 적용
-  [...added, ...modified].forEach(module => {
+  [...added, ...modified].forEach((module) => {
     modules[module.id] = module;
     // Hot accept 콜백 실행
     if (module.hot?.accept) {
@@ -152,19 +159,15 @@ React 컴포넌트 상태를 유지하면서 코드 변경 반영.
 ```typescript
 import { watch } from 'fs';
 
-const watcher = watch(
-  projectRoot,
-  { recursive: true },
-  (event, filename) => {
-    if (shouldIgnore(filename)) return;
+const watcher = watch(projectRoot, { recursive: true }, (event, filename) => {
+  if (shouldIgnore(filename)) return;
 
-    // 디바운스
-    clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(() => {
-      handleFileChange(filename);
-    }, config.watcher.debounce);
-  }
-);
+  // 디바운스
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    handleFileChange(filename);
+  }, config.watcher.debounce);
+});
 ```
 
 ### 설정
