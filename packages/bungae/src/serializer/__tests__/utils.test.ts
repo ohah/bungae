@@ -41,9 +41,10 @@ describe('Serializer Utils', () => {
       expect(statement).toBe('__r("module1");');
     });
 
-    test('should include global prefix when provided', () => {
+    test('should ignore global prefix (__r always uses no prefix)', () => {
       const statement = getRunModuleStatement(0, 'customPrefix');
-      expect(statement).toBe('customPrefix__r(0);');
+      // __r() always uses no prefix, regardless of globalPrefix
+      expect(statement).toBe('__r(0);');
     });
 
     test('should handle empty global prefix', () => {
