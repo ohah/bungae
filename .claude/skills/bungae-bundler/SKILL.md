@@ -25,19 +25,20 @@ Metro 호환성을 유지하면서 Bun의 성능 이점을 최대한 활용.
 
 ## Rule Categories
 
-| Category     | File                    | Description                            |
-| ------------ | ----------------------- | -------------------------------------- |
-| Overview     | `rules/overview.md`     | 프로젝트 구조 및 로드맵                |
-| Bundling     | `rules/bundling.md`     | 3단계 번들링 프로세스                  |
-| Resolution   | `rules/resolution.md`   | 모듈 해석 전략 (Bun.build + Plugin)    |
-| Config       | `rules/config.md`       | 설정 시스템 스키마                     |
-| Transformer  | `rules/transformer.md`  | 코드 변환 및 Babel 통합                |
-| Dev Server   | `rules/dev-server.md`   | 개발 서버 및 HMR                       |
-| Incremental  | `rules/incremental-build.md` | 증분 빌드 시스템                  |
-| Optimization | `rules/optimization.md` | 캐싱 및 성능 최적화                    |
-| Bun APIs     | `rules/bun-apis.md`     | Bun API 활용 가이드                    |
-| Bunup        | `rules/bunup.md`        | Bunup 빌드 도구 가이드                 |
-| Testing      | `rules/testing.md`      | 테스트 코드 작성 가이드 (Metro 스타일) |
+| Category      | File                         | Description                            |
+| ------------- | ---------------------------- | -------------------------------------- |
+| Overview      | `rules/overview.md`          | 프로젝트 구조 및 로드맵                |
+| Bundling      | `rules/bundling.md`          | 3단계 번들링 프로세스                  |
+| Resolution    | `rules/resolution.md`        | 모듈 해석 전략 (Bun.build + Plugin)    |
+| Config        | `rules/config.md`            | 설정 시스템 스키마                     |
+| Transformer   | `rules/transformer.md`       | 코드 변환 및 Babel 통합                |
+| Dev Server    | `rules/dev-server.md`        | 개발 서버 및 HMR                       |
+| Incremental   | `rules/incremental-build.md` | 증분 빌드 시스템                       |
+| Optimization  | `rules/optimization.md`      | 캐싱 및 성능 최적화                    |
+| Bun APIs      | `rules/bun-apis.md`          | Bun API 활용 가이드                    |
+| Bunup         | `rules/bunup.md`             | Bunup 빌드 도구 가이드                 |
+| Testing       | `rules/testing.md`           | 테스트 코드 작성 가이드 (Metro 스타일) |
+| Documentation | `rules/documentation.md`     | 문서 작성 가이드 (영어 기본 + 한국어)  |
 
 ## Quick Reference
 
@@ -137,6 +138,7 @@ Bun.Transpiler; // 코드 변환
 - [ ] HMR (WebSocket + 증분 업데이트)
 
 **📌 증분 빌드를 Phase 2에 넣는 이유:**
+
 - 개발 서버와 HMR의 핵심 의존성
 - 파일 변경 → 변경분만 재빌드 → HMR 전송
 - Phase 3 최적화와 별개로 필수 기능
