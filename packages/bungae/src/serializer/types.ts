@@ -7,8 +7,10 @@ export interface Module {
   path: string;
   /** Module code */
   code: string;
-  /** Dependencies (module paths) */
+  /** Dependencies (module paths - absolute) */
   dependencies: string[];
+  /** Original dependency paths (as they appear in source code, e.g., "./Bar") */
+  originalDependencies?: string[];
   /** Source map (optional) */
   map?: string;
 }
