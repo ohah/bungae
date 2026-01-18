@@ -188,6 +188,41 @@ Bun.Transpiler; // 코드 변환
    - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트)
    - **참고**: `shouldAddToIgnoreList` 옵션은 이미 있지만, `x_google_ignoreList` 생성 로직은 미구현
 
+3. **Asset 지원**
+   - **Metro에서의 용도**: 이미지, 폰트 등 정적 자산을 번들에 포함
+   - **현재 상태**: 기본 번들링 테스트에서는 asset 없이도 핵심 기능 검증 가능
+   - **구현 시점**: Phase 3 또는 Phase 4 (필요 시)
+   - **관련 테스트**: Metro의 `basic_bundle/Foo.js`는 `require('./test.png')`를 사용
+   - **참고**: 현재는 JavaScript/TypeScript 모듈 번들링에 집중
+
+4. **TypeScript 모듈 통합 테스트**
+   - **Metro에서의 용도**: TypeScript 파일을 번들에 포함하고 실행 검증
+   - **현재 상태**: TypeScript 변환은 지원하지만, Metro의 `TypeScript.ts` 모듈 통합 테스트는 미구현
+   - **구현 시점**: Phase 3 또는 Phase 4 (필요 시)
+   - **관련 테스트**: Metro의 `basic_bundle/TypeScript.ts`는 복잡한 TypeScript 기능 테스트
+   - **참고**: 현재는 기본 TypeScript 변환만 테스트 (별도 테스트 케이스 존재)
+
+### 테스트 일치성 관련 이슈
+
+현재 통합 테스트는 Metro와 동일한 스타일(`execBundle` + `toMatchSnapshot()`)을 사용하지만, 테스트 파일이 다르기 때문에 snapshot 결과가 다릅니다:
+
+1. **테스트 파일 차이**
+   - **Metro**: `TestBundle.js`가 `{Foo, Bar, TypeScript}`를 export
+   - **Bungae**: `TestBundle.js`가 `{Foo, Bar}`만 export (TypeScript 모듈 없음)
+   - **영향**: Snapshot 결과가 다름 (Metro는 3개 모듈, Bungae는 2개 모듈)
+
+2. **Asset 의존성 차이**
+   - **Metro**: `Foo.js`가 `require('./test.png')`를 사용하여 asset을 포함
+   - **Bungae**: `Foo.js`가 간단한 객체만 export (asset 없음)
+   - **영향**: Metro의 snapshot에는 `asset` 객체가 포함되지만, Bungae에는 없음
+
+3. **의존성 구조 차이**
+   - **Metro**: `Bar.js`가 `Foo.js`를 require하여 `Foo.type`을 참조
+   - **Bungae**: `Bar.js`와 `Foo.js`가 독립적
+   - **영향**: Metro의 snapshot은 `Bar.foo: "foo"`를 포함하지만, Bungae는 독립적인 구조
+
+**참고**: 현재 테스트는 핵심 번들링 기능(의존성 해석, 변환, 직렬화, require 경로 변환)을 검증하는 데 충분합니다. Asset과 TypeScript 모듈 통합 테스트는 위의 백로그 항목으로 관리됩니다.
+
 ### 구현하지 않는 Metro 기능
 
 다음 기능들은 Metro에 있지만 Bungae에서는 구현하지 않습니다:
