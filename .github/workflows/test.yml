@@ -50,8 +50,8 @@ jobs:
 
       - name: Run tests
         if: needs.check.outputs.should-run == 'true'
-        run: bun test
+        run: bun test packages/**
 
       - name: Run tests with coverage
         if: needs.check.outputs.should-run == 'true'
-        run: bun test --coverage
+        run: bun test --coverage packages/**
