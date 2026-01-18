@@ -3,8 +3,11 @@
  * Bungae CLI
  */
 
+import { resolve, dirname } from 'path';
 import { parseArgs } from 'util';
 
+import { loadConfig, resolveConfig } from './config';
+import type { BungaeConfig } from './config/types';
 import { VERSION, build, serve } from './index.ts';
 
 const { values, positionals } = parseArgs({
@@ -17,6 +20,8 @@ const { values, positionals } = parseArgs({
     minify: { type: 'boolean', short: 'm' },
     entry: { type: 'string', short: 'e' },
     outDir: { type: 'string', short: 'o' },
+    config: { type: 'string', short: 'c' },
+    root: { type: 'string' },
   },
   allowPositionals: true,
 });
@@ -44,34 +49,82 @@ Commands:
 Options:
   -h, --help       Show this help message
   -v, --version    Show version number
-  -p, --platform   Target platform (ios, android)
+  -p, --platform   Target platform (ios, android, web)
   -d, --dev        Development mode
   -m, --minify     Enable minification
   -e, --entry      Entry file path
   -o, --outDir     Output directory
+  -c, --config     Path to config file
+  --root           Project root directory
 
 Examples:
   bungae serve --platform ios
   bungae build --platform android --minify
+  bungae build --config ./custom.config.ts
 `);
     process.exit(0);
   }
 
-  const config = {
-    platform: values.platform as 'ios' | 'android' | undefined,
-    dev: values.dev ?? (command === 'serve' || command === 'start'),
+  // Determine project root
+  const projectRoot = values.root
+    ? resolve(values.root)
+    : values.config
+      ? resolve(dirname(values.config))
+      : process.cwd();
+
+  // Load config from file (Metro-compatible API)
+  let fileConfig: BungaeConfig = {};
+  try {
+    if (values.config) {
+      // Load from specified config file
+      fileConfig = await loadConfig({ config: values.config, cwd: projectRoot });
+    } else {
+      // Load from default locations
+      fileConfig = await loadConfig({ cwd: projectRoot });
+    }
+  } catch (error) {
+    console.warn(`Warning: Failed to load config file: ${error}`);
+    // Continue with CLI options only
+  }
+
+  // Merge CLI options with file config
+  const cliConfig: BungaeConfig = {
+    root: projectRoot,
+    platform: values.platform as 'ios' | 'android' | 'web' | undefined,
+    dev:
+      values.dev !== undefined
+        ? values.dev
+        : command === 'serve' || command === 'start'
+          ? true
+          : undefined,
     minify: values.minify,
     entry: values.entry,
     outDir: values.outDir,
   };
 
+  // Remove undefined values
+  Object.keys(cliConfig).forEach((key) => {
+    if (cliConfig[key as keyof BungaeConfig] === undefined) {
+      delete cliConfig[key as keyof BungaeConfig];
+    }
+  });
+
+  // Merge configs (CLI options override file config)
+  const mergedConfig: BungaeConfig = {
+    ...fileConfig,
+    ...cliConfig,
+  };
+
+  // Resolve config with defaults
+  const resolvedConfig = resolveConfig(mergedConfig, projectRoot);
+
   switch (command) {
     case 'build':
-      await build(config);
+      await build(resolvedConfig);
       break;
     case 'serve':
     case 'start':
-      await serve(config);
+      await serve(resolvedConfig);
       break;
     default:
       console.error(`Unknown command: ${command}`);

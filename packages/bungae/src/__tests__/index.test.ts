@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+
 import { VERSION, defineConfig } from '../index';
 import type { BungaeConfig } from '../index';
 
