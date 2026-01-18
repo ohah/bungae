@@ -8,11 +8,11 @@ Bun 네이티브 API를 활용한 증분 빌드 구현 가이드.
 
 ### 왜 직접 구현하는가?
 
-| 도구 | 증분 빌드 | 문제점 |
-|------|----------|--------|
-| Bun.build() | ❌ 미지원 | watch 옵션 없음, 매번 전체 빌드 |
-| Rolldown | ✅ 지원 | 외부 의존성, Bun 네이티브 아님 |
-| **직접 구현** | ✅ 가능 | Bun API 최대 활용, ~500줄 |
+| 도구          | 증분 빌드 | 문제점                          |
+| ------------- | --------- | ------------------------------- |
+| Bun.build()   | ❌ 미지원 | watch 옵션 없음, 매번 전체 빌드 |
+| Rolldown      | ✅ 지원   | 외부 의존성, Bun 네이티브 아님  |
+| **직접 구현** | ✅ 가능   | Bun API 최대 활용, ~500줄       |
 
 ### 핵심 아이디어
 
@@ -58,14 +58,14 @@ Metro의 DeltaBundler 접근 방식을 Bun으로 포팅.
 interface Module {
   path: string;
   code: string;
-  dependencies: Map<string, Dependency>;      // 내가 의존하는 것
-  inverseDependencies: Set<string>;           // 나를 의존하는 것
-  hash: string;                               // 캐시 무효화용
+  dependencies: Map<string, Dependency>; // 내가 의존하는 것
+  inverseDependencies: Set<string>; // 나를 의존하는 것
+  hash: string; // 캐시 무효화용
 }
 
 interface Dependency {
-  name: string;          // import specifier
-  absolutePath: string;  // 실제 경로
+  name: string; // import specifier
+  absolutePath: string; // 실제 경로
 }
 
 class DependencyGraph {
@@ -132,7 +132,7 @@ class DeltaCalculator extends EventEmitter {
     // 2. 영향받는 모듈 찾기
     const affected = new Set<string>();
     for (const path of modified) {
-      this.graph.getAffectedModules(path).forEach(p => affected.add(p));
+      this.graph.getAffectedModules(path).forEach((p) => affected.add(p));
     }
 
     // 3. 변경된 모듈만 재변환
@@ -171,7 +171,7 @@ class TransformCache {
 class IncrementalBundler extends EventEmitter {
   private deltaCalculator: DeltaCalculator;
   private transformCache: TransformCache;
-  private moduleCache = new Map<string, string>();  // path → code
+  private moduleCache = new Map<string, string>(); // path → code
 
   constructor(entryPoints: string[]) {
     this.deltaCalculator.on('change', async () => {
@@ -275,9 +275,12 @@ class Graph {
 
 ```typescript
 class Graph {
-  private importBundleNodes = new Map<string, {
-    inverseDependencies: Set<string>;
-  }>();
+  private importBundleNodes = new Map<
+    string,
+    {
+      inverseDependencies: Set<string>;
+    }
+  >();
 
   // async import는 별도 번들로 분리
   // Code Splitting의 기반
@@ -317,17 +320,17 @@ class DevServer {
 
 ## 구현 순서
 
-| 단계 | 내용 | 예상 코드량 |
-|------|------|------------|
-| 1 | DependencyGraph (기본) | ~100줄 |
-| 2 | DeltaCalculator | ~100줄 |
-| 3 | TransformCache | ~50줄 |
-| 4 | IncrementalBundler | ~100줄 |
-| 5 | 순환 참조 GC | ~150줄 |
-| 6 | 롤백 시스템 | ~80줄 |
-| 7 | require.context | ~80줄 |
-| 8 | Lazy 모듈 | ~80줄 |
-| **총합** | | **~740줄** |
+| 단계     | 내용                   | 예상 코드량 |
+| -------- | ---------------------- | ----------- |
+| 1        | DependencyGraph (기본) | ~100줄      |
+| 2        | DeltaCalculator        | ~100줄      |
+| 3        | TransformCache         | ~50줄       |
+| 4        | IncrementalBundler     | ~100줄      |
+| 5        | 순환 참조 GC           | ~150줄      |
+| 6        | 롤백 시스템            | ~80줄       |
+| 7        | require.context        | ~80줄       |
+| 8        | Lazy 모듈              | ~80줄       |
+| **총합** |                        | **~740줄**  |
 
 MVP (1-4단계): ~350줄
 전체 구현 (1-8단계): ~740줄
@@ -367,13 +370,13 @@ const hash = Bun.hash(code).toString();
 
 ## Rolldown vs 직접 구현 비교
 
-| 항목 | Rolldown | Bun 직접 구현 |
-|------|----------|---------------|
-| 증분 빌드 | `incrementalBuild: true` | DeltaCalculator |
-| HMR | `devMode` + 콜백 | WebSocket 직접 |
-| 의존성 | @rollipop/rolldown | 없음 (Bun 내장만) |
-| 코드량 | 설정 ~50줄 | 구현 ~740줄 |
-| 장점 | 검증됨, 빠름 | Bun 네이티브, 의존성 없음 |
-| 단점 | 외부 의존성 | 직접 유지보수 |
+| 항목      | Rolldown                 | Bun 직접 구현             |
+| --------- | ------------------------ | ------------------------- |
+| 증분 빌드 | `incrementalBuild: true` | DeltaCalculator           |
+| HMR       | `devMode` + 콜백         | WebSocket 직접            |
+| 의존성    | @rollipop/rolldown       | 없음 (Bun 내장만)         |
+| 코드량    | 설정 ~50줄               | 구현 ~740줄               |
+| 장점      | 검증됨, 빠름             | Bun 네이티브, 의존성 없음 |
+| 단점      | 외부 의존성              | 직접 유지보수             |
 
 **결론**: Bun 네이티브 철학에 맞게 직접 구현. Metro 참고하면 충분히 가능.
