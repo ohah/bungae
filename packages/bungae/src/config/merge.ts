@@ -14,11 +14,19 @@ function deepMerge<T extends Record<string, any>>(target: T, source: Partial<T>)
     const sourceValue = source[key];
     const targetValue = result[key];
 
+    // Skip null values (they should be assigned directly, not merged)
+    if (sourceValue === null) {
+      result[key] = sourceValue as T[Extract<keyof T, string>];
+      continue;
+    }
+
+    // Deep merge nested objects
     if (
       sourceValue &&
       typeof sourceValue === 'object' &&
       !Array.isArray(sourceValue) &&
       !((sourceValue as any) instanceof RegExp) &&
+      targetValue !== null &&
       targetValue &&
       typeof targetValue === 'object' &&
       !Array.isArray(targetValue) &&
@@ -47,13 +55,19 @@ export function mergeConfig(
   for (const userConfig of userConfigs) {
     if (!userConfig) continue;
 
-    merged = {
-      ...merged,
-      ...userConfig,
+    // Deep merge nested configs first to avoid overwriting with shallow spread
+    const nestedMerged = {
       resolver: deepMerge(merged.resolver, userConfig.resolver || {}),
       transformer: deepMerge(merged.transformer, userConfig.transformer || {}),
       serializer: deepMerge(merged.serializer, userConfig.serializer || {}),
       server: deepMerge(merged.server, userConfig.server || {}),
+    };
+
+    // Merge top-level properties, with nested configs taking precedence
+    merged = {
+      ...merged,
+      ...userConfig,
+      ...nestedMerged,
     };
 
     // Handle mode -> dev conversion

@@ -33,6 +33,7 @@ Metro 호환성을 유지하면서 Bun의 성능 이점을 최대한 활용.
 | Config       | `rules/config.md`       | 설정 시스템 스키마                     |
 | Transformer  | `rules/transformer.md`  | 코드 변환 및 Babel 통합                |
 | Dev Server   | `rules/dev-server.md`   | 개발 서버 및 HMR                       |
+| Incremental  | `rules/incremental-build.md` | 증분 빌드 시스템                  |
 | Optimization | `rules/optimization.md` | 캐싱 및 성능 최적화                    |
 | Bun APIs     | `rules/bun-apis.md`     | Bun API 활용 가이드                    |
 | Bunup        | `rules/bunup.md`        | Bunup 빌드 도구 가이드                 |
@@ -124,23 +125,37 @@ Bun.Transpiler; // 코드 변환
 - 플랫폼 확장자만 Plugin으로 추가 처리
 - 완전히 새로 구현할 필요 없음
 
-### Phase 2: 개발 환경
+### Phase 2: 개발 환경 (증분 빌드 포함)
 
-- [ ] 개발 서버
-- [ ] 파일 감시
-- [ ] HMR
+- [ ] **증분 빌드 시스템** (핵심)
+  - [ ] 의존성 그래프 (Graph)
+  - [ ] 델타 계산기 (DeltaCalculator)
+  - [ ] 변환 캐시 (TransformCache)
+  - [ ] 순환 참조 GC
+- [ ] 개발 서버 (Bun.serve)
+- [ ] 파일 감시 (fs.watch)
+- [ ] HMR (WebSocket + 증분 업데이트)
+
+**📌 증분 빌드를 Phase 2에 넣는 이유:**
+- 개발 서버와 HMR의 핵심 의존성
+- 파일 변경 → 변경분만 재빌드 → HMR 전송
+- Phase 3 최적화와 별개로 필수 기능
+
+상세 구현: `rules/incremental-build.md`
 
 ### Phase 3: 최적화
 
-- [ ] 캐싱
-- [ ] 증분 빌드
+- [ ] 영구 캐싱 (디스크)
 - [ ] Minification
+- [ ] Tree Shaking
 
 ### Phase 4: 고급 기능
 
 - [ ] RAM Bundle
 - [ ] Fast Refresh
 - [ ] 플러그인 시스템
+- [ ] require.context
+- [ ] Lazy/Async 모듈
 
 ## Metro 호환성 및 제외된 기능
 

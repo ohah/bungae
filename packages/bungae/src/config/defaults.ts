@@ -75,5 +75,4 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
 }
 
 // Named export for backward compatibility
-// Named export for backward compatibility
 export { getDefaultConfig };
