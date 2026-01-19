@@ -5,7 +5,13 @@
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
+    "android:release": "react-native run-android --mode=release",
+    "android:release:bungae": "BUNGAE=true react-native run-android --mode=release",
+    "ios:release": "react-native run-ios --mode Release",
+    "ios:release:bungae": "BUNGAE=true react-native run-ios --mode Release",
     "start": "react-native start",
+    "start:bungae": "bungae serve",
+    "build:bungae": "bungae build",
     "test": "jest"
   },
   "dependencies": {
