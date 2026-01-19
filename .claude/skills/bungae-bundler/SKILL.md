@@ -130,7 +130,12 @@ Bun.Transpiler; // 코드 변환
   - ✅ **d(), **r() 형식 지원
   - ✅ 모듈 ID 생성 및 정렬
   - ✅ Source map URL 지원
-  - ✅ Metro 스타일 테스트 코드 (15개 테스트 케이스 모두 통과)
+  - ✅ SerializerOptions에 Metro 호환 옵션 추가 (inlineSourceMap, shouldAddToIgnoreList, includeAsyncPaths, modulesOnly, asyncRequireModulePath, getSourceUrl)
+  - ✅ modulesOnly 옵션 구현 (prelude/runtime 제외)
+  - ✅ inlineSourceMap 옵션 스켈레톤 추가 (Phase 2에서 완전 구현 예정)
+  - ✅ InitializeCore 자동 감지 및 runBeforeMainModule 처리
+  - ✅ sourceUrl, sourceMapUrl 옵션 사용 (개발 서버)
+  - ✅ Metro 스타일 테스트 코드 (6개 Metro 테스트 통과, 2개 skip, InitializeCore 테스트 포함)
 
 **⚠️ Resolution 구현 전략**:
 
@@ -177,16 +182,17 @@ Bun.Transpiler; // 코드 변환
 
 다음 기능들은 Metro에 있지만 Phase 1-3에서는 구현하지 않았으며, Phase 2 또는 Phase 3에서 구현할 예정입니다:
 
-1. **inlineSourceMap 옵션**
+1. **inlineSourceMap 옵션** (스켈레톤 완료, 완전 구현 예정)
    - **Metro에서의 용도**: Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
+   - **현재 상태**: 옵션 타입 및 스켈레톤 구현 완료, 실제 source map 생성 로직은 Phase 2에서 구현 예정
    - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `should add an inline source map to a very simple bundle` (Metro 테스트)
+   - **관련 테스트**: `should add an inline source map to a very simple bundle` (Metro 테스트, skip 상태)
 
-2. **x_google_ignoreList 생성**
+2. **x_google_ignoreList 생성** (옵션 완료, 생성 로직 예정)
    - **Metro에서의 용도**: Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외하기 위한 source map 메타데이터
+   - **현재 상태**: `shouldAddToIgnoreList` 옵션 추가 완료, `x_google_ignoreList` 생성 로직은 Phase 2에서 구현 예정
    - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트)
-   - **참고**: `shouldAddToIgnoreList` 옵션은 이미 있지만, `x_google_ignoreList` 생성 로직은 미구현
+   - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트, skip 상태)
 
 3. **Asset 지원**
    - **Metro에서의 용도**: 이미지, 폰트 등 정적 자산을 번들에 포함
