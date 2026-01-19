@@ -3,14 +3,13 @@
  */
 
 import { readFileSync, existsSync, mkdirSync, rmSync } from 'fs';
-import { resolve, dirname, join } from 'path';
 import { tmpdir } from 'os';
+import { resolve, dirname, join } from 'path';
 
+import { createPlatformResolverPlugin } from '../resolver/platform-plugin';
 import { getPrependedModules } from '../serializer';
 import type { Module as SerializerModule } from '../serializer/types';
-import { transform } from '../transformer';
 import { extractDependencies } from '../transformer/utils';
-import { createPlatformResolverPlugin } from '../resolver/platform-plugin';
 import type { GraphBuildOptions, GraphBuildResult, GraphModule } from './types';
 
 /**
@@ -66,7 +65,7 @@ async function resolveModule(
     if (existsSync(basePath)) {
       return basePath;
     }
-    
+
     // Try with .js extension explicitly (some files might not have extension in path)
     if (existsSync(`${basePath}.js`)) {
       return `${basePath}.js`;
@@ -134,7 +133,7 @@ async function resolveModule(
  */
 export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuildResult> {
   const { entryFile, projectRoot, platform, dev, onProgress } = options;
-  
+
   // Validate required options
   if (!entryFile) {
     throw new Error('entryFile is required');
@@ -165,9 +164,18 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
       return modules.get(filePath)!;
     }
 
-    // Check for cycles - if already processing, it's a circular dependency
+    // If already processing, it's a circular dependency - return placeholder
+    // Circular dependencies are allowed in JavaScript modules
     if (processing.has(filePath)) {
-      throw new Error(`Circular dependency detected: ${filePath}`);
+      // Return a placeholder module for circular dependencies
+      // The actual module will be filled in when processing completes
+      return {
+        path: filePath,
+        code: '',
+        dependencies: [],
+        originalDependencies: [],
+        processed: false, // Mark as not fully processed yet
+      };
     }
 
     // Mark as processing
@@ -212,192 +220,35 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
     // Read file
     const code = readFileSync(filePath, 'utf-8');
 
-    // Step 1: Remove type assertions with oxc BEFORE Bun.build()
-    // This ensures Bun.build() receives clean code without type assertions
-    let preprocessedCode = code;
-    const { removeTypeAssertionsWithOxc } = await import('../transformer/oxc-transformer');
-    try {
-      const oxcResult = await removeTypeAssertionsWithOxc(code, {
-        filePath,
-        code,
-        platform,
-        dev,
-        projectRoot,
-      });
-      preprocessedCode = oxcResult.code;
-      
-      // Verify type assertions were removed (for debugging)
-      if (preprocessedCode.includes(' as ') && code.includes(' as ')) {
-        // Type assertions still present, try regex fallback
-        preprocessedCode = preprocessedCode.replace(/\}\s+as\s+[\w.]+;/gm, '};');
-        preprocessedCode = preprocessedCode.replace(/\)\s+as\s+[\w.]+;/gm, ');');
-        preprocessedCode = preprocessedCode.replace(/\s+as\s+[\w.]+(?=\s*[;,)])/gm, '');
-      }
-    } catch (error) {
-      // If oxc fails, use regex fallback
-      if (code.includes(' as ')) {
-        preprocessedCode = code.replace(/\}\s+as\s+[\w.]+;/gm, '};');
-        preprocessedCode = preprocessedCode.replace(/\)\s+as\s+[\w.]+;/gm, ');');
-        preprocessedCode = preprocessedCode.replace(/\s+as\s+[\w.]+(?=\s*[;,)])/gm, '');
-      } else {
-        preprocessedCode = code;
-      }
+    // Transform code using unified pipeline
+    // Flow files: Babel + Hermes → SWC
+    // Non-Flow files: SWC directly
+    const { hasFlowSyntax, transformWithMetroOrder, transformWithSwcCore } =
+      await import('../transformer/swc-transformer');
+    const hasFlow = await hasFlowSyntax(code, filePath);
+
+    // Debug: Log Flow detection
+    if (hasFlow && options.dev) {
+      console.log(`[bungae] Flow detected in ${filePath}, using Babel pipeline`);
     }
 
-    // Step 2: Transform using SWC for ESM → CJS conversion
-    // SWC handles:
-    // - ESM → CJS conversion (module.type: 'commonjs')
-    // - TypeScript/JSX transformation
-    // - Fast Rust-based transformation
-    let transformedCode = '';
-    try {
-      // Always use SWC for transformation if code has ESM syntax
-      // Check if code has ESM imports/exports that need conversion
-      // Match import/export statements anywhere in the code (not just at the start)
-      // Use multiline flag to match across lines
-      const hasESM = /import\s+.*\s+from\s+['"]|export\s+.*\s+from\s+['"]|^import\s|^export\s|import\s*\(/m.test(preprocessedCode);
-      
-      // Always try SWC transformation if ESM syntax is detected
-      // SWC will handle both ESM and non-ESM code
-      if (hasESM) {
-        // Force SWC to treat this as a module and convert ESM to CJS
-        // Use SWC to transform ESM to CJS
-        const swc = await import('@swc/core');
-        const isTS = filePath.endsWith('.ts') || filePath.endsWith('.tsx');
-        const isJSX = filePath.endsWith('.tsx') || filePath.endsWith('.jsx');
-        
-        const swcResult = await swc.transform(preprocessedCode, {
-          filename: filePath,
-          jsc: {
-            parser: {
-              syntax: isTS ? 'typescript' : 'ecmascript',
-              tsx: isJSX,
-              decorators: false,
-              dynamicImport: true,
-            },
-            target: 'es2015',
-            keepClassNames: true,
-            transform: {
-              react: {
-                runtime: 'automatic',
-                development: dev,
-              },
-            },
-          },
-          module: {
-            type: 'commonjs', // ✅ ESM → CJS conversion
-            strict: false, // Add __esModule flag for interop
-            strictMode: false, // Don't add 'use strict'
-            lazy: false,
-            noInterop: false,
-          },
-          isModule: true, // Explicitly mark as module to ensure ESM transformation
-          sourceMaps: false, // We don't need source maps for individual modules
-          configFile: false, // Don't use .swcrc config file
-          swcrc: false, // Don't use .swcrc config file
-        });
-        
-        transformedCode = swcResult.code;
-        
-        // Verify SWC converted imports to require
-        // If import statements still remain, try to convert them manually
-        // This handles edge cases where SWC might not convert certain import patterns
-        if (transformedCode.includes('import ') || transformedCode.includes('import{')) {
-          // SWC didn't convert some imports - manually convert remaining imports
-          // Handle: import X, { Y } from "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+(\w+)\s*,\s*\{([^}]+)\}\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            (match, defaultImport, namedImports, modulePath) => {
-              // Remove type-only imports from namedImports
-              const cleanedNamedImports = namedImports
-                .split(',')
-                .map((imp: string) => imp.trim())
-                .filter((imp: string) => !imp.startsWith('type ') && !imp.startsWith('typeof '))
-                .join(', ');
-              if (cleanedNamedImports) {
-                return `const ${defaultImport} = require("${modulePath}"); const {${cleanedNamedImports}} = require("${modulePath}");`;
-              } else {
-                return `const ${defaultImport} = require("${modulePath}");`;
-              }
-            },
-          );
-          // Handle: import X from "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+(\w+)\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            'const $1 = require("$2");',
-          );
-          // Handle: import { X, Y } from "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            'const {$1} = require("$2");',
-          );
-          // Handle: import * as X from "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+\*\s+as\s+(\w+)\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            'const $1 = require("$2");',
-          );
-          // Handle: import * from "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+\*\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            'require("$1");',
-          );
-          // Handle: import "module"
-          transformedCode = transformedCode.replace(
-            /\bimport\s+['"]([^'"]+)['"];?\s*/g,
-            'require("$1");',
-          );
-          // Remove type-only imports
-          transformedCode = transformedCode.replace(
-            /\bimport\s+type\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            '',
-          );
-          transformedCode = transformedCode.replace(
-            /\bimport\s+type\s+(\w+)\s+from\s+['"]([^'"]+)['"];?\s*/g,
-            '',
-          );
-        }
-      } else {
-        // No ESM syntax, use Bun.Transpiler for TypeScript/JSX transformation
-        const transformResult = await transform(
-          {
-            filePath,
-            code: preprocessedCode,
-            platform,
-            dev,
-            projectRoot,
-          },
-          options.transformer,
-        );
-        transformedCode = transformResult.code;
-      }
-      
-      // Remove type assertions (SWC might not remove all)
-      if (transformedCode.includes(' as ')) {
-        transformedCode = transformedCode.replace(/\}\s*\n?\s*as\s+[\w.]+;/gm, '};');
-        transformedCode = transformedCode.replace(/\)\s*\n?\s*as\s+[\w.]+;/gm, ');');
-        transformedCode = transformedCode.replace(/\}\s+as\s+[\w.]+;/g, '};');
-        transformedCode = transformedCode.replace(/\)\s+as\s+[\w.]+;/g, ');');
-        transformedCode = transformedCode.replace(/\s+as\s+[\w.]+(?=\s*[;,)])/g, '');
-      }
-    } catch (error) {
-      // If SWC fails, fallback to original transform function
-      console.warn(`[bungae] SWC transformation failed for ${filePath}, using fallback:`, error);
-      const transformResult = await transform(
-        {
-          filePath,
-          code: preprocessedCode,
-          platform,
-          dev,
-          projectRoot,
-        },
-        options.transformer,
-      );
-      transformedCode = transformResult.code;
+    let transformedCode: string;
+
+    if (hasFlow) {
+      // Flow files: Babel + Hermes for Flow stripping, then SWC for ESM→CJS + JSX
+      transformedCode = await transformWithMetroOrder(code, filePath, { dev, platform });
+    } else {
+      // Non-Flow files: SWC handles everything (ESM→CJS, JSX, TypeScript, define vars)
+      transformedCode = await transformWithSwcCore(code, filePath, {
+        dev,
+        module: 'commonjs',
+        platform,
+      });
     }
 
     // Extract dependencies from original code (before transformation)
-    // Use AST-based extraction with oxc for accurate dependency detection
-    // For JSX files, oxc-transform is used to transform JSX first, then extract dependencies
+    // Use SWC for AST-based dependency detection
+    // For JSX files, SWC transforms JSX first, then extracts dependencies
     const dependencies = await extractDependencies(code, filePath);
 
     // Create transform result
@@ -415,14 +266,14 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
       if (!dep || !dep.trim()) {
         continue;
       }
-      
+
       const resolved = await resolveModule(filePath, dep, options);
       if (resolved) {
         // Always add to dependencies, even if already visited
         // This ensures the dependency is included in the module's dependencyMap
         resolvedDependencies.push(resolved);
         originalDependencies.push(dep); // Keep original path for require conversion
-        
+
         // Process dependency if not already visited
         if (!visited.has(resolved)) {
           // Will be processed recursively below
@@ -430,9 +281,7 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
       } else if (options.dev) {
         // In dev mode, warn about unresolved dependencies
         // This helps identify missing modules
-        console.warn(
-          `[bungae] Failed to resolve dependency "${dep}" from ${filePath}`,
-        );
+        console.warn(`[bungae] Failed to resolve dependency "${dep}" from ${filePath}`);
       }
     }
 
@@ -456,17 +305,14 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
     // Process dependencies recursively
     // Metro processes all dependencies, even if already visited
     // This ensures all transitive dependencies are included
-    // IMPORTANT: Keep processing flag set while processing dependencies to detect cycles
     for (const dep of resolvedDependencies) {
-      // Check for circular dependency BEFORE checking visited
-      // This ensures we detect cycles even if the module is being processed
-      if (processing.has(dep)) {
-        processing.delete(filePath); // Clean up before throwing
-        throw new Error(`Circular dependency detected: ${dep} (from ${filePath})`);
+      // Skip if already visited or currently being processed (circular dependency)
+      // Circular dependencies are allowed in JavaScript modules
+      if (visited.has(dep) || processing.has(dep)) {
+        continue;
       }
-      
+
       // Process dependency if not already visited
-      // Metro does this to ensure all dependencies are included
       if (!visited.has(dep)) {
         await processModule(dep);
       }
@@ -492,7 +338,7 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
     const initializeCorePath = require.resolve('react-native/Libraries/Core/InitializeCore', {
       paths: [projectRoot],
     });
-    
+
     // Check if InitializeCore is already in the graph
     if (!modules.has(initializeCorePath)) {
       // InitializeCore is not in the graph, add it and process its dependencies

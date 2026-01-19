@@ -7,8 +7,8 @@
  */
 
 import { spawnSync } from 'child_process';
-import { join, dirname } from 'path';
 import { existsSync, realpathSync } from 'fs';
+import { join, dirname } from 'path';
 
 // Get current directory from the actual script location at runtime
 // Use realpathSync to resolve symlinks (node_modules/.bin/bungae -> ../bungae/dist/cli.cjs)

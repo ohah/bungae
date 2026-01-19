@@ -20,7 +20,8 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
     // We just need to call it with the global object
     // Metro format: (function (global) { ... })('undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this);
     if (module.path.includes('metro-runtime')) {
-      const globalThisFallback = "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
+      const globalThisFallback =
+        "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
       // Check if code is already wrapped in IIFE
       const trimmedCode = module.code.trim();
       if (trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function')) {
@@ -40,13 +41,16 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
   //
   // Step 0: Clean up code
   let cleanedCode = module.code;
-  
+
   // Remove temporary file paths (.bungae-temp) that may be included by Bun.build() or bunup
   if (cleanedCode.includes('.bungae-temp')) {
-    cleanedCode = cleanedCode.replace(/module\.exports\s*=\s*["'][^"']*\.bungae-temp[^"']*["'];?\s*/g, '');
+    cleanedCode = cleanedCode.replace(
+      /module\.exports\s*=\s*["'][^"']*\.bungae-temp[^"']*["'];?\s*/g,
+      '',
+    );
     cleanedCode = cleanedCode.replace(/^[^\n]*\.bungae-temp[^\n]*$/gm, '');
   }
-  
+
   // Remove any remaining type assertions (Bun.build() or bunup might not remove all)
   // Match patterns like: } as Type; or ) as Type; (with optional whitespace/newlines)
   if (cleanedCode.includes(' as ')) {
@@ -64,7 +68,7 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
     // Final pass: match any remaining " as Type" patterns (most aggressive)
     cleanedCode = cleanedCode.replace(/\s+as\s+[\w.]+/g, '');
   }
-  
+
   // SWC should have converted all imports to require() calls
   // If any remain, convert them manually as a fallback
   if (cleanedCode.includes('import ') || cleanedCode.includes('import{')) {
@@ -107,10 +111,7 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
       'require("$1");',
     );
     // Handle: import "module"
-    cleanedCode = cleanedCode.replace(
-      /\bimport\s+['"]([^'"]+)['"];?\s*/g,
-      'require("$1");',
-    );
+    cleanedCode = cleanedCode.replace(/\bimport\s+['"]([^'"]+)['"];?\s*/g, 'require("$1");');
     // Remove type-only imports (handle multiline imports)
     // Remove: import type { X } from "module"
     cleanedCode = cleanedCode.replace(
@@ -161,7 +162,7 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
       },
     );
   }
-  
+
   // Step 1: Convert require paths to dependencyMap lookups
   // Metro converts require("./Bar") to require(dependencyMap[0])
   // Use original dependency paths (as they appear in source code) for conversion

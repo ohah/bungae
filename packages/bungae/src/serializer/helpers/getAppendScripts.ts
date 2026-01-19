@@ -57,7 +57,7 @@ export function getAppendScripts(
   // Metro-compatible: inlineSourceMap option
   if (options.inlineSourceMap || options.sourceMapUrl) {
     let sourceMappingURL: string;
-    
+
     if (options.inlineSourceMap) {
       // Generate inline source map (base64 encoded)
       // TODO: Implement full source map generation with x_google_ignoreList
@@ -75,7 +75,7 @@ export function getAppendScripts(
     } else {
       sourceMappingURL = options.sourceMapUrl!;
     }
-    
+
     const code = `//# sourceMappingURL=${sourceMappingURL}`;
     output.push({
       path: 'source-map',
