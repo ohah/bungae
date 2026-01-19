@@ -32,19 +32,22 @@
     "format:check": "oxfmt --check",
     "typecheck": "tsc --noEmit"
   },
+  "dependencies": {
+    "babel-plugin-syntax-hermes-parser": "^0.33.3",
+    "babel-plugin-transform-flow-enums": "^0.0.2",
+    "flow-parser": "^0.297.0",
+    "hermes-parser": "^0.33.3"
+  },
   "devDependencies": {
     "@types/bun": "latest",
     "@types/node": "^22",
     "bunup": "^0.16.20",
+    "flow-remove-types": "^2.297.0",
     "oxfmt": "latest",
     "oxlint": "latest",
     "typescript": "^5"
   },
   "engines": {
     "bun": ">=1.0.0"
-  },
-  "dependencies": {
-    "babel-plugin-syntax-hermes-parser": "^0.33.3",
-    "babel-plugin-transform-flow-enums": "^0.0.2"
   }
 }
