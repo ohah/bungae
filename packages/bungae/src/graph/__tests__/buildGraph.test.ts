@@ -192,11 +192,10 @@ describe('buildGraph', () => {
       },
     };
 
-    // Circular dependency detection may not work if visited set prevents re-processing
-    // The current implementation uses visited set which prevents cycles
-    // This test verifies the graph builds without errors (cycles are handled by visited set)
-    const result = await buildGraph(options);
-    expect(result.modules.size).toBeGreaterThan(0);
+    // Bungae detects circular dependencies during processing
+    // The current implementation uses a processing set to detect cycles
+    // This test verifies that circular dependencies are detected and throw an error
+    await expect(buildGraph(options)).rejects.toThrow('Circular dependency');
   });
 
   test('should convert graph modules to serializer modules', async () => {
