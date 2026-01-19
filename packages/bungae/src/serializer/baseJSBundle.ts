@@ -23,16 +23,17 @@ export async function baseJSBundle(
     options.createModuleId(module.path);
   }
 
+  // Do not prepend polyfills or the require runtime when only modules are requested
+  // Metro-compatible: modulesOnly option
+  if (options.modulesOnly) {
+    preModules = [];
+  }
+
   // Process preModules (prelude, metro-runtime, polyfills)
-  const processOptions = {
-    createModuleId: options.createModuleId,
-    dev: options.dev,
-    projectRoot: options.projectRoot,
-    serverRoot: options.serverRoot,
-    processModuleFilter: options.processModuleFilter,
-    getRunModuleStatement: options.getRunModuleStatement,
-    globalPrefix: options.globalPrefix,
-    runModule: options.runModule,
+  // Pass all serializer options to processModules
+  const processOptions: SerializerOptions = {
+    ...options,
+    includeAsyncPaths: options.includeAsyncPaths ?? false,
   };
 
   const preProcessed = await processModules(preModules, processOptions);
@@ -48,8 +49,31 @@ export async function baseJSBundle(
     return String(idA).localeCompare(String(idB));
   });
 
+  // Find InitializeCore module (React Native requires this to run before main module)
+  // Metro runs InitializeCore before the entry point
+  // InitializeCore is required for React Native to work properly
+  // Note: InitializeCore should already be in the dependency graph (via react-native imports)
+  // We only find it and add to runBeforeMainModule, we don't add it manually to avoid dependency issues
+  let runBeforeMainModule = options.runBeforeMainModule || [];
+  
+  // Try to find InitializeCore module in graph modules
+  // InitializeCore should be included in the dependency graph when react-native is imported
+  const initializeCoreModule = sortedModules.find(
+    (m) =>
+      m.path.includes('Core/InitializeCore') ||
+      m.path.endsWith('InitializeCore.js') ||
+      m.path.includes('Libraries/Core/InitializeCore'),
+  );
+  
+  if (initializeCoreModule && !runBeforeMainModule.includes(initializeCoreModule.path)) {
+    runBeforeMainModule = [initializeCoreModule.path, ...runBeforeMainModule];
+  }
+
   // Get append scripts (entry execution, source map)
-  const appendModules = getAppendScripts(entryPoint, [...preModules, ...sortedModules], options);
+  const appendModules = getAppendScripts(entryPoint, [...preModules, ...sortedModules], {
+    ...options,
+    runBeforeMainModule,
+  });
 
   const postProcessed = await processModules(appendModules, processOptions);
   const postCode = postProcessed.map(([_, code]) => code).join('\n');
