@@ -5,8 +5,8 @@
  * @format
  */
 
-import { useEffect, useState } from 'react';
 import { NewAppScreen } from '@react-native/new-app-screen';
+import { useEffect, useState } from 'react';
 import { StatusBar, StyleSheet, useColorScheme, View, Text } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -33,8 +33,9 @@ function AppContent() {
   // Double-check: Verify which bundler was used
   useEffect(() => {
     // Check if Bungae bundler was used
-    const isBungae = typeof (globalThis as any).__BUNGAE_BUNDLER__ !== 'undefined' 
-      && (globalThis as any).__BUNGAE_BUNDLER__ === true;
+    const isBungae =
+      typeof (globalThis as any).__BUNGAE_BUNDLER__ !== 'undefined' &&
+      (globalThis as any).__BUNGAE_BUNDLER__ === true;
     const bungaeVersion = (globalThis as any).__BUNGAE_VERSION__;
 
     const info = {
@@ -67,7 +68,7 @@ function AppContent() {
   return (
     <View style={styles.container}>
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
-      
+
       {/* Bundler Info Badge */}
       {bundlerInfo && (
         <View
