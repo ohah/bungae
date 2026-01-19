@@ -115,7 +115,9 @@ Examples:
       dev = true;
       minify = false;
     } else {
-      console.error(`Invalid mode: ${values.mode}. Must be one of: development, production, release`);
+      console.error(
+        `Invalid mode: ${values.mode}. Must be one of: development, production, release`,
+      );
       process.exit(1);
     }
   } else {

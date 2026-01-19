@@ -128,7 +128,7 @@ export async function build(config: ResolvedConfig): Promise<void> {
   mkdirSync(outputDir, { recursive: true });
 
   // Generate bundle file name based on Metro/React Native conventions
-  // iOS: 
+  // iOS:
   //   - Development: {entry}.jsbundle (e.g., index.jsbundle) - served from dev server
   //   - Release: main.jsbundle (fixed name for app bundle)
   // Android: {entry}.android.bundle (e.g., index.android.bundle)
@@ -187,11 +187,13 @@ export async function build(config: ResolvedConfig): Promise<void> {
         copyFileSync(bundlePath, iosBundlePath);
         console.log(`   📦 Copied to: ${iosBundlePath}`);
         console.log(`   ✅ iOS bundle ready for Xcode build`);
-        
+
         // Verify the copy
         if (existsSync(iosBundlePath)) {
           const stats = statSync(iosBundlePath);
-          console.log(`   ✅ Verified: ${iosBundlePath} exists (${(stats.size / 1024).toFixed(2)} KB)`);
+          console.log(
+            `   ✅ Verified: ${iosBundlePath} exists (${(stats.size / 1024).toFixed(2)} KB)`,
+          );
         } else {
           console.log(`   ❌ ERROR: Copy failed - file not found at ${iosBundlePath}`);
         }
