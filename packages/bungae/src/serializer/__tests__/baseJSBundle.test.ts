@@ -17,7 +17,7 @@ describe('baseJSBundle', () => {
 
   const defaultOptions: SerializerOptions = {
     createModuleId,
-    getRunModuleStatement: (moduleId) => `require(${JSON.stringify(moduleId)});`,
+    getRunModuleStatement: (moduleId) => `__r(${JSON.stringify(moduleId)});`,
     dev: true,
     projectRoot: '/project',
     serverRoot: '/project',
@@ -153,7 +153,7 @@ describe('baseJSBundle', () => {
       runModule: true,
     });
 
-    expect(bundle.post).toContain('require');
+    expect(bundle.post).toContain('__r');
   });
 
   test('should not include entry execution when runModule is false', async () => {
@@ -269,6 +269,156 @@ describe('baseJSBundle', () => {
     // In production, verbose name is not included
     // Just check that the code is valid
     expect(moduleCode).toBeTruthy();
+  });
+
+  test('should find and include InitializeCore from graph modules', async () => {
+    const entryPoint = '/entry.js';
+    const initializeCorePath = '/node_modules/react-native/Libraries/Core/InitializeCore.js';
+    
+    const graphModules: Module[] = [
+      {
+        path: entryPoint,
+        code: '__d(function() { return "entry"; });',
+        dependencies: [],
+      },
+      {
+        path: initializeCorePath,
+        code: '__d(function() { return "InitializeCore"; });',
+        dependencies: [],
+      },
+    ];
+
+    const preModules = getPrependedModules({
+      dev: true,
+      globalPrefix: '',
+    });
+
+    const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
+      ...defaultOptions,
+      dev: true,
+    });
+
+    // InitializeCore should be found and included in runBeforeMainModule
+    const initializeCoreId = createModuleId(initializeCorePath);
+    const entryId = createModuleId(entryPoint);
+    
+    // Post should contain InitializeCore execution before entry
+    expect(bundle.post).toContain(`__r(${JSON.stringify(initializeCoreId)})`);
+    expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
+    
+    // InitializeCore should be executed before entry
+    const initializeCoreIndex = bundle.post.indexOf(`__r(${JSON.stringify(initializeCoreId)})`);
+    const entryIndex = bundle.post.indexOf(`__r(${JSON.stringify(entryId)})`);
+    expect(initializeCoreIndex).toBeLessThan(entryIndex);
+  });
+
+  test('should handle InitializeCore not found in graph (non-React Native project)', async () => {
+    const entryPoint = '/entry.js';
+    const graphModules: Module[] = [
+      {
+        path: entryPoint,
+        code: '__d(function() { return "entry"; });',
+        dependencies: [],
+      },
+    ];
+
+    const preModules = getPrependedModules({
+      dev: true,
+      globalPrefix: '',
+    });
+
+    // Should not throw when InitializeCore is not found (non-React Native project)
+    const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
+      ...defaultOptions,
+      dev: true,
+      projectRoot: '/non-react-native-project',
+    });
+
+    // Should still generate valid bundle
+    expect(bundle.pre).toBeTruthy();
+    expect(bundle.post).toBeTruthy();
+    expect(bundle.modules.length).toBeGreaterThan(0);
+  });
+
+  test('should respect runBeforeMainModule option', async () => {
+    const entryPoint = '/entry.js';
+    const customModulePath = '/custom-init.js';
+    
+    const graphModules: Module[] = [
+      {
+        path: entryPoint,
+        code: '__d(function() { return "entry"; });',
+        dependencies: [],
+      },
+      {
+        path: customModulePath,
+        code: '__d(function() { return "custom"; });',
+        dependencies: [],
+      },
+    ];
+
+    const preModules = getPrependedModules({
+      dev: true,
+      globalPrefix: '',
+    });
+
+    const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
+      ...defaultOptions,
+      dev: true,
+      runBeforeMainModule: [customModulePath],
+    });
+
+    const customId = createModuleId(customModulePath);
+    const entryId = createModuleId(entryPoint);
+    
+    // Custom module should be executed before entry
+    expect(bundle.post).toContain(`__r(${JSON.stringify(customId)})`);
+    expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
+    
+    const customIndex = bundle.post.indexOf(`__r(${JSON.stringify(customId)})`);
+    const entryIndex = bundle.post.indexOf(`__r(${JSON.stringify(entryId)})`);
+    expect(customIndex).toBeLessThan(entryIndex);
+  });
+
+  test('should find InitializeCore with different path patterns', async () => {
+    const entryPoint = '/entry.js';
+    const testCases = [
+      '/node_modules/react-native/Libraries/Core/InitializeCore.js',
+      '/some/path/Core/InitializeCore.js',
+      '/another/path/InitializeCore.js',
+    ];
+
+    for (const initializeCorePath of testCases) {
+      const graphModules: Module[] = [
+        {
+          path: entryPoint,
+          code: '__d(function() { return "entry"; });',
+          dependencies: [],
+        },
+        {
+          path: initializeCorePath,
+          code: '__d(function() { return "InitializeCore"; });',
+          dependencies: [],
+        },
+      ];
+
+      const preModules = getPrependedModules({
+        dev: true,
+        globalPrefix: '',
+      });
+
+      const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
+        ...defaultOptions,
+        dev: true,
+      });
+
+      const initializeCoreId = createModuleId(initializeCorePath);
+      const entryId = createModuleId(entryPoint);
+      
+      // InitializeCore should be found and executed before entry
+      expect(bundle.post).toContain(`__r(${JSON.stringify(initializeCoreId)})`);
+      expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
+    }
   });
 });
 
