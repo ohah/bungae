@@ -47,4 +47,16 @@ export interface SerializerOptions {
   sourceUrl?: string;
   /** Run before main module */
   runBeforeMainModule?: string[];
+  /** Inline source map (base64 encoded in bundle) */
+  inlineSourceMap?: boolean;
+  /** Should add module to ignore list (for x_google_ignoreList) */
+  shouldAddToIgnoreList?: (module: Module) => boolean;
+  /** Include async paths in dependency map */
+  includeAsyncPaths?: boolean;
+  /** Modules only (skip prelude and runtime) */
+  modulesOnly?: boolean;
+  /** Async require module path */
+  asyncRequireModulePath?: string;
+  /** Get source URL for module */
+  getSourceUrl?: (module: Module) => string;
 }
