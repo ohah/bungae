@@ -2,11 +2,8 @@
  * Dependency Graph - Builds dependency graph from entry point
  */
 
-import { readFileSync, existsSync, mkdirSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { resolve, dirname, join } from 'path';
-
-import { createPlatformResolverPlugin } from '../resolver/platform-plugin';
+import { readFileSync, existsSync } from 'fs';
+import { resolve, dirname } from 'path';
 import { getPrependedModules } from '../serializer';
 import type { Module as SerializerModule } from '../serializer/types';
 import { extractDependencies } from '../transformer/utils';
@@ -354,7 +351,8 @@ export async function buildGraph(options: GraphBuildOptions): Promise<GraphBuild
   const prepend: SerializerModule[] = getPrependedModules({
     dev,
     globalPrefix: '',
-    polyfills: [], // TODO: Add polyfills from config
+    polyfills: options.serializer?.polyfills || [],
+    extraVars: options.serializer?.extraVars,
   });
 
   return {
