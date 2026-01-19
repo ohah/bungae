@@ -258,4 +258,73 @@ describe('baseJSBundle Metro Exact Tests', () => {
     // Pre should contain polyfill
     expect(bundle.pre).toBe('__d(function() {/* code for polyfill */});');
   });
+
+  // Metro test 7: should add an inline source map to a very simple bundle
+  // TODO: Phase 2 - Implement inlineSourceMap generation
+  test.skip('should add an inline source map to a very simple bundle (Metro test 7)', async () => {
+    const bundle = await baseJSBundle('/root/foo', [polyfill], [fooModule, barModule], {
+      createModuleId: (filePath) => path.basename(filePath),
+      dev: true,
+      getRunModuleStatement: (moduleId) => `require(${JSON.stringify(moduleId)});`,
+      globalPrefix: '',
+      projectRoot: '/root',
+      serverRoot: '/root',
+      runModule: true,
+      inlineSourceMap: true,
+    });
+
+    // Metro expected output:
+    // bundle.post.slice(0, bundle.post.lastIndexOf('base64')) should equal:
+    // 'require("foo");\n//# sourceMappingURL=data:application/json;charset=utf-8;'
+    // And the base64 part should decode to a valid source map with:
+    // { mappings: '', names: [], sources: ['/root/foo', '/root/bar'], sourcesContent: ['foo-source', 'bar-source'], version: 3 }
+
+    expect(bundle.post.slice(0, bundle.post.lastIndexOf('base64'))).toBe(
+      'require("foo");\n//# sourceMappingURL=data:application/json;charset=utf-8;',
+    );
+    const sourceMapJson = JSON.parse(
+      Buffer.from(bundle.post.slice(bundle.post.lastIndexOf('base64') + 7), 'base64').toString(),
+    );
+    expect(sourceMapJson).toEqual({
+      mappings: '',
+      names: [],
+      sources: ['/root/foo', '/root/bar'],
+      sourcesContent: ['foo-source', 'bar-source'],
+      version: 3,
+    });
+  });
+
+  // Metro test 8: emits x_google_ignoreList based on shouldAddToIgnoreList
+  // TODO: Phase 2 - Implement x_google_ignoreList generation
+  test.skip('emits x_google_ignoreList based on shouldAddToIgnoreList (Metro test 8)', async () => {
+    const bundle = await baseJSBundle('/root/foo', [polyfill], [fooModule, barModule], {
+      createModuleId: (filePath) => path.basename(filePath),
+      dev: true,
+      getRunModuleStatement: (moduleId) => `require(${JSON.stringify(moduleId)});`,
+      globalPrefix: '',
+      projectRoot: '/root',
+      serverRoot: '/root',
+      runModule: true,
+      inlineSourceMap: true,
+      shouldAddToIgnoreList: () => true,
+    });
+
+    // Metro expected output:
+    // bundle.post.slice(0, bundle.post.lastIndexOf('base64')) should equal:
+    // 'require("foo");\n//# sourceMappingURL=data:application/json;charset=utf-8;'
+    // And the base64 part should decode to a source map with x_google_ignoreList: [0, 1]
+
+    expect(bundle.post.slice(0, bundle.post.lastIndexOf('base64'))).toBe(
+      'require("foo");\n//# sourceMappingURL=data:application/json;charset=utf-8;',
+    );
+    const sourceMapJson = JSON.parse(
+      Buffer.from(bundle.post.slice(bundle.post.lastIndexOf('base64') + 7), 'base64').toString(),
+    );
+    expect(sourceMapJson).toEqual(
+      expect.objectContaining({
+        sources: ['/root/foo', '/root/bar'],
+        x_google_ignoreList: [0, 1],
+      }),
+    );
+  });
 });
