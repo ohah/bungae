@@ -44,11 +44,6 @@ export interface GraphBuildOptions {
   };
   /** Transformer config */
   transformer: {
-    babel?: {
-      include?: string[];
-      plugins?: string[];
-      presets?: string[];
-    };
     minifier?: 'bun' | 'terser' | 'esbuild';
     inlineRequires?: boolean;
   };
