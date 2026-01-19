@@ -51,8 +51,8 @@ export type { Module, Bundle, SerializerOptions } from './serializer';
 export { buildGraph, graphModulesToSerializerModules } from './graph';
 export type { GraphBuildOptions, GraphBuildResult, GraphModule } from './graph/types';
 
-import { writeFileSync, mkdirSync } from 'fs';
-import { resolve, join } from 'path';
+import { writeFileSync, mkdirSync, copyFileSync, existsSync, statSync } from 'fs';
+import { resolve, join, dirname } from 'path';
 
 import type { ResolvedConfig } from './config/types';
 import { buildGraph, graphModulesToSerializerModules } from './graph';
@@ -79,7 +79,6 @@ export async function build(config: ResolvedConfig): Promise<void> {
       nodeModulesPaths: resolver.nodeModulesPaths,
     },
     transformer: {
-      babel: transformer.babel,
       minifier: transformer.minifier,
       inlineRequires: transformer.inlineRequires,
     },
@@ -101,7 +100,8 @@ export async function build(config: ResolvedConfig): Promise<void> {
 
   // Create serializer options
   const createModuleId = createModuleIdFactory();
-  const globalPrefix = '__BUNGAE__';
+  // Metro uses empty string for globalPrefix to maintain compatibility
+  const globalPrefix = '';
   const serverRoot = config.server?.unstable_serverRoot ?? root;
 
   // Serialize bundle
@@ -119,6 +119,8 @@ export async function build(config: ResolvedConfig): Promise<void> {
   // Combine bundle code
   // bundle.modules already contains the formatted code from processModules
   const modulesCode = bundle.modules.map(([, code]) => code).join('\n');
+  // Metro-compatible: No bundler-specific comments
+  // Metro doesn't add bundler identifier comments to keep bundles identical
   const bundleCode = `${bundle.pre}\n${modulesCode}\n${bundle.post}`;
 
   // Ensure output directory exists
@@ -126,7 +128,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
   mkdirSync(outputDir, { recursive: true });
 
   // Generate bundle file name based on Metro/React Native conventions
-  // iOS: {entry}.jsbundle (e.g., index.jsbundle or main.jsbundle)
+  // iOS: 
+  //   - Development: {entry}.jsbundle (e.g., index.jsbundle) - served from dev server
+  //   - Release: main.jsbundle (fixed name for app bundle)
   // Android: {entry}.android.bundle (e.g., index.android.bundle)
   // Web: {entry}.bundle.js (e.g., index.bundle.js)
   // Extract base name from entry path (handle paths like 'basic_bundle/TestBundle.js')
@@ -137,7 +141,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
       ?.replace(/\.(js|ts|jsx|tsx)$/, '') || 'index';
   let bundleFileName: string;
   if (platform === 'ios') {
-    bundleFileName = `${entryBaseName}.jsbundle`;
+    // iOS release builds use main.jsbundle (as per React Native convention)
+    // Development builds can use index.jsbundle (served from dev server)
+    bundleFileName = dev ? `${entryBaseName}.jsbundle` : 'main.jsbundle';
   } else if (platform === 'android') {
     bundleFileName = `${entryBaseName}.android.bundle`;
   } else {
@@ -151,6 +157,52 @@ export async function build(config: ResolvedConfig): Promise<void> {
   console.log(`\n✅ Bundle written to: ${bundlePath}`);
   console.log(`   Modules: ${graphModules.length}`);
   console.log(`   Size: ${(bundleCode.length / 1024).toFixed(2)} KB`);
+  console.log(`   Bundler: Bungae v${VERSION}`);
+  console.log(`   Dev mode: ${dev}, Platform: ${platform}`);
+
+  // For release builds, also copy to React Native expected locations
+  // Always copy for iOS/Android release builds (dev === false)
+  if (platform === 'android' || platform === 'ios') {
+    console.log(`   🔄 Attempting to copy bundle for ${platform} (dev: ${dev})...`);
+    if (platform === 'android') {
+      // Android: Copy to android/app/src/main/assets/
+      const androidAssetsDir = join(root, 'android', 'app', 'src', 'main', 'assets');
+      const androidParentDir = dirname(androidAssetsDir);
+      console.log(`   📍 Checking Android directory: ${androidParentDir}`);
+      if (existsSync(androidParentDir)) {
+        mkdirSync(androidAssetsDir, { recursive: true });
+        const androidBundlePath = join(androidAssetsDir, bundleFileName);
+        copyFileSync(bundlePath, androidBundlePath);
+        console.log(`   📦 Copied to: ${androidBundlePath}`);
+      } else {
+        console.log(`   ⚠️  Android assets directory not found: ${androidParentDir}`);
+      }
+    } else if (platform === 'ios') {
+      // iOS: Copy to ios/ directory (will be included in Xcode project)
+      const iosDir = join(root, 'ios');
+      console.log(`   📍 Checking iOS directory: ${iosDir}`);
+      if (existsSync(iosDir)) {
+        const iosBundlePath = join(iosDir, bundleFileName);
+        console.log(`   📍 Target iOS bundle path: ${iosBundlePath}`);
+        copyFileSync(bundlePath, iosBundlePath);
+        console.log(`   📦 Copied to: ${iosBundlePath}`);
+        console.log(`   ✅ iOS bundle ready for Xcode build`);
+        
+        // Verify the copy
+        if (existsSync(iosBundlePath)) {
+          const stats = statSync(iosBundlePath);
+          console.log(`   ✅ Verified: ${iosBundlePath} exists (${(stats.size / 1024).toFixed(2)} KB)`);
+        } else {
+          console.log(`   ❌ ERROR: Copy failed - file not found at ${iosBundlePath}`);
+        }
+      } else {
+        console.log(`   ⚠️  iOS directory not found: ${iosDir}`);
+        console.log(`   📍 Current root: ${root}`);
+      }
+    }
+  } else if (dev) {
+    console.log(`   ℹ️  Development mode: Skipping bundle copy to native directories`);
+  }
 }
 
 export async function serve(config: ResolvedConfig): Promise<void> {
@@ -181,7 +233,6 @@ export async function serve(config: ResolvedConfig): Promise<void> {
         nodeModulesPaths: resolver.nodeModulesPaths,
       },
       transformer: {
-        babel: transformer.babel,
         minifier: transformer.minifier,
         inlineRequires: transformer.inlineRequires,
       },
@@ -191,8 +242,14 @@ export async function serve(config: ResolvedConfig): Promise<void> {
     const prepend = graphResult.prepend;
 
     const createModuleId = createModuleIdFactory();
-    const globalPrefix = '__BUNGAE__';
+    // Metro uses empty string for globalPrefix to maintain compatibility
+    const globalPrefix = '';
     const serverRoot = server?.unstable_serverRoot ?? root;
+
+    // Build source URL for development server
+    const bundleUrl = new URL(`http://${hostname}:${port}/index.bundle`);
+    bundleUrl.searchParams.set('platform', platform);
+    bundleUrl.searchParams.set('dev', 'true');
 
     bundle = await baseJSBundle(graphResult.entryModule.path, prepend, graphModules, {
       createModuleId,
@@ -202,6 +259,8 @@ export async function serve(config: ResolvedConfig): Promise<void> {
       serverRoot,
       globalPrefix,
       runModule: true,
+      sourceUrl: bundleUrl.toString(),
+      sourceMapUrl: bundleUrl.toString().replace('.bundle', '.map'),
     });
   }
 
@@ -215,7 +274,8 @@ export async function serve(config: ResolvedConfig): Promise<void> {
     async fetch(req) {
       const url = new URL(req.url);
 
-      // Handle bundle request
+      // Handle bundle request (Metro-compatible format)
+      // Supports: /index.bundle, /index.bundle?platform=ios&dev=true, etc.
       if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
         // Rebuild bundle on each request (will be optimized with file watching later)
         await rebuildBundle();
@@ -227,6 +287,17 @@ export async function serve(config: ResolvedConfig): Promise<void> {
           headers: {
             'Content-Type': 'application/javascript',
             'Cache-Control': 'no-cache',
+            'X-Metro-Version': '0.0.1', // Metro-compatible header
+          },
+        });
+      }
+
+      // Handle status endpoint (Metro-compatible)
+      // React Native checks this to verify the server is running
+      if (url.pathname === '/status' || url.pathname === '/status.txt') {
+        return new Response('packager-status:running', {
+          headers: {
+            'Content-Type': 'text/plain',
           },
         });
       }
