@@ -71,12 +71,14 @@ export function mergeConfig(
     };
 
     // Handle mode -> dev conversion
-    if (userConfig.mode) {
+    if (userConfig.mode !== undefined) {
       merged.dev = userConfig.mode === 'development';
+      merged.mode = userConfig.mode;
     }
 
     // Handle dev -> mode conversion
     if (userConfig.dev !== undefined) {
+      merged.dev = userConfig.dev;
       merged.mode = userConfig.dev ? 'development' : 'production';
     }
   }
