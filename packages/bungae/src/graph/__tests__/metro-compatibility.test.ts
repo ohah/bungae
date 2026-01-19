@@ -1,25 +1,28 @@
 /**
  * Metro Compatibility Tests
- * 
+ *
  * These tests verify that Bungae produces bundles compatible with Metro's format
  * and includes all necessary modules like Metro does.
  */
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from 'fs';
-import { join, resolve } from 'path';
 import { tmpdir } from 'os';
+import { join, resolve } from 'path';
 
-import { buildGraph, graphModulesToSerializerModules } from '../index';
 import { baseJSBundle, createModuleIdFactory, getRunModuleStatement } from '../../serializer';
-import type { GraphBuildOptions } from '../types';
 import type { SerializerOptions } from '../../serializer/types';
+import { buildGraph, graphModulesToSerializerModules } from '../index';
+import type { GraphBuildOptions } from '../types';
 
 describe('Metro Compatibility', () => {
   let testDir: string;
 
   beforeEach(() => {
-    testDir = join(tmpdir(), `bungae-metro-test-${Date.now()}-${Math.random().toString(36).substring(7)}`);
+    testDir = join(
+      tmpdir(),
+      `bungae-metro-test-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+    );
     mkdirSync(testDir, { recursive: true });
   });
 
@@ -234,7 +237,7 @@ describe('Metro Compatibility', () => {
 
     // Should extract './a' from original code before transformation
     expect(result.modules.has(resolve(testDir, 'a.js'))).toBe(true);
-    
+
     const entryModule = result.modules.get(resolve(testDir, 'index.js'));
     expect(entryModule).toBeDefined();
     expect(entryModule!.dependencies).toContain(resolve(testDir, 'a.js'));
