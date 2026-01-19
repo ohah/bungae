@@ -68,29 +68,40 @@ Entry → [Resolution] → [Transformation] → [Serialization] → Bundle
 2. **Transformation**: 코드 변환 (Bun 내장 우선, Babel 선택적)
 3. **Serialization**: 번들 생성 (Plain, RAM Bundle)
 
-### Transformer 전략
+### Transformer 전략: Metro 호환 변환 순서
 
-```typescript
-transformer: {
-  // 기본: Bun 트랜스파일러 (가장 빠름)
-  default: 'bun',
+Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작업을 담당:
 
-  // Babel 필요한 패키지만 지정
-  babel: {
-    include: ['**/react-native-reanimated/**'],
-    plugins: ['react-native-reanimated/plugin'],
-  },
-}
+```
+1. Hermes Parser Plugin - Flow + JSX 파싱 (Babel only)
+2. Flow Enum Transform   - Flow enum 처리 (Babel only)
+3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
+4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
+5. JSX Transformation    - JSX 변환 (OXC - fast)
 ```
 
-### Babel이 필요한 케이스
+| 단계 | 도구 | 역할 | 이유 |
+|------|------|------|------|
+| 1-3 | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
+| 4 | SWC | ESM → CJS 변환 | Babel보다 빠름 |
+| 5 | OXC | JSX 변환 | 가장 빠른 JSX 변환 |
 
-| 라이브러리              | 이유             |
-| ----------------------- | ---------------- |
-| react-native-reanimated | worklet 변환     |
-| styled-components       | displayName 주입 |
-| decorator 문법          | @observable 등   |
-| Flow 코드               | 타입 제거        |
+### 점진적 Babel 제거 계획
+
+현재 Flow 처리를 위해 Babel을 사용하지만, 장기적으로 Babel 의존성을 최소화할 계획:
+
+- **Phase 1 (현재)**: Flow 파일용 Babel + SWC/OXC로 나머지 변환
+- **Phase 2**: OXC가 Flow 지원하면 Babel 제거 가능 (대기 중)
+- **Phase 3**: 전체 파이프라인을 OXC/SWC로 통합, Babel은 특수 플러그인만
+
+### Babel이 필수인 케이스
+
+| 라이브러리/기능         | 이유                    | 대안                  |
+| ----------------------- | ----------------------- | --------------------- |
+| Flow 코드               | Hermes parser만 가능    | OXC Flow 지원 대기    |
+| react-native-reanimated | worklet 변환            | 대안 없음             |
+| styled-components       | displayName 주입        | 대안 없음             |
+| decorator 문법          | @observable 등          | 대안 없음             |
 
 ### 주요 Bun API
 
