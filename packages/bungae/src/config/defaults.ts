@@ -26,11 +26,6 @@ export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
  * Default transformer configuration
  */
 export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
-  babel: {
-    include: [],
-    plugins: [],
-    presets: [],
-  },
   minifier: 'bun',
   inlineRequires: false,
 };

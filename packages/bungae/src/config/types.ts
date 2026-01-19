@@ -28,15 +28,6 @@ export interface ResolverConfig {
  * Transformer configuration
  */
 export interface TransformerConfig {
-  /** Babel configuration */
-  babel?: {
-    /** Glob patterns to include */
-    include?: string[];
-    /** Babel plugins */
-    plugins?: string[];
-    /** Babel presets */
-    presets?: string[];
-  };
   /** Minifier to use */
   minifier?: 'bun' | 'terser' | 'esbuild';
   /** Enable inline requires */
