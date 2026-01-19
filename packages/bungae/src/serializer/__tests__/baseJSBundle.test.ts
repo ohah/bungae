@@ -274,7 +274,7 @@ describe('baseJSBundle', () => {
   test('should find and include InitializeCore from graph modules', async () => {
     const entryPoint = '/entry.js';
     const initializeCorePath = '/node_modules/react-native/Libraries/Core/InitializeCore.js';
-    
+
     const graphModules: Module[] = [
       {
         path: entryPoint,
@@ -301,11 +301,11 @@ describe('baseJSBundle', () => {
     // InitializeCore should be found and included in runBeforeMainModule
     const initializeCoreId = createModuleId(initializeCorePath);
     const entryId = createModuleId(entryPoint);
-    
+
     // Post should contain InitializeCore execution before entry
     expect(bundle.post).toContain(`__r(${JSON.stringify(initializeCoreId)})`);
     expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
-    
+
     // InitializeCore should be executed before entry
     const initializeCoreIndex = bundle.post.indexOf(`__r(${JSON.stringify(initializeCoreId)})`);
     const entryIndex = bundle.post.indexOf(`__r(${JSON.stringify(entryId)})`);
@@ -343,7 +343,7 @@ describe('baseJSBundle', () => {
   test('should respect runBeforeMainModule option', async () => {
     const entryPoint = '/entry.js';
     const customModulePath = '/custom-init.js';
-    
+
     const graphModules: Module[] = [
       {
         path: entryPoint,
@@ -370,11 +370,11 @@ describe('baseJSBundle', () => {
 
     const customId = createModuleId(customModulePath);
     const entryId = createModuleId(entryPoint);
-    
+
     // Custom module should be executed before entry
     expect(bundle.post).toContain(`__r(${JSON.stringify(customId)})`);
     expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
-    
+
     const customIndex = bundle.post.indexOf(`__r(${JSON.stringify(customId)})`);
     const entryIndex = bundle.post.indexOf(`__r(${JSON.stringify(entryId)})`);
     expect(customIndex).toBeLessThan(entryIndex);
@@ -414,7 +414,7 @@ describe('baseJSBundle', () => {
 
       const initializeCoreId = createModuleId(initializeCorePath);
       const entryId = createModuleId(entryPoint);
-      
+
       // InitializeCore should be found and executed before entry
       expect(bundle.post).toContain(`__r(${JSON.stringify(initializeCoreId)})`);
       expect(bundle.post).toContain(`__r(${JSON.stringify(entryId)})`);
