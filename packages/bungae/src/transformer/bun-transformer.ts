@@ -24,15 +24,7 @@ export async function transformWithBun(options: TransformOptions): Promise<Trans
     },
   });
 
-  let transformed: string;
-  try {
-    transformed = transpiler.transformSync(code);
-  } catch {
-    // If transformation fails (e.g., Flow syntax), try to handle gracefully
-    // For now, return the code as-is (silently, to avoid too many warnings)
-    // Flow files and other unsupported syntax will be passed through
-    transformed = code;
-  }
+  const transformed = transpiler.transformSync(code);
 
   // Bun.Transpiler handles TypeScript/JSX transformations and define variables
   // Flow type imports, ESM→CJS conversion, and type assertions are handled by oxc
