@@ -4,6 +4,7 @@
 
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
+
 import { getPrependedModules } from '../serializer';
 import type { Module as SerializerModule } from '../serializer/types';
 import { extractDependencies } from '../transformer/utils';
