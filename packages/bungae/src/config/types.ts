@@ -44,6 +44,12 @@ export interface SerializerConfig {
   prelude?: string[];
   /** Bundle type */
   bundleType?: BundleType;
+  /** Extra global variables to inject into prelude (Metro-compatible) */
+  extraVars?: Record<string, unknown>;
+  /** Get modules to run before main module (Metro-compatible) */
+  getModulesRunBeforeMainModule?: (entryFilePath: string) => string[];
+  /** Get polyfills (Metro-compatible) */
+  getPolyfills?: (options: { platform: string | null }) => string[];
 }
 
 /**

@@ -10,7 +10,8 @@ gem 'xcodeproj', '< 1.26.0'
 gem 'concurrent-ruby', '< 1.3.4'
 
 # Ruby 3.4.0 has removed some libraries from the standard library.
-gem 'bigdecimal'
+# bigdecimal is included in Ruby 3.3.x, but required for older versions
+gem 'bigdecimal' if Gem::Version.new(RUBY_VERSION) < Gem::Version.new('3.3.0')
 gem 'logger'
 gem 'benchmark'
 gem 'mutex_m'

@@ -94,29 +94,33 @@ export async function baseJSBundle(
 
 /**
  * Get prepended modules (prelude, metro-runtime, polyfills)
+ * These are all script modules (type: 'js/script') that run without __d() wrapping
  */
 export function getPrependedModules(options: {
   dev: boolean;
   globalPrefix: string;
   requireCycleIgnorePatterns?: RegExp[];
   polyfills?: string[];
+  extraVars?: Record<string, unknown>;
 }): Module[] {
   const modules: Module[] = [];
 
-  // 1. Prelude (variable declarations)
+  // 1. Prelude (variable declarations) - virtual script
   const preludeCode = getPreludeCode({
     isDev: options.dev,
     globalPrefix: options.globalPrefix,
     requireCycleIgnorePatterns: options.requireCycleIgnorePatterns || [],
+    extraVars: options.extraVars,
   });
 
   modules.push({
     path: '__prelude__',
     code: preludeCode,
     dependencies: [],
+    type: 'js/script/virtual',
   });
 
-  // 2. Metro runtime
+  // 2. Metro runtime - script module
   try {
     const metroRuntimePath = require.resolve('metro-runtime/src/polyfills/require.js');
     const metroRuntimeCode = readFileSync(metroRuntimePath, 'utf-8');
@@ -125,6 +129,7 @@ export function getPrependedModules(options: {
       path: metroRuntimePath,
       code: metroRuntimeCode,
       dependencies: [],
+      type: 'js/script',
     });
   } catch (error) {
     throw new Error(
@@ -132,7 +137,7 @@ export function getPrependedModules(options: {
     );
   }
 
-  // 3. Polyfills (if any)
+  // 3. Polyfills (if any) - script modules
   if (options.polyfills) {
     for (const polyfill of options.polyfills) {
       try {
@@ -143,6 +148,7 @@ export function getPrependedModules(options: {
           path: polyfillPath,
           code: polyfillCode,
           dependencies: [],
+          type: 'js/script',
         });
       } catch (error) {
         console.warn(`Failed to load polyfill ${polyfill}: ${error}`);

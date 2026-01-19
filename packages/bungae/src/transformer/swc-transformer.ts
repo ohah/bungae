@@ -80,7 +80,9 @@ export async function stripFlowTypesWithBabel(code: string, filePath?: string): 
   const transformResult = transformFromAstSync(sourceAst, code, babelConfig);
 
   if (!transformResult?.code) {
-    throw new Error(`Babel Flow stripping failed for ${filePath}: transformation returned empty code`);
+    throw new Error(
+      `Babel Flow stripping failed for ${filePath}: transformation returned empty code`,
+    );
   }
 
   return transformResult.code;

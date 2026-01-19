@@ -11,26 +11,19 @@ import { convertRequirePaths } from './convertRequirePaths';
  * Wrap module code with __d() call
  */
 export async function wrapModule(module: Module, options: SerializerOptions): Promise<string> {
-  // Script modules (polyfills, prelude, metro-runtime) should not be wrapped with parameters
-  // Metro treats js/script type modules as scripts that run as-is
-  // Note: Modern Node.js (v12+) supports const/let in vm.runInNewContext, so no transformation needed
-  // Metro's metro-runtime also uses const/let, and it works fine
+  // Script modules (type: 'js/script' or 'js/script/virtual') run as-is without __d() wrapping
+  // This is Metro-compatible behavior - check module.type field
   if (isScriptModule(module)) {
-    // Metro runtime is already wrapped in IIFE: (function (global) { ... })
+    // Metro runtime polyfill is already wrapped in IIFE: (function (global) { ... })
     // We just need to call it with the global object
-    // Metro format: (function (global) { ... })('undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this);
-    if (module.path.includes('metro-runtime')) {
+    if (module.type === 'js/script' && module.path.includes('metro-runtime/src/polyfills/')) {
       const globalThisFallback =
         "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
-      // Check if code is already wrapped in IIFE
       const trimmedCode = module.code.trim();
       if (trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function')) {
-        // Already wrapped, just append the call
-        // Remove trailing semicolon if present, then add call
         const codeWithoutSemicolon = trimmedCode.replace(/;?\s*$/, '');
         return `${codeWithoutSemicolon}(${globalThisFallback});`;
       }
-      // Not wrapped, wrap it with global parameter name (Metro uses 'global')
       return `!(function(global){${module.code}})(${globalThisFallback});`;
     }
     return module.code;
@@ -181,20 +174,16 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
 
 /**
  * Check if module is a script module (should not have __d() parameters)
+ * Metro-compatible: checks module.type field ('js/script' or 'js/script/virtual')
  */
 function isScriptModule(module: Module): boolean {
-  // Script modules include:
-  // - Prelude (variable declarations)
-  // - Metro runtime
-  // - Polyfills
-  // - Source map comments
-  return (
-    module.path === '__prelude__' ||
-    module.path.includes('metro-runtime') ||
-    module.path === '/polyfill' ||
-    module.path.startsWith('source-') ||
-    module.path.startsWith('require-')
-  );
+  // Primary check: module.type field (Metro-compatible)
+  if (module.type?.startsWith('js/script')) {
+    return true;
+  }
+
+  // Fallback for modules without type field (e.g., source-map, require- scripts)
+  return module.path.startsWith('source-') || module.path.startsWith('require-');
 }
 
 /**

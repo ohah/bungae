@@ -2,6 +2,14 @@
  * Serializer Types
  */
 
+/**
+ * Module type (Metro-compatible)
+ * - 'js/module': Regular JS module (wrapped with __d())
+ * - 'js/script': Script module (not wrapped, runs as-is - polyfills, prelude)
+ * - 'js/script/virtual': Virtual script module (generated code)
+ */
+export type ModuleType = 'js/module' | 'js/script' | 'js/script/virtual';
+
 export interface Module {
   /** Module path */
   path: string;
@@ -13,6 +21,8 @@ export interface Module {
   originalDependencies?: string[];
   /** Source map (optional) */
   map?: string;
+  /** Module type (Metro-compatible) - defaults to 'js/module' if not specified */
+  type?: ModuleType;
 }
 
 export interface Bundle {

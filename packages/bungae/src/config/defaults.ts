@@ -37,6 +37,9 @@ export const DEFAULT_SERIALIZER: Required<SerializerConfig> = {
   polyfills: [],
   prelude: [],
   bundleType: 'plain',
+  extraVars: {},
+  getModulesRunBeforeMainModule: () => [],
+  getPolyfills: () => [],
 };
 
 /**

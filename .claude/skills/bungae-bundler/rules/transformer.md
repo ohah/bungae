@@ -90,7 +90,7 @@ async function transformJsxWithSwc(code: string, filePath: string): Promise<stri
 - **목표**: Babel 없이 Hermes Parser를 직접 사용하여 Flow 타입 제거
 - **방법**: Hermes Parser AST를 직접 조작하여 Flow 타입 제거 구현
 - **참고**: https://github.com/facebook/hermes/tree/main/lib/Parser
-- **장점**: 
+- **장점**:
   - Babel 의존성 제거 가능
   - 더 빠른 파싱 성능 (Hermes는 C++ 기반)
   - React Native의 공식 파서 사용으로 호환성 향상

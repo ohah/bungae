@@ -5,8 +5,9 @@
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { defineConfig } from 'bungae';
-import type { BungaeConfig } from 'bungae';
+// Use source files directly during development (avoid dist/index.js issues)
+import { defineConfig } from '../../packages/bungae/src/config';
+import type { BungaeConfig } from '../../packages/bungae/src/config/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -48,6 +49,9 @@ export default defineConfig({
     polyfills: [],
     prelude: [],
     bundleType: 'plain',
+    extraVars: {
+      __BUNGAE__: true,
+    },
   },
   server: {
     port: 8081,

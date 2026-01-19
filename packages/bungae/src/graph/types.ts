@@ -47,6 +47,11 @@ export interface GraphBuildOptions {
     minifier?: 'bun' | 'terser' | 'esbuild';
     inlineRequires?: boolean;
   };
+  /** Serializer config */
+  serializer?: {
+    extraVars?: Record<string, unknown>;
+    polyfills?: string[];
+  };
   /** On progress callback */
   onProgress?: (processed: number, total: number) => void;
 }
