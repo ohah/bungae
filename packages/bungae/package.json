@@ -51,17 +51,24 @@
   },
   "scripts": {
     "dev": "bunup --watch",
-    "build": "bunup",
+    "build": "bunup && chmod +x dist/cli.cjs",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@swc/core": "^1.7.0",
+    "bun": "^1.3.6",
+    "bunup": "^0.16.20",
     "metro-runtime": "^0.83.3",
-    "minimatch": "^10.1.1"
+    "oxc-parser": "^0.108.0",
+    "oxc-transform": "^0.108.0"
   },
   "devDependencies": {
     "@types/bun": "latest",
     "typescript": "^5"
+  },
+  "engines": {
+    "bun": ">=1.0.0"
   },
   "peerDependencies": {
     "react-native": ">=0.70.0"
