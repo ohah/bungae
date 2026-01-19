@@ -157,5 +157,80 @@ describe('Transformer Utils', () => {
       const deps = await extractDependencies(code);
       expect(deps).toEqual([]);
     });
+
+    test('should extract dependencies from Flow + JSX file (ActivityIndicator pattern)', async () => {
+      // Actual React Native ActivityIndicator.js code pattern that was failing
+      const activityIndicatorCode = `
+/**
+ * @flow strict-local
+ */
+
+'use strict';
+
+import type {HostComponent} from '../../../src/private/types/HostComponent';
+import type {ViewProps} from '../View/ViewPropTypes';
+
+import StyleSheet, {type ColorValue} from '../../StyleSheet/StyleSheet';
+import Platform from '../../Utilities/Platform';
+import View from '../View/View';
+import type {NativeProps as AndroidProps} from './ActivityIndicatorNativeComponent';
+import type {NativeProps as IOSProps} from './ActivityIndicatorNativeComponent';
+import AndroidActivityIndicatorNativeComponent from './ActivityIndicatorNativeComponent';
+import IOSActivityIndicatorNativeComponent from './ActivityIndicatorNativeComponent';
+
+const PlatformActivityIndicator =
+  Platform.OS === 'android'
+    ? AndroidActivityIndicatorNativeComponent
+    : IOSActivityIndicatorNativeComponent;
+
+type Props = $ReadOnly<{
+  ...ViewProps,
+  animating?: ?boolean,
+  color?: ?ColorValue,
+  hidesWhenStopped?: ?boolean,
+  size?: ?('small' | 'large'),
+  style?: ?ViewProps['style'],
+}>;
+
+function ActivityIndicator(props: Props, forwardedRef): React.ElementRef<HostComponent<Props>> {
+  const {animating = true, color, hidesWhenStopped = true, size = 'small', style, ...restProps} = props;
+
+  const nativeProps = {
+    animating,
+    color: color ?? undefined,
+    hidesWhenStopped,
+    size,
+  };
+
+  const androidProps =
+    Platform.OS === 'android'
+      ? {
+          styleAttr: 'Normal',
+          indeterminate: true
+        }
+      : null;
+
+  return <View onLayout={onLayout} style={StyleSheet.compose(styles.container, style)}>
+      {Platform.OS === 'android' ? <PlatformActivityIndicator {...nativeProps} {...androidProps} /> : <PlatformActivityIndicator {...nativeProps} />}
+    </View>;
+}
+
+export default React.forwardRef<Props, React.ElementRef<HostComponent<Props>>>(ActivityIndicator);
+`;
+
+      // This should not throw an error
+      // Flow types should be stripped, JSX should be transformed, then dependencies extracted
+      const deps = await extractDependencies(activityIndicatorCode, 'ActivityIndicator.js');
+
+      // Should extract non-type imports
+      expect(deps).toContain('../../StyleSheet/StyleSheet');
+      expect(deps).toContain('../../Utilities/Platform');
+      expect(deps).toContain('../View/View');
+      expect(deps).toContain('./ActivityIndicatorNativeComponent');
+
+      // Should NOT extract type-only imports
+      expect(deps).not.toContain('../../../src/private/types/HostComponent');
+      expect(deps).not.toContain('../View/ViewPropTypes');
+    });
   });
 });
