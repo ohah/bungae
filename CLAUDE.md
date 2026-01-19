@@ -154,6 +154,9 @@ Bun.hash(); // 캐시 키 생성
 
 - Metro 문서: `reference/metro/docs/`
 - Metro 소스: `reference/metro/packages/`
+- **Metro 번들 참조**: `metro/` - Metro로 생성된 실제 번들 파일들 (iOS/Android, dev/release)
+  - Bungae 번들 결과와 Metro 번들 결과를 비교하기 위한 참조용
+  - 비교 대상으로 사용하여 Metro 호환성 검증
 - Re.Pack 소스: `reference/repack/` - Webpack/Rspack 기반 React Native 번들러
 - Rollipop 소스: `reference/rollipop/` - Rolldown 기반 React Native 번들러
 - 상세 가이드: `.claude/skills/bungae-bundler/`
