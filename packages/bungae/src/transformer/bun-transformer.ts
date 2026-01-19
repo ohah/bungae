@@ -3,12 +3,12 @@
  */
 
 import type { TransformOptions, TransformResult } from './types';
-import { getLoader } from './utils';
+import { getLoader, extractDependencies } from './utils';
 
 /**
  * Transform code using Bun.Transpiler
  */
-export function transformWithBun(options: TransformOptions): TransformResult {
+export async function transformWithBun(options: TransformOptions): Promise<TransformResult> {
   const { code, filePath, platform, dev } = options;
   const loader = getLoader(filePath);
 
@@ -34,47 +34,16 @@ export function transformWithBun(options: TransformOptions): TransformResult {
     transformed = code;
   }
 
-  // Extract dependencies (simple regex-based extraction for now)
-  // In Phase 2, this will be more sophisticated with AST parsing
-  const dependencies = extractDependencies(code);
+  // Bun.Transpiler handles TypeScript/JSX transformations and define variables
+  // Flow type imports, ESM→CJS conversion, and type assertions are handled by oxc
+
+  // Extract dependencies from original code (before transformation)
+  // Use AST-based extraction with oxc for accurate dependency detection
+  // For JSX files, oxc-transform is used to transform JSX first, then extract dependencies
+  const dependencies = await extractDependencies(code, filePath);
 
   return {
     code: transformed,
     dependencies,
   };
-}
-
-/**
- * Extract dependencies from source code
- * Simple regex-based extraction (will be improved in Phase 2)
- */
-function extractDependencies(code: string): string[] {
-  const dependencies: string[] = [];
-  const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-  const importRegex = /import\s+.*?\s+from\s+['"]([^'"]+)['"]/g;
-  const dynamicImportRegex = /import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
-
-  let match;
-  while ((match = requireRegex.exec(code)) !== null) {
-    if (match[1]) {
-      dependencies.push(match[1]);
-    }
-  }
-  while ((match = importRegex.exec(code)) !== null) {
-    if (match[1]) {
-      dependencies.push(match[1]);
-    }
-  }
-  while ((match = dynamicImportRegex.exec(code)) !== null) {
-    if (match[1]) {
-      dependencies.push(match[1]);
-    }
-  }
-
-  // Filter out Flow file imports
-  const filtered = dependencies.filter(
-    (dep) => !dep.endsWith('.flow') && !dep.endsWith('.flow.js'),
-  );
-
-  return [...new Set(filtered)];
 }
