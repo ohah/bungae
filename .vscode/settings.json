@@ -1,8 +1,21 @@
 {
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "oxc.enable": true,
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "[typescript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
   "files.exclude": {
     "**/.git": true,
     "**/.DS_Store": true,
     "**/node_modules": true
+  },
+  "[json]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
   },
   "search.exclude": {
     "**/node_modules": true,
