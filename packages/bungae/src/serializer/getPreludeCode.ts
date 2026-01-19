@@ -17,6 +17,7 @@ export function getPreludeCode(options: {
     `__DEV__=${String(isDev)}`,
     'process=globalThis.process||{}',
     `__METRO_GLOBAL_PREFIX__='${globalPrefix}'`,
+    // Metro-compatible: No bundler-specific identifiers
   ];
 
   if (isDev) {
