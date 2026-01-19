@@ -28,22 +28,26 @@ Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작
 2. Flow Enum Transform   - Flow enum 처리 (Babel only)
 3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
 4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
-5. JSX Transformation    - JSX 변환 (OXC - fast)
+5. JSX Transformation    - JSX 변환 (SWC - fast)
 ```
 
-| 단계 | 도구 | 역할 | 이유 |
-|------|------|------|------|
-| 1-3 | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
-| 4 | SWC | ESM → CJS 변환 | Babel보다 빠름 |
-| 5 | OXC | JSX 변환 | 가장 빠른 JSX 변환 |
+| 단계 | 도구           | 역할                | 이유                                |
+| ---- | -------------- | ------------------- | ----------------------------------- |
+| 1-3  | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
+| 4    | SWC            | ESM → CJS 변환      | Babel보다 빠름                      |
+| 5    | SWC            | JSX 변환            | 빠른 JSX 변환                       |
 
 #### 점진적 Babel 제거 계획
 
 현재 Flow 처리를 위해 Babel을 사용하지만, 장기적으로 Babel 의존성을 최소화할 계획:
 
-- **Phase 1 (현재)**: Flow 파일용 Babel + SWC/OXC로 나머지 변환
-- **Phase 2**: OXC가 Flow 지원하면 Babel 제거 가능 (대기 중)
-- **Phase 3**: 전체 파이프라인을 OXC/SWC로 통합, Babel은 특수 플러그인만
+- **Phase 1 (현재)**: Flow 파일용 Babel + SWC로 나머지 변환
+- **Phase 2**: Hermes Parser 직접 통합 - Babel 없이 Hermes Parser AST 조작으로 Flow 타입 제거 구현
+  - 참고: https://github.com/facebook/hermes/tree/main/lib/Parser
+  - Hermes Parser는 React Native의 공식 파서로, Flow 구문을 네이티브 지원
+  - Babel 의존성 제거 및 성능 향상 기대
+- **Phase 3**: SWC Flow 지원 대기 (대안) 또는 전체 파이프라인을 SWC로 통합
+- **Phase 4**: Babel은 특수 플러그인 필요 시에만 사용 (reanimated, styled-components 등)
 
 ### Serialization (번들 직렬화)
 

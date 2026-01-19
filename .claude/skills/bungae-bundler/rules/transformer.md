@@ -13,7 +13,7 @@ Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작
 2. Flow Enum Transform   - Flow enum 처리 (Babel only)
 3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
 4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
-5. JSX Transformation    - JSX 변환 (OXC - fast)
+5. JSX Transformation    - JSX 변환 (SWC - fast)
 ```
 
 ### 현재 구현
@@ -27,10 +27,7 @@ async function stripFlowTypesWithBabel(code: string, filePath?: string): Promise
 
   const result = await babel.transformAsync(code, {
     filename: filePath || 'file.js',
-    plugins: [
-      [hermesParserPlugin.default, { parseLangTypes: 'flow' }],
-      [flowPlugin.default],
-    ],
+    plugins: [[hermesParserPlugin.default, { parseLangTypes: 'flow' }], [flowPlugin.default]],
     babelrc: false,
     configFile: false,
   });
@@ -47,23 +44,34 @@ async function convertEsmToCjsWithSwc(code: string, filePath: string): Promise<s
   return result.code;
 }
 
-// Step 5: OXC (JSX 변환 - 빠름)
-async function transformJsxWithOxc(code: string, filePath: string): Promise<string> {
-  const oxc = await import('oxc-transform');
-  const result = oxc.transformSync(filePath, code, {
-    jsx: { runtime: 'automatic' },
+// Step 5: SWC (JSX 변환 - 빠름)
+async function transformJsxWithSwc(code: string, filePath: string): Promise<string> {
+  const swc = await import('@swc/core');
+  const result = await swc.transform(code, {
+    filename: filePath,
+    jsc: {
+      parser: {
+        syntax: 'typescript',
+        tsx: true,
+      },
+      transform: {
+        react: {
+          runtime: 'automatic',
+        },
+      },
+    },
   });
-  return result.code || code;
+  return result.code;
 }
 ```
 
 ### 도구별 역할
 
-| 단계 | 도구 | 역할 | 이유 |
-|------|------|------|------|
-| 1-3 | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
-| 4 | SWC | ESM → CJS 변환 | Babel보다 빠름 |
-| 5 | OXC | JSX 변환 | 가장 빠른 JSX 변환 |
+| 단계 | 도구           | 역할                | 이유                                |
+| ---- | -------------- | ------------------- | ----------------------------------- |
+| 1-3  | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
+| 4    | SWC            | ESM → CJS 변환      | Babel보다 빠름                      |
+| 5    | SWC            | JSX 변환            | 빠른 JSX 변환                       |
 
 ---
 
@@ -75,26 +83,42 @@ async function transformJsxWithOxc(code: string, filePath: string): Promise<stri
 
 - React Native 코어 및 라이브러리의 Flow 코드 처리
 - `babel-plugin-syntax-hermes-parser` + `@babel/plugin-transform-flow-strip-types`
-- SWC/OXC로 나머지 변환
+- SWC로 나머지 변환
 
-### Phase 2: OXC Flow 지원 대기
+### Phase 2: Hermes Parser 직접 통합
 
-- OXC가 Flow 파싱을 지원하면 Babel 제거 가능
-- 현재 OXC는 TypeScript만 지원
-- 관련 이슈: https://github.com/oxc-project/oxc/issues/flow
+- **목표**: Babel 없이 Hermes Parser를 직접 사용하여 Flow 타입 제거
+- **방법**: Hermes Parser AST를 직접 조작하여 Flow 타입 제거 구현
+- **참고**: https://github.com/facebook/hermes/tree/main/lib/Parser
+- **장점**: 
+  - Babel 의존성 제거 가능
+  - 더 빠른 파싱 성능 (Hermes는 C++ 기반)
+  - React Native의 공식 파서 사용으로 호환성 향상
+- **구현 계획**:
+  1. Hermes Parser로 Flow 코드 파싱 (이미 `hermes-parser` npm 패키지 사용 중)
+  2. AST를 순회하며 Flow 타입 어노테이션 제거
+  3. Flow enum을 런타임 호출로 변환
+  4. 깨끗한 JavaScript 코드 생성
 
-### Phase 3: 완전한 Babel 제거
+### Phase 3: SWC Flow 지원 대기 (대안)
 
-- Flow 지원이 추가되면 전체 파이프라인을 OXC/SWC로 통합
+- SWC가 Flow 파싱을 지원하면 Babel 제거 가능
+- 현재 SWC는 TypeScript만 지원
+- 관련 이슈: SWC Flow 지원 상태 확인 필요
+- **참고**: Phase 2 (Hermes Parser 직접 통합)가 우선순위가 더 높음
+
+### Phase 4: 완전한 Babel 제거
+
+- Flow 지원이 추가되면 전체 파이프라인을 SWC로 통합
 - Babel은 특수 플러그인 필요 시에만 사용 (reanimated, styled-components 등)
 
 ### 현재 Babel이 필수인 경우
 
-| 기능 | 이유 | 대안 |
-|------|------|------|
-| Flow 타입 | Hermes parser만 가능 | OXC Flow 지원 대기 |
-| `import typeof` | Flow 전용 구문 | OXC Flow 지원 대기 |
-| Flow enum | Babel 플러그인 필요 | OXC Flow 지원 대기 |
+| 기능            | 이유                 | 대안               |
+| --------------- | -------------------- | ------------------ |
+| Flow 타입       | Hermes parser만 가능 | SWC Flow 지원 대기 |
+| `import typeof` | Flow 전용 구문       | SWC Flow 지원 대기 |
+| Flow enum       | Babel 플러그인 필요  | SWC Flow 지원 대기 |
 
 ---
 
