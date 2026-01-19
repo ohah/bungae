@@ -22,18 +22,20 @@ export function execBundle(code: string, context: Record<string, unknown> = {}):
 
   // Create a context with minimal globals
   // Bundle code includes metro-runtime which sets up everything needed
-  // Metro uses __METRO_GLOBAL_PREFIX__ which defaults to empty string, but Bungae uses '__BUNGAE__'
-  // The bundle code sets up global['__BUNGAE____d'] = define via metro-runtime
-  // We need to ensure 'global' is available and points to the context
+  // Metro uses __METRO_GLOBAL_PREFIX__ which defaults to empty string
+  // The bundle code sets up global[`${__METRO_GLOBAL_PREFIX__}__d`] = define via metro-runtime
+  // We need to ensure 'global' and 'globalThis' are available and point to the context
   const bundleContext = createContext({
-    global: {},
-    globalThis: {},
     console,
+    Date,
+    JSON,
+    Error,
     ...context,
   });
 
-  // Set global to point to itself (so global.xxx = yyy works)
+  // Set global and globalThis to point to the context (so global.xxx = yyy works)
   bundleContext.global = bundleContext as any;
+  bundleContext.globalThis = bundleContext as any;
 
   return runInNewContext(code, bundleContext);
 }

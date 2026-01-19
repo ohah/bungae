@@ -57,6 +57,7 @@ describe('Build Integration Tests', () => {
         ...defaultConfig,
         entry: 'basic_bundle/TestBundle.js',
         platform: 'ios',
+        dev: true, // Development mode to get TestBundle.jsbundle
         outDir: 'dist',
       },
       testDir,
@@ -87,6 +88,7 @@ describe('Build Integration Tests', () => {
         ...defaultConfig,
         entry: 'basic_bundle/TestBundle.js',
         platform: 'ios',
+        dev: true, // Development mode to get TestBundle.jsbundle
         outDir: 'dist',
       },
       testDir,
@@ -97,8 +99,8 @@ describe('Build Integration Tests', () => {
     const bundlePath = join(testDir, 'dist', 'TestBundle.jsbundle');
     const bundleCode = readFileSync(bundlePath, 'utf-8');
 
-    // Bundle should contain module definitions
-    expect(bundleCode).toContain('__BUNGAE__');
+    // Bundle should contain module definitions (Metro-compatible)
+    expect(bundleCode).toContain('__METRO_GLOBAL_PREFIX__');
     expect(bundleCode).toContain('__d(');
     expect(bundleCode).toContain('__r(');
 
@@ -118,6 +120,7 @@ describe('Build Integration Tests', () => {
           ...defaultConfig,
           entry: 'basic_bundle/TestBundle.js',
           platform,
+          dev: platform === 'ios' ? true : undefined, // iOS dev mode to get TestBundle.jsbundle
           outDir: 'dist',
         },
         testDir,
@@ -171,6 +174,7 @@ describe('Build Integration Tests', () => {
         ...defaultConfig,
         entry: 'basic_bundle/TestBundle.ts',
         platform: 'ios',
+        dev: true, // Development mode to get TestBundle.jsbundle
         outDir: 'dist',
       },
       testDir,
