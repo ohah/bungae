@@ -21,10 +21,29 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ### Transformation (코드 변환)
 
-- **기본**: Bun 내장 트랜스파일러 사용 (가장 빠름)
-- **선택적**: Babel 통합 (react-native-reanimated 등 필요한 경우만)
-- TypeScript/TSX, JSX 변환
-- ES Modules → CommonJS
+Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작업을 담당:
+
+```
+1. Hermes Parser Plugin - Flow + JSX 파싱 (Babel only)
+2. Flow Enum Transform   - Flow enum 처리 (Babel only)
+3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
+4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
+5. JSX Transformation    - JSX 변환 (OXC - fast)
+```
+
+| 단계 | 도구 | 역할 | 이유 |
+|------|------|------|------|
+| 1-3 | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
+| 4 | SWC | ESM → CJS 변환 | Babel보다 빠름 |
+| 5 | OXC | JSX 변환 | 가장 빠른 JSX 변환 |
+
+#### 점진적 Babel 제거 계획
+
+현재 Flow 처리를 위해 Babel을 사용하지만, 장기적으로 Babel 의존성을 최소화할 계획:
+
+- **Phase 1 (현재)**: Flow 파일용 Babel + SWC/OXC로 나머지 변환
+- **Phase 2**: OXC가 Flow 지원하면 Babel 제거 가능 (대기 중)
+- **Phase 3**: 전체 파이프라인을 OXC/SWC로 통합, Babel은 특수 플러그인만
 
 ### Serialization (번들 직렬화)
 
