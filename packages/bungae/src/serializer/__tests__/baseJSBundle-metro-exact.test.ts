@@ -10,10 +10,12 @@ import { baseJSBundle } from '../baseJSBundle';
 import type { Module } from '../types';
 
 // Metro test fixtures
+// Note: polyfill is a script module (type: 'js/script') - runs as-is without __d() parameters
 const polyfill: Module = {
   path: '/polyfill',
   code: '__d(function() {/* code for polyfill */});',
   dependencies: [],
+  type: 'js/script',
 };
 
 const fooModule: Module = {

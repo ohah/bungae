@@ -59,7 +59,7 @@ import { buildGraph, graphModulesToSerializerModules } from './graph';
 import { baseJSBundle, createModuleIdFactory, getRunModuleStatement } from './serializer';
 
 export async function build(config: ResolvedConfig): Promise<void> {
-  const { entry, platform, dev, outDir, root, resolver, transformer } = config;
+  const { entry, platform, dev, outDir, root, resolver, transformer, serializer } = config;
 
   console.log(`Building bundle for ${platform}...`);
   console.log(`Entry: ${entry}`);
@@ -81,6 +81,10 @@ export async function build(config: ResolvedConfig): Promise<void> {
     transformer: {
       minifier: transformer.minifier,
       inlineRequires: transformer.inlineRequires,
+    },
+    serializer: {
+      extraVars: serializer.extraVars,
+      polyfills: serializer.polyfills,
     },
     onProgress: (processed, total) => {
       if (total > 0) {
@@ -208,7 +212,7 @@ export async function build(config: ResolvedConfig): Promise<void> {
 }
 
 export async function serve(config: ResolvedConfig): Promise<void> {
-  const { entry, platform, dev, root, resolver, transformer, server } = config;
+  const { entry, platform, dev, root, resolver, transformer, serializer, server } = config;
   const port = server?.port ?? 8081;
   const hostname = 'localhost';
 
@@ -237,6 +241,10 @@ export async function serve(config: ResolvedConfig): Promise<void> {
       transformer: {
         minifier: transformer.minifier,
         inlineRequires: transformer.inlineRequires,
+      },
+      serializer: {
+        extraVars: serializer.extraVars,
+        polyfills: serializer.polyfills,
       },
     });
 
