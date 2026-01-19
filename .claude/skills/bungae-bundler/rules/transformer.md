@@ -4,6 +4,100 @@
 
 ---
 
+## Metro 호환 변환 순서
+
+Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작업을 담당:
+
+```
+1. Hermes Parser Plugin - Flow + JSX 파싱 (Babel only)
+2. Flow Enum Transform   - Flow enum 처리 (Babel only)
+3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
+4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
+5. JSX Transformation    - JSX 변환 (OXC - fast)
+```
+
+### 현재 구현
+
+```typescript
+// Step 1-3: Babel + Hermes (Flow 처리 - Babel만 가능)
+async function stripFlowTypesWithBabel(code: string, filePath?: string): Promise<string> {
+  const babel = await import('@babel/core');
+  const hermesParserPlugin = await import('babel-plugin-syntax-hermes-parser');
+  const flowPlugin = await import('@babel/plugin-transform-flow-strip-types');
+
+  const result = await babel.transformAsync(code, {
+    filename: filePath || 'file.js',
+    plugins: [
+      [hermesParserPlugin.default, { parseLangTypes: 'flow' }],
+      [flowPlugin.default],
+    ],
+    babelrc: false,
+    configFile: false,
+  });
+  return result?.code || code;
+}
+
+// Step 4: SWC (ESM → CJS - 빠름)
+async function convertEsmToCjsWithSwc(code: string, filePath: string): Promise<string> {
+  const swc = await import('@swc/core');
+  const result = await swc.transform(code, {
+    module: { type: 'commonjs' },
+    // ...
+  });
+  return result.code;
+}
+
+// Step 5: OXC (JSX 변환 - 빠름)
+async function transformJsxWithOxc(code: string, filePath: string): Promise<string> {
+  const oxc = await import('oxc-transform');
+  const result = oxc.transformSync(filePath, code, {
+    jsx: { runtime: 'automatic' },
+  });
+  return result.code || code;
+}
+```
+
+### 도구별 역할
+
+| 단계 | 도구 | 역할 | 이유 |
+|------|------|------|------|
+| 1-3 | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
+| 4 | SWC | ESM → CJS 변환 | Babel보다 빠름 |
+| 5 | OXC | JSX 변환 | 가장 빠른 JSX 변환 |
+
+---
+
+## 점진적 Babel 제거 계획
+
+현재 Flow 처리를 위해 Babel을 사용하지만, 장기적으로 Babel 의존성을 최소화할 계획:
+
+### Phase 1 (현재): Flow 파일용 Babel
+
+- React Native 코어 및 라이브러리의 Flow 코드 처리
+- `babel-plugin-syntax-hermes-parser` + `@babel/plugin-transform-flow-strip-types`
+- SWC/OXC로 나머지 변환
+
+### Phase 2: OXC Flow 지원 대기
+
+- OXC가 Flow 파싱을 지원하면 Babel 제거 가능
+- 현재 OXC는 TypeScript만 지원
+- 관련 이슈: https://github.com/oxc-project/oxc/issues/flow
+
+### Phase 3: 완전한 Babel 제거
+
+- Flow 지원이 추가되면 전체 파이프라인을 OXC/SWC로 통합
+- Babel은 특수 플러그인 필요 시에만 사용 (reanimated, styled-components 등)
+
+### 현재 Babel이 필수인 경우
+
+| 기능 | 이유 | 대안 |
+|------|------|------|
+| Flow 타입 | Hermes parser만 가능 | OXC Flow 지원 대기 |
+| `import typeof` | Flow 전용 구문 | OXC Flow 지원 대기 |
+| Flow enum | Babel 플러그인 필요 | OXC Flow 지원 대기 |
+
+---
+
 ## 기본 전략: Bun 트랜스파일러
 
 Bun은 Zig로 작성된 네이티브 트랜스파일러를 내장.
