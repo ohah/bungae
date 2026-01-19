@@ -9,7 +9,7 @@ apply plugin: "com.facebook.react"
 react {
     /* Folders */
     //   The root of your project, i.e. where "package.json" lives. Default is '../..'
-    // root = file("../../")
+    root = file("../../")
     //   The folder where the react-native NPM package is. Default is ../../node_modules/react-native
     // reactNativeDir = file("../../node_modules/react-native")
     //   The folder where the react-native Codegen package is. Default is ../../node_modules/@react-native/codegen
@@ -52,6 +52,51 @@ react {
 
     /* Autolinking */
     autolinkLibrariesWithApp()
+}
+
+// Custom task to use Bungae bundle if BUNGAE environment variable is set
+def useBungae = System.getenv("BUNGAE") == "true"
+
+if (useBungae) {
+    println "🚀 Using Bungae bundler..."
+    
+    // Disable Metro bundling tasks
+    tasks.whenTaskAdded { task ->
+        if (task.name.contains("createBundle") && task.name.contains("JsAndAssets")) {
+            task.enabled = false
+            println "⏭️  Skipping Metro bundling task: ${task.name}"
+        }
+    }
+    
+    // Verify Bungae bundle exists before build
+    android.applicationVariants.all { variant ->
+        def variantName = variant.name.capitalize()
+        def bundleFileName = "index.android.bundle"
+        def projectRoot = rootProject.projectDir.parentFile
+        
+        // Check multiple possible locations
+        def possiblePaths = [
+            new File(projectRoot, "android/app/src/main/assets/${bundleFileName}"),
+            new File(projectRoot, ".bungae/${bundleFileName}"),
+        ]
+        
+        def bundleFound = false
+        for (def path : possiblePaths) {
+            if (path.exists()) {
+                println "✅ Found Bungae bundle at: ${path}"
+                bundleFound = true
+                break
+            }
+        }
+        
+        if (!bundleFound) {
+            throw new GradleException(
+                "Bungae bundle not found. Please run 'bun run build:bungae --platform android --mode release' first.\n" +
+                "Expected locations:\n" +
+                possiblePaths.collect { "  - ${it}" }.join("\n")
+            )
+        }
+    }
 }
 
 /**
