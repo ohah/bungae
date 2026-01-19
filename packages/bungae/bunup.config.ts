@@ -1,7 +1,7 @@
 import { defineConfig } from 'bunup';
 
 export default defineConfig({
-  entry: ['src/index.ts', 'src/cli.ts'],
+  entry: ['src/index.ts', 'src/cli.ts', 'src/cli-impl.ts'],
   outDir: 'dist',
   format: ['esm', 'cjs'],
   dts: true,
