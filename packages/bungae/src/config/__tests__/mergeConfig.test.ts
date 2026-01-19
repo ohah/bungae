@@ -29,7 +29,6 @@ describe('mergeConfig', () => {
           blockList: [],
         },
         transformer: {
-          babel: { include: [], plugins: [], presets: [] },
           minifier: 'bun',
           inlineRequires: false,
         },
