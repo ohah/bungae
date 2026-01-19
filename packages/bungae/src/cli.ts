@@ -1,138 +1,68 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 /**
- * Bungae CLI
+ * Bungae CLI Entry Point
+ *
+ * This is a Node.js entry point that spawns the actual CLI using Bun runtime.
+ * Bun is installed as a dependency, so we use node_modules/bun directly.
  */
 
-import { resolve, dirname } from 'path';
-import { parseArgs } from 'util';
+import { spawnSync } from 'child_process';
+import { join, dirname } from 'path';
+import { existsSync, realpathSync } from 'fs';
 
-import { loadConfig, resolveConfig } from './config';
-import type { BungaeConfig } from './config/types';
-import { VERSION, build, serve } from './index.ts';
+// Get current directory from the actual script location at runtime
+// Use realpathSync to resolve symlinks (node_modules/.bin/bungae -> ../bungae/dist/cli.cjs)
+const scriptPath = realpathSync(process.argv[1] || '');
+const currentDir = dirname(scriptPath);
 
-const { values, positionals } = parseArgs({
-  args: Bun.argv.slice(2),
-  options: {
-    help: { type: 'boolean', short: 'h' },
-    version: { type: 'boolean', short: 'v' },
-    platform: { type: 'string', short: 'p' },
-    dev: { type: 'boolean', short: 'd' },
-    minify: { type: 'boolean', short: 'm' },
-    entry: { type: 'string', short: 'e' },
-    outDir: { type: 'string', short: 'o' },
-    config: { type: 'string', short: 'c' },
-    root: { type: 'string' },
-  },
-  allowPositionals: true,
-});
-
-const command = positionals[0];
-
-async function main() {
-  if (values.version) {
-    console.log(`bungae v${VERSION}`);
-    process.exit(0);
+// Find bun executable from dependencies first, then fallback to global
+function findBun(): string | null {
+  // 1. Check installed dependency (bun package)
+  // After npm install, bun binary is at node_modules/bun/bin/bun.exe
+  const depBunExe = join(currentDir, '..', 'node_modules', 'bun', 'bin', 'bun.exe');
+  if (existsSync(depBunExe)) {
+    return depBunExe;
   }
 
-  if (values.help || !command) {
-    console.log(`
-bungae v${VERSION} - A lightning-fast React Native bundler powered by Bun
-
-Usage:
-  bungae <command> [options]
-
-Commands:
-  build     Build the React Native bundle
-  serve     Start the development server
-  start     Alias for serve
-
-Options:
-  -h, --help       Show this help message
-  -v, --version    Show version number
-  -p, --platform   Target platform (ios, android, web)
-  -d, --dev        Development mode
-  -m, --minify     Enable minification
-  -e, --entry      Entry file path
-  -o, --outDir     Output directory
-  -c, --config     Path to config file
-  --root           Project root directory
-
-Examples:
-  bungae serve --platform ios
-  bungae build --platform android --minify
-  bungae build --config ./custom.config.ts
-`);
-    process.exit(0);
+  // 2. Check node_modules/.bin/bun symlink
+  const binBun = join(currentDir, '..', 'node_modules', '.bin', 'bun');
+  if (existsSync(binBun)) {
+    return binBun;
   }
 
-  // Determine project root
-  const projectRoot = values.root
-    ? resolve(values.root)
-    : values.config
-      ? resolve(dirname(values.config))
-      : process.cwd();
-
-  // Load config from file (Metro-compatible API)
-  let fileConfig: BungaeConfig = {};
-  try {
-    if (values.config) {
-      // Load from specified config file
-      fileConfig = await loadConfig({ config: values.config, cwd: projectRoot });
-    } else {
-      // Load from default locations
-      fileConfig = await loadConfig({ cwd: projectRoot });
-    }
-  } catch (error) {
-    console.warn(`Warning: Failed to load config file: ${error}`);
-    // Continue with CLI options only
+  // 3. Fallback to global bun in PATH
+  const result = spawnSync('which', ['bun'], { encoding: 'utf-8', stdio: 'pipe' });
+  if (result.status === 0 && result.stdout.trim()) {
+    return result.stdout.trim();
   }
 
-  // Merge CLI options with file config
-  const cliConfig: BungaeConfig = {
-    root: projectRoot,
-    platform: values.platform as 'ios' | 'android' | 'web' | undefined,
-    dev:
-      values.dev !== undefined
-        ? values.dev
-        : command === 'serve' || command === 'start'
-          ? true
-          : undefined,
-    minify: values.minify,
-    entry: values.entry,
-    outDir: values.outDir,
-  };
-
-  // Remove undefined values
-  Object.keys(cliConfig).forEach((key) => {
-    if (cliConfig[key as keyof BungaeConfig] === undefined) {
-      delete cliConfig[key as keyof BungaeConfig];
-    }
-  });
-
-  // Merge configs (CLI options override file config)
-  const mergedConfig: BungaeConfig = {
-    ...fileConfig,
-    ...cliConfig,
-  };
-
-  // Resolve config with defaults
-  const resolvedConfig = resolveConfig(mergedConfig, projectRoot);
-
-  switch (command) {
-    case 'build':
-      await build(resolvedConfig);
-      break;
-    case 'serve':
-    case 'start':
-      await serve(resolvedConfig);
-      break;
-    default:
-      console.error(`Unknown command: ${command}`);
-      process.exit(1);
-  }
+  return null;
 }
 
-main().catch((error) => {
-  console.error(error);
+const bunPath = findBun();
+
+if (!bunPath) {
+  console.error('\x1b[31mError: Bun runtime not found.\x1b[0m\n');
+  console.error('Bungae requires Bun. It should be installed as a dependency.');
+  console.error('');
+  console.error('Try reinstalling:');
+  console.error('  npm install bungae');
+  console.error('');
+  console.error('Or install Bun globally:');
+  console.error('  curl -fsSL https://bun.sh/install | bash');
+  console.error('');
   process.exit(1);
+}
+
+// Get the actual CLI implementation path
+// Use .cjs extension since we're running with Bun and want CommonJS
+const cliImplPath = join(currentDir, 'cli-impl.cjs');
+
+// Spawn bun with the actual CLI implementation
+const result = spawnSync(bunPath, [cliImplPath, ...process.argv.slice(2)], {
+  stdio: 'inherit',
+  cwd: process.cwd(),
+  env: process.env,
 });
+
+process.exit(result.status ?? 1);
