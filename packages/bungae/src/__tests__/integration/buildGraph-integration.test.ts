@@ -191,7 +191,8 @@ describe('BuildGraph Integration Tests', () => {
     expect(progressCalls.length).toBeGreaterThan(0);
     // Last progress should show completion
     const lastProgress = progressCalls[progressCalls.length - 1];
-    expect(lastProgress.processed).toBeGreaterThan(0);
-    expect(lastProgress.total).toBeGreaterThanOrEqual(lastProgress.processed);
+    expect(lastProgress).toBeDefined();
+    expect(lastProgress!.processed).toBeGreaterThan(0);
+    expect(lastProgress!.total).toBeGreaterThanOrEqual(lastProgress!.processed);
   });
 });

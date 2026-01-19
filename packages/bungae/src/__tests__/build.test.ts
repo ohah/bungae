@@ -32,7 +32,7 @@ describe('build', () => {
     }
   });
 
-  test('should build bundle for iOS', async () => {
+  test('should build bundle for iOS (development mode)', async () => {
     // Create entry file
     writeFileSync(entryFile, "console.log('hello ios');", 'utf-8');
 
@@ -42,6 +42,7 @@ describe('build', () => {
         ...defaultConfig,
         entry: 'index.js',
         platform: 'ios',
+        dev: true, // Development mode
         outDir: 'dist',
       },
       testDir,
@@ -49,13 +50,45 @@ describe('build', () => {
 
     await build(config);
 
-    // Check if bundle file was created
+    // Check if bundle file was created with development name (index.jsbundle)
     const bundlePath = join(outDir, 'index.jsbundle');
     expect(existsSync(bundlePath)).toBe(true);
 
     // Check bundle content
     const bundleContent = readFileSync(bundlePath, 'utf-8');
-    expect(bundleContent).toContain('__BUNGAE__');
+    expect(bundleContent).toContain('__METRO_GLOBAL_PREFIX__');
+    expect(bundleContent.length).toBeGreaterThan(0);
+  });
+
+  test('should build bundle for iOS (release mode - main.jsbundle)', async () => {
+    // Create entry file
+    writeFileSync(entryFile, "console.log('hello ios release');", 'utf-8');
+
+    const defaultConfig = getDefaultConfig(testDir);
+    const config = resolveConfig(
+      {
+        ...defaultConfig,
+        entry: 'index.js',
+        platform: 'ios',
+        dev: false, // Release mode
+        outDir: 'dist',
+      },
+      testDir,
+    );
+
+    await build(config);
+
+    // Check if bundle file was created with release name (main.jsbundle)
+    const bundlePath = join(outDir, 'main.jsbundle');
+    expect(existsSync(bundlePath)).toBe(true);
+
+    // Check that index.jsbundle was NOT created
+    const devBundlePath = join(outDir, 'index.jsbundle');
+    expect(existsSync(devBundlePath)).toBe(false);
+
+    // Check bundle content
+    const bundleContent = readFileSync(bundlePath, 'utf-8');
+    expect(bundleContent).toContain('__METRO_GLOBAL_PREFIX__');
     expect(bundleContent.length).toBeGreaterThan(0);
   });
 
@@ -111,6 +144,7 @@ describe('build', () => {
         ...defaultConfig,
         entry: 'index.js',
         platform: 'ios',
+        dev: true, // Development mode to get index.jsbundle
         outDir: 'custom-output',
       },
       testDir,
@@ -133,6 +167,7 @@ describe('build', () => {
         ...defaultConfig,
         entry: 'index.tsx',
         platform: 'ios',
+        dev: true, // Development mode to get index.jsbundle
         outDir: 'dist',
       },
       testDir,
