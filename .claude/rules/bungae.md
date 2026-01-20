@@ -35,6 +35,28 @@ Entry → [Resolution] → [Transformation] → [Serialization] → Bundle
 
 ## 코드 작성 규칙
 
+### 커밋 메시지 규칙
+
+**모든 커밋 메시지는 반드시 영어로 작성해야 합니다.**
+
+- ✅ 올바른 예시:
+  ```bash
+  git commit -m "feat: implement Metro-compatible asset handling"
+  git commit -m "fix: resolve path normalization issue in dev server"
+  git commit -m "refactor: improve error handling in bundler"
+  ```
+
+- ❌ 잘못된 예시:
+  ```bash
+  git commit -m "feat: Metro 호환 에셋 처리 구현"
+  git commit -m "fix: 개발 서버 경로 정규화 문제 해결"
+  ```
+
+**커밋 메시지 형식:**
+- Conventional Commits 형식 사용: `type: description`
+- 타입: `feat`, `fix`, `refactor`, `docs`, `test`, `chore` 등
+- 설명: 간결하고 명확하게 작성 (50자 이내 권장)
+
 ### Bun API 활용
 
 ```typescript
