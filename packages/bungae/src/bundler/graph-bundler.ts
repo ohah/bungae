@@ -15,6 +15,11 @@
 
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join, resolve, relative, basename, extname } from 'path';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent for ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 import type { Server, ServerWebSocket } from 'bun';
 
@@ -681,12 +686,31 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // Convert to serializer modules
   const graphModules = await graphToSerializerModules(graph);
 
+  // Read Bungae version from package.json
+  let bungaeVersion = '0.0.1';
+  try {
+    const packageJsonPath = resolve(__dirname, '../../package.json');
+    if (existsSync(packageJsonPath)) {
+      const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
+      bungaeVersion = packageJson.version || '0.0.1';
+    }
+  } catch (error) {
+    // Fallback to default version if package.json cannot be read
+  }
+
+  // Merge extraVars with Bungae identifiers
+  const extraVars = {
+    ...config.serializer?.extraVars,
+    __BUNGAE_BUNDLER__: true,
+    __BUNGAE_VERSION__: bungaeVersion,
+  };
+
   // Get prepended modules (prelude, metro-runtime, polyfills)
   const prependModules = getPrependedModules({
     dev,
     globalPrefix: '',
     polyfills: config.serializer?.polyfills || [],
-    extraVars: config.serializer?.extraVars,
+    extraVars,
     requireCycleIgnorePatterns: [/(^|\/|\\)node_modules($|\/|\\)/],
     projectRoot: root,
   });
