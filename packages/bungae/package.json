@@ -51,7 +51,7 @@
   },
   "scripts": {
     "dev": "bunup --watch",
-    "build": "bunup && chmod +x dist/cli.cjs",
+    "build": "bun run scripts/build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },

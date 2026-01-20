@@ -8,5 +8,16 @@ export default defineConfig({
   clean: true,
   sourcemap: 'linked',
   target: 'node',
-  external: ['react-native'],
+  external: [
+    'react-native',
+    'hermes-parser',
+    'babel-plugin-syntax-hermes-parser',
+    '@babel/core',
+    '@babel/plugin-transform-flow-strip-types',
+    '@swc/core',
+    '@react-native/babel-preset',
+    '@react-native/babel-plugin-codegen',
+    /^@babel\/.*/,
+    /^@react-native\/.*/,
+  ],
 });

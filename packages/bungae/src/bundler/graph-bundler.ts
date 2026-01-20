@@ -667,7 +667,8 @@ interface HmrMessage {
 export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   const { platform, server } = config;
   const port = server?.port ?? 8081;
-  const hostname = 'localhost';
+  // Use 0.0.0.0 to allow connections from Android emulator (10.0.2.2) and other devices
+  const hostname = '0.0.0.0';
 
   console.log(
     `Starting Bungae dev server (Babel mode, Metro-compatible) on http://${hostname}:${port}`,
