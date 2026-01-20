@@ -11,58 +11,60 @@ import { convertRequirePaths } from './convertRequirePaths';
  * Transform script code (Flow -> JS) using Babel
  * Script modules like polyfills need to be transformed but not wrapped in __d()
  * Metro transforms polyfills with the same babel preset as regular modules
+ * Reads babel.config.js from project root and merges with default settings (Metro-compatible)
  */
-async function transformScriptCode(code: string, filePath: string): Promise<string> {
+async function transformScriptCode(
+  code: string,
+  filePath: string,
+  projectRoot: string,
+): Promise<string> {
   try {
     const babel = await import('@babel/core');
     const hermesParser = await import('hermes-parser');
 
-    // Parse with Hermes parser (handles Flow syntax like Metro)
-    let ast;
+    // Metro uses transformFromAstSync: parse AST first, then transform
+    // Metro behavior: hermesParser option determines parser (Hermes or Babel)
+    // We use Hermes parser by default (like Metro with hermesParser: true)
+    let sourceAst;
     try {
-      ast = hermesParser.parse(code, {
+      sourceAst = hermesParser.parse(code, {
         babel: true,
         sourceType: 'script',
       });
     } catch {
       // If Hermes parser fails, try Babel parser
       try {
-        const result = await babel.parseAsync(code, {
+        sourceAst = await babel.parseAsync(code, {
           filename: filePath,
           sourceType: 'script',
           parserOpts: {
             plugins: ['flow'],
           },
         });
-        ast = result;
       } catch {
         // If parsing fails, return code as-is
         return code;
       }
     }
 
-    // Use @react-native/babel-preset like Metro does for polyfills
-    // enableBabelRuntime: false to inline helpers
-    const result = await babel.transformFromAstAsync(ast, code, {
+    // Metro-style babel config (matches reference/metro/packages/metro-babel-transformer/src/index.js)
+    // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically from cwd
+    const babelConfig: any = {
+      ast: true,
+      babelrc: false, // Metro uses enableBabelRCLookup, we use false for consistency
+      caller: { bundler: 'bungae', name: 'bungae', platform: null },
+      cloneInputAst: false, // Metro sets this to avoid cloning overhead
+      code: true, // We need code output
+      cwd: projectRoot, // Metro sets cwd to projectRoot - Babel auto-discovers babel.config.js from here
       filename: filePath,
-      babelrc: false,
-      configFile: false,
+      highlightCode: true,
       sourceType: 'script',
-      presets: [
-        [
-          require.resolve('@react-native/babel-preset'),
-          {
-            dev: true,
-            unstable_transformProfile: 'hermes-stable',
-            enableBabelRuntime: false,
-            disableImportExportTransform: true, // Script modules don't need ESM->CJS
-            disableStaticViewConfigsCodegen: true,
-          },
-        ],
-      ],
-      compact: false,
-      comments: true,
-    });
+      // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically
+      // No additional plugins for script modules
+    };
+
+    // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
+    const result = await babel.transformFromAstAsync(sourceAst, code, babelConfig);
 
     return result?.code || code;
   } catch (error) {
@@ -86,7 +88,11 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
 
     // Script modules (polyfills, metro-runtime) need Flow transformation like Metro does
     // Metro transforms all modules including polyfills through its transform pipeline
-    const transformedCode = await transformScriptCode(module.code, module.path);
+    const transformedCode = await transformScriptCode(
+      module.code,
+      module.path,
+      options.projectRoot,
+    );
 
     // All script modules need to be wrapped in IIFE with global parameter
     // Metro wraps all polyfills: (function (global) { ... })(globalThis || global || window || this)

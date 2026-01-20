@@ -32,13 +32,36 @@ export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
 
 /**
  * Default serializer configuration
+ * Metro's default getModulesRunBeforeMainModule returns an empty array
+ * React Native's @react-native/metro-config getDefaultConfig includes InitializeCore
+ * This matches React Native's default behavior
  */
 export const DEFAULT_SERIALIZER: Required<SerializerConfig> = {
   polyfills: [],
   prelude: [],
   bundleType: 'plain',
   extraVars: {},
-  getModulesRunBeforeMainModule: () => [],
+  getModulesRunBeforeMainModule: (entryFilePath: string) => {
+    // Match React Native's @react-native/metro-config default behavior
+    // It includes InitializeCore (but not ReactNativePrivateInitializeCore)
+    const modules: string[] = [];
+
+    // Get entry file directory for path resolution
+    const { dirname } = require('path');
+    const entryDir = dirname(entryFilePath);
+
+    try {
+      // React Native's getDefaultConfig includes InitializeCore
+      const initializeCore = require.resolve('react-native/Libraries/Core/InitializeCore', {
+        paths: [entryDir],
+      });
+      modules.push(initializeCore);
+    } catch {
+      // Not a React Native project or module not found
+    }
+
+    return modules;
+  },
   getPolyfills: () => [],
 };
 

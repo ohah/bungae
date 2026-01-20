@@ -26,7 +26,8 @@ import {
   getRunModuleStatement,
 } from '../serializer';
 import type { Module } from '../serializer/types';
-import { extractDependencies } from '../transformer/utils';
+import { extractDependenciesFromAst } from '../transformer/extract-dependencies-from-ast';
+import { createFileWatcher, type FileWatcher } from './file-watcher';
 
 /**
  * Get image dimensions from a PNG file (basic implementation)
@@ -102,7 +103,7 @@ function generateAssetModuleCode(assetPath: string, projectRoot: string): string
 interface GraphModule {
   path: string;
   code: string;
-  transformedCode: string;
+  transformedAst: any; // Metro-compatible: transformer returns AST, serializer generates code
   dependencies: string[];
   originalDependencies: string[];
 }
@@ -302,102 +303,146 @@ async function transformFile(
   filePath: string,
   code: string,
   config: ResolvedConfig,
-): Promise<string> {
+): Promise<{ ast: any } | null> {
   const { platform, dev } = config;
 
   // Skip Flow files and asset files
   if (filePath.endsWith('.flow.js') || filePath.endsWith('.flow')) {
-    return '';
+    return null;
   }
 
-  // JSON files: Export as module
+  // JSON files: Export as module (no AST transformation needed)
   const isJSON = filePath.endsWith('.json');
   if (isJSON) {
-    // Wrap JSON as CommonJS module
-    return `module.exports = ${code};`;
+    // Wrap JSON as CommonJS module - create simple AST
+    const babel = await import('@babel/core');
+    const ast = await babel.parseAsync(`module.exports = ${code};`, {
+      filename: filePath,
+      sourceType: 'module',
+    });
+    return { ast };
   }
 
   // Use Babel for all transformations (Metro-compatible)
   // Note: Asset files are handled in processModule before reaching here
-  return transformWithBabel(code, filePath, { dev, platform });
+  return transformWithBabel(code, filePath, { dev, platform, root: config.root });
 }
 
 /**
  * Transform code using Babel with @react-native/babel-preset (Metro-compatible)
  * Uses the same preset that Metro uses for full compatibility
+ * Reads babel.config.js from project root and merges with default settings (Metro-compatible)
  */
 async function transformWithBabel(
   code: string,
   filePath: string,
-  options: { dev: boolean; platform: string },
-): Promise<string> {
+  options: { dev: boolean; platform: string; root: string },
+): Promise<{ ast: any }> {
   const babel = await import('@babel/core');
   const hermesParser = await import('hermes-parser');
 
-  // Parse with Hermes parser (handles Flow syntax like Metro)
-  let ast;
+  // Metro uses transformFromAstSync: parse AST first, then transform
+  // Metro behavior: hermesParser option determines parser (Hermes or Babel)
+  // We use Hermes parser by default (like Metro with hermesParser: true)
+  // This handles Flow syntax including "import typeof" correctly
+  const OLD_BABEL_ENV = process.env.BABEL_ENV;
+  process.env.BABEL_ENV = options.dev ? 'development' : process.env.BABEL_ENV || 'production';
+
   try {
-    ast = hermesParser.parse(code, {
-      babel: true,
+    // Metro-style babel config (matches reference/metro/packages/metro-babel-transformer/src/index.js)
+    // Metro sets code: false to return AST only (serializer generates code)
+    const babelConfig: any = {
+      ast: true,
+      babelrc: false, // Metro uses enableBabelRCLookup, we use false for consistency
+      // Metro reads babel.config.js from cwd (projectRoot) - configFile defaults to true
+      // If babel.config.js doesn't exist, Babel will use no presets (code won't be transformed)
+      // This is expected - projects should have babel.config.js with @react-native/babel-preset
+      caller: { bundler: 'bungae', name: 'bungae', platform: options.platform },
+      cloneInputAst: false, // Metro sets this to avoid cloning overhead
+      code: false, // Metro-compatible: return AST only, serializer generates code
+      cwd: options.root, // Metro sets cwd to projectRoot - Babel auto-discovers babel.config.js from here
+      filename: filePath,
+      highlightCode: true,
       sourceType: 'module',
-    });
-  } catch (parseError) {
-    // If Hermes parser fails, try Babel parser
-    try {
-      const result = await babel.parseAsync(code, {
-        filename: filePath,
+      // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically
+      // We add our custom plugin for Platform.OS replacement
+      plugins: [
+        [
+          require.resolve('babel-plugin-transform-define'),
+          {
+            'Platform.OS': options.platform, // Don't use JSON.stringify - babel-plugin-transform-define handles it
+            'process.env.NODE_ENV': JSON.stringify(options.dev ? 'development' : 'production'),
+          },
+        ],
+      ],
+    };
+
+    // Metro: Parse with Hermes parser (hermesParser: true) or Babel parser (hermesParser: false)
+    // Select parser based on file extension (Metro-compatible):
+    // - TypeScript files (.ts, .tsx) → Babel parser (TypeScript support)
+    // - JavaScript/Flow files (.js, .jsx, .flow) → Hermes parser (Flow support including "import typeof")
+    const fileExt = extname(filePath).toLowerCase();
+    const useHermesParser = !fileExt.endsWith('.ts') && !fileExt.endsWith('.tsx');
+
+    const sourceAst = useHermesParser
+      ? hermesParser.parse(code, {
+          babel: true,
+          sourceType: babelConfig.sourceType,
+        })
+      : await babel.parseAsync(code, {
+          filename: filePath,
+          sourceType: babelConfig.sourceType,
+          parserOpts: {
+            // TypeScript files: use typescript plugin only (not flow)
+            // JavaScript files: use jsx plugin only (flow handled by Hermes parser)
+            plugins:
+              fileExt.endsWith('.tsx') || fileExt.endsWith('.ts') ? ['jsx', 'typescript'] : ['jsx'],
+          },
+        });
+
+    // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
+    const transformResult = await babel.transformFromAstAsync(sourceAst, code, babelConfig);
+
+    if (!transformResult?.ast) {
+      // Type-only files may result in empty AST - create empty module AST
+      // Create File node (Metro-compatible) with Program inside
+      const emptyProgram = {
+        type: 'Program',
+        body: [
+          {
+            type: 'ExpressionStatement',
+            expression: {
+              type: 'AssignmentExpression',
+              operator: '=',
+              left: {
+                type: 'MemberExpression',
+                object: { type: 'Identifier', name: 'module' },
+                property: { type: 'Identifier', name: 'exports' },
+              },
+              right: { type: 'ObjectExpression', properties: [] },
+            },
+          },
+        ],
+        directives: [],
         sourceType: 'module',
-        parserOpts: {
-          plugins: ['jsx', 'typescript', 'flow'],
-        },
-      });
-      ast = result;
-    } catch {
-      throw new Error(`Failed to parse ${filePath}: ${parseError}`);
+      };
+      const emptyAst = {
+        type: 'File',
+        program: emptyProgram,
+        comments: [],
+        tokens: [],
+      };
+      return { ast: emptyAst };
+    }
+
+    // Metro-compatible: return AST only (no code generation)
+    // Dependencies will be extracted from AST directly
+    return { ast: transformResult.ast };
+  } finally {
+    if (OLD_BABEL_ENV) {
+      process.env.BABEL_ENV = OLD_BABEL_ENV;
     }
   }
-
-  // Use @react-native/babel-preset (same as Metro)
-  // enableBabelRuntime: false inlines helpers instead of importing from @babel/runtime
-  // This avoids the need to bundle @babel/runtime separately
-  const result = await babel.transformFromAstAsync(ast, code, {
-    filename: filePath,
-    babelrc: false,
-    configFile: false,
-    sourceType: 'module',
-    presets: [
-      [
-        require.resolve('@react-native/babel-preset'),
-        {
-          dev: options.dev,
-          unstable_transformProfile: 'hermes-stable',
-          useTransformReactJSXExperimental: false,
-          disableStaticViewConfigsCodegen: true,
-          enableBabelRuntime: false,
-        },
-      ],
-    ],
-    plugins: [
-      // Replace Platform.OS with the actual platform value at build time
-      // This enables proper platform-specific code branching
-      [
-        require.resolve('babel-plugin-transform-define'),
-        {
-          'Platform.OS': JSON.stringify(options.platform),
-          'process.env.NODE_ENV': JSON.stringify(options.dev ? 'development' : 'production'),
-        },
-      ],
-    ],
-    compact: !options.dev,
-    comments: options.dev,
-  });
-
-  if (!result?.code) {
-    // Type-only files may result in empty code
-    return 'module.exports = {};';
-  }
-
-  return result.code;
 }
 
 /**
@@ -452,12 +497,20 @@ async function buildGraph(
       }
 
       const assetCode = generateAssetModuleCode(filePath, config.root);
+      // Parse asset code to AST (simple module.exports assignment)
+      const babel = await import('@babel/core');
+      const assetAst = await babel.parseAsync(assetCode, {
+        filename: filePath,
+        sourceType: 'module',
+      });
+      // Extract dependencies from asset AST (should include AssetRegistry)
+      const assetDeps = await extractDependenciesFromAst(assetAst);
       const module: GraphModule = {
         path: filePath,
         code: assetCode,
-        transformedCode: assetCode,
+        transformedAst: assetAst,
         dependencies: resolvedAssetRegistry ? [resolvedAssetRegistry] : [],
-        originalDependencies: [assetRegistryPath],
+        originalDependencies: assetDeps.length > 0 ? assetDeps : [assetRegistryPath],
       };
       modules.set(filePath, module);
       visited.add(filePath);
@@ -482,10 +535,11 @@ async function buildGraph(
     // JSON files: No dependencies, just wrap as module
     const isJSON = filePath.endsWith('.json');
     if (isJSON) {
+      const transformResult = await transformFile(filePath, code, config);
       const module: GraphModule = {
         path: filePath,
         code,
-        transformedCode: `module.exports = ${code};`,
+        transformedAst: transformResult?.ast || null,
         dependencies: [],
         originalDependencies: [],
       };
@@ -497,18 +551,21 @@ async function buildGraph(
       return;
     }
 
-    // Transform code
-    const transformedCode = await transformFile(filePath, code, config);
+    // Transform code (returns AST only, Metro-compatible)
+    const transformResult = await transformFile(filePath, code, config);
+    if (!transformResult) {
+      // Flow file or other skipped file
+      visited.add(filePath);
+      processing.delete(filePath);
+      processedCount++;
+      onProgress?.(processedCount, totalCount);
+      return;
+    }
 
-    // Extract dependencies from original code
-    const originalDeps = await extractDependencies(code, filePath);
-
-    // Extract dependencies from transformed code
-    // Babel may add new imports (e.g., react/jsx-runtime for JSX)
-    const transformedDeps = await extractDependencies(transformedCode, filePath);
-
-    // Merge dependencies (remove duplicates)
-    const allDeps = Array.from(new Set([...originalDeps, ...transformedDeps]));
+    // Metro-compatible: Extract dependencies from transformed AST only (no code generation)
+    // Metro uses collectDependencies on transformed AST - type-only imports are handled by Babel preset
+    // Babel may add new imports (e.g., react/jsx-runtime for JSX) which will be in the transformed AST
+    const allDeps = await extractDependenciesFromAst(transformResult.ast);
 
     // Resolve dependencies (including asset files)
     const resolvedDependencies: string[] = [];
@@ -526,11 +583,11 @@ async function buildGraph(
       }
     }
 
-    // Create module
+    // Create module (store AST, serializer will generate code)
     const module: GraphModule = {
       path: filePath,
       code,
-      transformedCode,
+      transformedAst: transformResult.ast,
       dependencies: resolvedDependencies,
       originalDependencies,
     };
@@ -565,14 +622,38 @@ async function buildGraph(
 /**
  * Convert graph modules to serializer modules
  */
-function graphToSerializerModules(graph: Map<string, GraphModule>): Module[] {
-  return Array.from(graph.values()).map((m) => ({
-    path: m.path,
-    code: m.transformedCode,
-    dependencies: m.dependencies,
-    originalDependencies: m.originalDependencies,
-    type: 'js/module' as const,
-  }));
+async function graphToSerializerModules(graph: Map<string, GraphModule>): Promise<Module[]> {
+  const generator = await import('@babel/generator');
+  return Promise.all(
+    Array.from(graph.values()).map(async (m) => {
+      // Generate code from AST (Metro-compatible: serializer generates code from AST)
+      // @babel/generator can handle File node directly (it uses program property)
+      let code = '';
+      if (m.transformedAst) {
+        // If AST is File node, generator handles it directly
+        // If AST is Program node, wrap it in File node for consistency
+        const astToGenerate =
+          m.transformedAst.type === 'File'
+            ? m.transformedAst
+            : { type: 'File', program: m.transformedAst, comments: [], tokens: [] };
+        const generated = generator.default(astToGenerate, {
+          comments: true,
+          filename: m.path,
+        });
+        code = generated.code;
+      } else {
+        // Fallback for modules without AST (should not happen)
+        code = m.code;
+      }
+      return {
+        path: m.path,
+        code,
+        dependencies: m.dependencies,
+        originalDependencies: m.originalDependencies,
+        type: 'js/module' as const,
+      };
+    }),
+  );
 }
 
 /**
@@ -598,7 +679,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   console.log(`\n[bungae] Graph built: ${graph.size} modules in ${Date.now() - startTime}ms`);
 
   // Convert to serializer modules
-  const graphModules = graphToSerializerModules(graph);
+  const graphModules = await graphToSerializerModules(graph);
 
   // Get prepended modules (prelude, metro-runtime, polyfills)
   const prependModules = getPrependedModules({
@@ -621,9 +702,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       runBeforeMainModule = config.serializer.getModulesRunBeforeMainModule(entryPath);
     } catch (error) {
       if (dev) {
-        console.warn(
-          `[bungae] Error calling getModulesRunBeforeMainModule: ${error}`,
-        );
+        console.warn(`[bungae] Error calling getModulesRunBeforeMainModule: ${error}`);
       }
     }
   }
@@ -892,6 +971,23 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   console.log(`✅ Dev server (Graph mode) running at http://${hostname}:${port}`);
   console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
 
+  // File watcher for auto-rebuild on file changes (dev mode only)
+  let fileWatcher: FileWatcher | null = null;
+  if (config.dev) {
+    const invalidateCache = () => {
+      // Clear cached builds to force rebuild on next request
+      cachedBuilds.clear();
+      buildingPlatforms.clear();
+      console.log('[bungae] File changed, cache invalidated. Next bundle request will rebuild.');
+    };
+
+    fileWatcher = createFileWatcher({
+      root: config.root,
+      onFileChange: invalidateCache,
+      debounceMs: 300,
+    });
+  }
+
   // Handle graceful shutdown on SIGINT (Ctrl+C) and SIGTERM
   let isShuttingDown = false;
 
@@ -904,6 +1000,11 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
     console.log(`\n[bungae] ${signal} received, shutting down dev server...`);
 
     try {
+      // Close file watcher (if it was created)
+      if (fileWatcher) {
+        fileWatcher.close();
+      }
+
       // Close all WebSocket connections
       for (const ws of wsConnections) {
         try {
