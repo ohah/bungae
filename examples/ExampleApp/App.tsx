@@ -23,7 +23,6 @@ function App() {
 
 function AppContent() {
   const safeAreaInsets = useSafeAreaInsets();
-  const isDarkMode = useColorScheme() === 'dark';
   const [bundlerInfo, setBundlerInfo] = useState<{
     name: string;
     version?: string;

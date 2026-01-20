@@ -10,13 +10,18 @@ import { baseJSBundle } from '../baseJSBundle';
 import type { Module } from '../types';
 
 // Metro test fixtures
-// Note: polyfill is a script module (type: 'js/script') - runs as-is without __d() parameters
+// Note: polyfill is a script module (type: 'js/script') - wrapped in IIFE by Metro
+// The code inside doesn't have __d() - Metro wraps it with (function(global) { ... })(globalThis)
 const polyfill: Module = {
   path: '/polyfill',
-  code: '__d(function() {/* code for polyfill */});',
+  code: 'global.polyfillLoaded = true;',
   dependencies: [],
   type: 'js/script',
 };
+
+// Expected IIFE wrapper for script modules
+const globalThisFallback =
+  "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
 
 const fooModule: Module = {
   path: '/root/foo',
@@ -60,7 +65,7 @@ describe('baseJSBundle Metro Exact Tests', () => {
     // Metro expected output:
     // modules: [["foo", "__d(function() {/* code for foo */},"foo",["bar"],"foo");"], ["bar", "__d(function() {/* code for bar */},"bar",[],"bar");"]]
     // post: "require(\"foo\");\n//# sourceMappingURL=http://localhost/bundle.map"
-    // pre: "__d(function() {/* code for polyfill */});"
+    // pre: polyfill wrapped in IIFE (function (global) { ... })(globalThis || ...)
 
     expect(bundle.modules).toHaveLength(2);
 
@@ -77,8 +82,10 @@ describe('baseJSBundle Metro Exact Tests', () => {
     // Post
     expect(bundle.post).toBe('require("foo");\n//# sourceMappingURL=http://localhost/bundle.map');
 
-    // Pre
-    expect(bundle.pre).toBe('__d(function() {/* code for polyfill */});');
+    // Pre - script modules are wrapped in IIFE
+    expect(bundle.pre).toBe(
+      `(function (global) {\nglobal.polyfillLoaded = true;\n})(${globalThisFallback});`,
+    );
 
     // Verify getRunModuleStatement was called
     expect(getRunModuleStatementCalled).toBe(true);
@@ -257,8 +264,10 @@ describe('baseJSBundle Metro Exact Tests', () => {
     expect(bundle.post).toContain('%2530'); // Encoded %30
     expect(bundle.post).toContain('%D0%B1'); // Encoded б
 
-    // Pre should contain polyfill
-    expect(bundle.pre).toBe('__d(function() {/* code for polyfill */});');
+    // Pre should contain polyfill wrapped in IIFE
+    expect(bundle.pre).toBe(
+      `(function (global) {\nglobal.polyfillLoaded = true;\n})(${globalThisFallback});`,
+    );
   });
 
   // Metro test 7: should add an inline source map to a very simple bundle

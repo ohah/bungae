@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
 
-import { getDefaultConfig, DEFAULT_RESOLVER, DEFAULT_TRANSFORMER } from '../defaults';
+import { getDefaultConfig, DEFAULT_RESOLVER } from '../defaults';
 
 describe('Config Defaults', () => {
   test('should return default configuration', () => {

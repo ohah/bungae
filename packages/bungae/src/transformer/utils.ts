@@ -1,6 +1,6 @@
 /**
  * Transformer Utilities
- * Using SWC for all transformations and dependency extraction
+ * Using Babel + Hermes for Flow, SWC for parsing
  */
 
 /**
@@ -15,48 +15,63 @@ export function getLoader(filePath: string): 'tsx' | 'ts' | 'jsx' | 'js' {
 
 /**
  * Check if code contains Flow syntax
+ * Uses @flow pragma comment as primary indicator (Metro-compatible)
  */
-async function hasFlowSyntax(code: string, filePath?: string): Promise<boolean> {
-  const { hasFlowSyntax: hasFlowSyntaxAST } = await import('./swc-transformer');
-  return hasFlowSyntaxAST(code, filePath);
+function hasFlowSyntax(code: string): boolean {
+  return /@flow/.test(code) || /@noflow/.test(code);
 }
 
 /**
- * Strip Flow types using Babel with Hermes parser
+ * Strip Flow types using Babel with Hermes parser (Metro-compatible)
  */
 async function stripFlowTypes(code: string, filePath?: string): Promise<string> {
-  const { stripFlowTypesWithBabel } = await import('./swc-transformer');
-  return stripFlowTypesWithBabel(code, filePath);
-}
+  const babel = await import('@babel/core');
+  const hermesParser = await import('hermes-parser');
+  const flowPlugin = await import('@babel/plugin-transform-flow-strip-types');
 
-/**
- * Transform code with SWC (handles JSX, TypeScript, etc.)
- */
-async function transformWithSwc(code: string, filePath?: string): Promise<string> {
-  const { transformWithSwcCore } = await import('./swc-transformer');
-  return transformWithSwcCore(code, filePath || 'file.js', { dev: false });
+  // Parse with Hermes parser (like Metro does)
+  const sourceAst = hermesParser.parse(code, {
+    babel: true,
+    sourceType: 'module',
+  });
+
+  // Transform AST with Babel (Flow type stripping)
+  const result = babel.transformFromAstSync(sourceAst, code, {
+    ast: true,
+    babelrc: false,
+    configFile: false,
+    filename: filePath || 'file.js',
+    sourceType: 'module',
+    plugins: [[flowPlugin.default]],
+  });
+
+  if (!result?.code || result.code.trim() === '') {
+    return 'export {};';
+  }
+
+  return result.code;
 }
 
 /**
  * Extract dependencies from source code using SWC parser
  *
  * For Flow files, strips Flow types first with Babel.
- * Then uses SWC to transform and parse.
+ * For TypeScript files, parses with TypeScript syntax.
+ * Dependencies are extracted from the original code before transformation
+ * to preserve type-only imports (which are still dependencies for bundling).
  */
 export async function extractDependencies(code: string, filePath?: string): Promise<string[]> {
   let processedCode = code;
 
   // Check for Flow syntax - use Babel to strip Flow types first
-  const hasFlow = await hasFlowSyntax(code, filePath);
+  const hasFlow = hasFlowSyntax(code);
   if (hasFlow) {
     processedCode = await stripFlowTypes(code, filePath);
   }
 
-  // Transform code with SWC (handles JSX, TypeScript, ESM)
-  // SWC will handle JSX transformation automatically
-  processedCode = await transformWithSwc(processedCode, filePath);
-
-  // Use SWC parser for AST-based dependency extraction
+  // Parse and extract dependencies from original/flow-stripped code
+  // Do NOT transform with SWC first, as that removes type imports
+  // which are still dependencies for bundling purposes
   return extractDependenciesWithSwc(processedCode, filePath);
 }
 
@@ -67,11 +82,39 @@ async function extractDependenciesWithSwc(code: string, filePath?: string): Prom
   const swc = await import('@swc/core');
   const dependencies: string[] = [];
 
+  // Detect syntax from file extension or code content
+  const isTS =
+    filePath?.endsWith('.ts') ||
+    filePath?.endsWith('.tsx') ||
+    /\bimport\s+type\b/.test(code) ||
+    /\bexport\s+type\b/.test(code);
+  const isJSX =
+    filePath?.endsWith('.tsx') ||
+    filePath?.endsWith('.jsx') ||
+    /<[A-Z][a-zA-Z0-9.]*[\s/>]|<[a-z]+[\s/>]|<\/[A-Z]|<\/[a-z]/.test(code);
+
+  // Build parser config based on detected syntax
+  const parserConfig: {
+    syntax: 'typescript' | 'ecmascript';
+    tsx?: boolean;
+    jsx?: boolean;
+  } = {
+    syntax: isTS ? 'typescript' : 'ecmascript',
+  };
+
+  if (isJSX) {
+    if (isTS) {
+      parserConfig.tsx = true;
+    } else {
+      parserConfig.jsx = true;
+    }
+  }
+
   // Parse the code to get AST
   let ast;
   try {
     ast = await swc.parse(code, {
-      syntax: 'ecmascript', // After SWC transform, code is plain JS
+      ...parserConfig,
       target: 'es2015',
     });
   } catch (error) {
@@ -130,50 +173,54 @@ async function extractDependenciesWithSwc(code: string, filePath?: string): Prom
 /**
  * Walk AST to find dynamic imports and require calls
  */
-function walkASTForDependencies(nodes: any[], dependencies: string[]): void {
+function walkASTForDependencies(nodes: unknown[], dependencies: string[]): void {
   for (const node of nodes) {
     walkNode(node, dependencies);
   }
 }
 
-function walkNode(node: any, dependencies: string[]): void {
+function walkNode(node: unknown, dependencies: string[]): void {
   if (!node || typeof node !== 'object') {
     return;
   }
 
+  const n = node as Record<string, unknown>;
+
   // Dynamic import: import('module')
-  if (node.type === 'CallExpression') {
-    const callee = node.callee;
+  if (n.type === 'CallExpression') {
+    const callee = n.callee as Record<string, unknown> | undefined;
 
     // import('module')
     if (callee && callee.type === 'Import') {
-      const args = node.arguments;
+      const args = n.arguments as Array<Record<string, unknown>> | undefined;
       if (args && args.length > 0) {
         const arg = args[0];
-        if (arg.expression && arg.expression.type === 'StringLiteral' && arg.expression.value) {
-          dependencies.push(arg.expression.value);
+        const expr = arg?.expression as Record<string, unknown> | undefined;
+        if (expr && expr.type === 'StringLiteral' && typeof expr.value === 'string') {
+          dependencies.push(expr.value);
         }
       }
     }
 
     // require('module')
     if (callee && callee.type === 'Identifier' && callee.value === 'require') {
-      const args = node.arguments;
+      const args = n.arguments as Array<Record<string, unknown>> | undefined;
       if (args && args.length > 0) {
         const arg = args[0];
-        if (arg.expression && arg.expression.type === 'StringLiteral' && arg.expression.value) {
-          dependencies.push(arg.expression.value);
+        const expr = arg?.expression as Record<string, unknown> | undefined;
+        if (expr && expr.type === 'StringLiteral' && typeof expr.value === 'string') {
+          dependencies.push(expr.value);
         }
       }
     }
   }
 
   // Recursively walk all properties
-  for (const key in node) {
+  for (const key in n) {
     if (key === 'span') {
       continue;
     }
-    const value = node[key];
+    const value = n[key];
     if (Array.isArray(value)) {
       walkASTForDependencies(value, dependencies);
     } else if (value && typeof value === 'object') {
