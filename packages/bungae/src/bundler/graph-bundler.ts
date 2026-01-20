@@ -16,7 +16,7 @@
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join, resolve, relative, basename, extname } from 'path';
 
-import type { ServerWebSocket } from 'bun';
+import type { Server, ServerWebSocket } from 'bun';
 
 import type { ResolvedConfig } from '../config/types';
 import {
@@ -554,17 +554,10 @@ async function buildGraph(
 
   await processModule(entryPath);
 
-  // Include InitializeCore if not already in graph
-  try {
-    const initializeCorePath = require.resolve('react-native/Libraries/Core/InitializeCore', {
-      paths: [config.root],
-    });
-    if (!modules.has(initializeCorePath)) {
-      await processModule(initializeCorePath);
-    }
-  } catch {
-    // Not a React Native project
-  }
+  // Note: ReactNativePrivateInitializeCore and InitializeCore should be automatically
+  // included in the dependency graph when react-native is imported (via dependency traversal).
+  // Metro does not manually add them - they are found through normal dependency resolution.
+  // The serializer (baseJSBundle.ts) will find them in the graph and add to runBeforeMainModule.
 
   return modules;
 }
@@ -620,6 +613,21 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // Create module ID factory
   const createModuleId = createModuleIdFactory();
 
+  // Get modules to run before main module (Metro-compatible)
+  // This uses the getModulesRunBeforeMainModule function from config
+  let runBeforeMainModule: string[] = [];
+  if (config.serializer?.getModulesRunBeforeMainModule) {
+    try {
+      runBeforeMainModule = config.serializer.getModulesRunBeforeMainModule(entryPath);
+    } catch (error) {
+      if (dev) {
+        console.warn(
+          `[bungae] Error calling getModulesRunBeforeMainModule: ${error}`,
+        );
+      }
+    }
+  }
+
   // Serialize bundle
   const bundle = await baseJSBundle(entryPath, prependModules, graphModules, {
     createModuleId,
@@ -629,7 +637,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     serverRoot: root,
     globalPrefix: '',
     runModule: true,
-    runBeforeMainModule: [],
+    runBeforeMainModule,
   });
 
   // Combine bundle parts
@@ -678,24 +686,25 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   const cachedBuilds = new Map<string, BuildResult>();
   const buildingPlatforms = new Map<string, Promise<BuildResult>>();
 
-  // Track connected HMR clients
+  // Track connected HMR clients and WebSocket connections
   const hmrClients = new Set<{ send: (msg: string) => void }>();
+  const wsConnections = new Set<ServerWebSocket<HmrWsData>>();
 
   type HmrWsData = { url: string };
   type HmrClient = { send: (msg: string) => void };
   type HmrWs = ServerWebSocket<HmrWsData> & { _client?: HmrClient };
 
-  Bun.serve<HmrWsData>({
+  const httpServer = Bun.serve<HmrWsData>({
     port,
     hostname,
     idleTimeout: 120, // 2 minutes timeout for slow builds
-    async fetch(req, server) {
+    async fetch(req, serverInstance) {
       const url = new URL(req.url);
 
       // Handle WebSocket upgrade for HMR (Metro protocol)
       // React Native connects to /hot for HMR
       if (url.pathname === '/hot' || url.pathname.startsWith('/hot?')) {
-        const upgraded = server.upgrade(req, {
+        const upgraded = serverInstance.upgrade(req, {
           data: { url: url.toString() } as HmrWsData,
         });
         if (upgraded) {
@@ -823,6 +832,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
     websocket: {
       open(ws: ServerWebSocket<HmrWsData>) {
         console.log('[HMR] Client connected');
+        wsConnections.add(ws);
         const client: HmrClient = {
           send: (msg: string) => {
             try {
@@ -870,6 +880,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
       },
       close(ws: ServerWebSocket<HmrWsData>) {
         console.log('[HMR] Client disconnected');
+        wsConnections.delete(ws);
         const client = (ws as HmrWs)._client;
         if (client) {
           hmrClients.delete(client);
@@ -880,4 +891,55 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
   console.log(`✅ Dev server (Graph mode) running at http://${hostname}:${port}`);
   console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
+
+  // Handle graceful shutdown on SIGINT (Ctrl+C) and SIGTERM
+  let isShuttingDown = false;
+
+  const shutdown = async (signal: string) => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+
+    console.log(`\n[bungae] ${signal} received, shutting down dev server...`);
+
+    try {
+      // Close all WebSocket connections
+      for (const ws of wsConnections) {
+        try {
+          ws.close();
+        } catch {
+          // Ignore errors when closing
+        }
+      }
+      wsConnections.clear();
+      hmrClients.clear();
+
+      // Stop the server
+      await httpServer.stop();
+      console.log('[bungae] Server stopped');
+
+      process.exit(0);
+    } catch (error) {
+      console.error('[bungae] Error during shutdown:', error);
+      process.exit(1);
+    }
+  };
+
+  process.on('SIGINT', () => {
+    shutdown('SIGINT').catch((err) => {
+      console.error('[bungae] Shutdown error:', err);
+      process.exit(1);
+    });
+  });
+
+  process.on('SIGTERM', () => {
+    shutdown('SIGTERM').catch((err) => {
+      console.error('[bungae] Shutdown error:', err);
+      process.exit(1);
+    });
+  });
+
+  // Keep the process alive - Bun.serve keeps the event loop running
+  // The function doesn't need to return a pending promise
 }
