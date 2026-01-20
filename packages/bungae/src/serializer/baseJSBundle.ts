@@ -67,8 +67,20 @@ export async function baseJSBundle(
       m.path.includes('Libraries/Core/InitializeCore'),
   );
 
-  if (initializeCoreModule && !runBeforeMainModule.includes(initializeCoreModule.path)) {
-    runBeforeMainModule = [initializeCoreModule.path, ...runBeforeMainModule];
+  if (initializeCoreModule) {
+    if (options.dev) {
+      console.log(`[bungae] Found InitializeCore: ${initializeCoreModule.path}`);
+    }
+    if (!runBeforeMainModule.includes(initializeCoreModule.path)) {
+      runBeforeMainModule = [initializeCoreModule.path, ...runBeforeMainModule];
+      if (options.dev) {
+        console.log(`[bungae] Added InitializeCore to runBeforeMainModule`);
+      }
+    }
+  } else if (options.dev) {
+    console.warn(
+      `[bungae] InitializeCore not found in dependency graph. Touch events may not work!`,
+    );
   }
 
   // Get append scripts (entry execution, source map)
