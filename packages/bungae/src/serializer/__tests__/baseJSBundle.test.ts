@@ -302,6 +302,7 @@ describe('baseJSBundle', () => {
     const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
       ...defaultOptions,
       dev: true,
+      runBeforeMainModule: [initializeCorePath], // Add InitializeCore to runBeforeMainModule
     });
 
     // InitializeCore should be found and included in runBeforeMainModule
@@ -416,6 +417,7 @@ describe('baseJSBundle', () => {
       const bundle = await baseJSBundle(entryPoint, preModules, graphModules, {
         ...defaultOptions,
         dev: true,
+        runBeforeMainModule: [initializeCorePath], // Add InitializeCore to runBeforeMainModule
       });
 
       const initializeCoreId = createModuleId(initializeCorePath);

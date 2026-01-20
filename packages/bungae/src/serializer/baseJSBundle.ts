@@ -49,39 +49,10 @@ export async function baseJSBundle(
     return String(idA).localeCompare(String(idB));
   });
 
-  // Find InitializeCore module (React Native requires this to run before main module)
-  // Metro runs InitializeCore before the entry point
-  // InitializeCore is required for React Native to work properly
-  // Note: InitializeCore should already be in the dependency graph (via react-native imports)
-  // We only find it and add to runBeforeMainModule, we don't add it manually to avoid dependency issues
-  let runBeforeMainModule = options.runBeforeMainModule || [];
-
-  // Try to find InitializeCore module in graph modules
-  // InitializeCore should be included in the dependency graph when react-native is imported
-  // Note: InitializeCore should already be in the dependency graph (via react-native imports)
-  // We only find it and add to runBeforeMainModule, we don't add it manually to avoid dependency issues
-  const initializeCoreModule = sortedModules.find(
-    (m) =>
-      m.path.includes('Core/InitializeCore') ||
-      m.path.endsWith('InitializeCore.js') ||
-      m.path.includes('Libraries/Core/InitializeCore'),
-  );
-
-  if (initializeCoreModule) {
-    if (options.dev) {
-      console.log(`[bungae] Found InitializeCore: ${initializeCoreModule.path}`);
-    }
-    if (!runBeforeMainModule.includes(initializeCoreModule.path)) {
-      runBeforeMainModule = [initializeCoreModule.path, ...runBeforeMainModule];
-      if (options.dev) {
-        console.log(`[bungae] Added InitializeCore to runBeforeMainModule`);
-      }
-    }
-  } else if (options.dev) {
-    console.warn(
-      `[bungae] InitializeCore not found in dependency graph. Touch events may not work!`,
-    );
-  }
+  // Use runBeforeMainModule from options (set via getModulesRunBeforeMainModule config)
+  // Metro uses getModulesRunBeforeMainModule function to get the list of modules to run before main
+  // Metro does not have fallback logic - it only uses what's returned from getModulesRunBeforeMainModule
+  const runBeforeMainModule = options.runBeforeMainModule || [];
 
   // Get append scripts (entry execution, source map)
   const appendModules = getAppendScripts(entryPoint, [...preModules, ...sortedModules], {

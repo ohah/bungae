@@ -6,11 +6,33 @@
 
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
+import { createRequire } from 'module';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { fileURLToPath } from 'url';
 
 import { resolveConfig, getDefaultConfig } from '../../config';
 import { buildWithGraph } from '../graph-bundler';
+
+// Get packages/bungae directory (where dependencies are)
+// Current file: packages/bungae/src/bundler/__tests__/graph-bundler.test.ts
+// Target: packages/bungae/package.json
+const currentFile = fileURLToPath(import.meta.url);
+// Go up 4 levels: __tests__ -> bundler -> src -> bungae
+const packageDir = join(currentFile, '..', '..', '..', '..');
+
+// Helper to resolve plugin with fallback to project root
+function resolvePlugin(pluginName: string): string {
+  try {
+    // Try from packages/bungae
+    const packageRequire = createRequire(join(packageDir, 'package.json'));
+    return packageRequire.resolve(pluginName);
+  } catch {
+    // Fallback to project root
+    const rootRequire = createRequire(join(packageDir, '..', '..', 'package.json'));
+    return rootRequire.resolve(pluginName);
+  }
+}
 
 // Skip metro-runtime tests in unit test environment
 // These tests require a proper React Native project with metro-runtime installed
@@ -34,6 +56,23 @@ describe('Graph Bundler', () => {
   global.__d = function() {};
 })`,
     );
+
+    // Create default babel.config.js for tests (Metro requires babel.config.js)
+    // Resolve plugin paths from packages/bungae and use absolute paths
+    const flowPlugin = resolvePlugin('@babel/plugin-transform-flow-strip-types');
+    const commonjsPlugin = resolvePlugin('@babel/plugin-transform-modules-commonjs');
+    const jsxPlugin = resolvePlugin('@babel/plugin-transform-react-jsx');
+    const tsPlugin = resolvePlugin('@babel/plugin-transform-typescript');
+
+    const babelConfig = `module.exports = {
+  plugins: [
+    ${JSON.stringify(flowPlugin)},
+    ${JSON.stringify(commonjsPlugin)},
+    ${JSON.stringify(jsxPlugin)},
+    ${JSON.stringify(tsPlugin)},
+  ],
+};`;
+    writeFileSync(join(testDir, 'babel.config.js'), babelConfig, 'utf-8');
   });
 
   afterEach(() => {

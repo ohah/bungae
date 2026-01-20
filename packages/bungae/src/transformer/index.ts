@@ -25,9 +25,6 @@
 // Re-export types for API compatibility
 export * from './types';
 
-// Re-export extractDependencies (still used by graph-bundler.ts)
-export { extractDependencies } from './utils';
-
 // Stub exports for API compatibility (not actually used)
 export async function transform(): Promise<{ code: string; dependencies: string[]; map?: string }> {
   throw new Error(
