@@ -14,7 +14,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join, resolve, relative, basename, extname } from 'path';
+import { dirname, join, resolve, relative, basename, extname, sep } from 'path';
 import { fileURLToPath } from 'url';
 
 // Get __dirname equivalent for ESM
@@ -89,10 +89,20 @@ function generateAssetModuleCode(assetPath: string, projectRoot: string): string
   const type = extname(assetPath).slice(1); // Remove the dot
   const relativePath = relative(projectRoot, dirname(assetPath));
 
+  // Metro behavior: httpServerLocation always uses forward slashes (/) even on Windows
+  // Convert Windows backslashes to forward slashes for URL compatibility
+  const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+
+  // Metro behavior: if relativePath is empty or '.', use empty string for httpServerLocation
+  // This means assets in project root are served from /assets/
+  const httpServerLocation = normalizedRelativePath && normalizedRelativePath !== '.' 
+    ? `/assets/${normalizedRelativePath}` 
+    : '/assets';
+
   // Generate Metro-compatible asset registration
   return `module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({
   "__packager_asset": true,
-  "httpServerLocation": "/assets/${relativePath}",
+  "httpServerLocation": "${httpServerLocation}",
   "width": ${width},
   "height": ${height},
   "scales": [1],
@@ -116,9 +126,20 @@ interface GraphModule {
 /**
  * Build result
  */
+export interface AssetInfo {
+  filePath: string;
+  httpServerLocation: string;
+  name: string;
+  type: string;
+  width: number;
+  height: number;
+  scales: number[]; // Metro scales array (e.g., [1] or [1, 2, 3])
+}
+
 export interface BuildResult {
   code: string;
   map?: string;
+  assets?: AssetInfo[];
 }
 
 /**
@@ -356,13 +377,31 @@ async function transformWithBabel(
   try {
     // Metro-style babel config (matches reference/metro/packages/metro-babel-transformer/src/index.js)
     // Metro sets code: false to return AST only (serializer generates code)
+    // Metro behavior: Babel auto-discovers babel.config.js from cwd (projectRoot)
+    // Metro does NOT explicitly set configFile path - it relies on Babel's auto-discovery
+    // Metro behavior: enableBabelRCLookup controls babelrc/configFile
+    // When enableBabelRCLookup is true, Metro sets babelrc: true and configFile: true (default)
+    // When enableBabelRCLookup is false, Metro sets babelrc: false and configFile: false
+    // React Native projects typically have enableBabelRCLookup: true (default)
+    // So we should use babelrc: true and configFile: true to match Metro's default behavior
     const babelConfig: any = {
       ast: true,
-      babelrc: false, // Metro uses enableBabelRCLookup, we use false for consistency
-      // Metro reads babel.config.js from cwd (projectRoot) - configFile defaults to true
+      // Metro default: enableBabelRCLookup is true, so babelrc: true and configFile: true
+      // This allows Babel to read babel.config.js from project root
+      babelrc: true, // Metro default: enableBabelRCLookup is true
+      configFile: true, // Metro default: Babel reads babel.config.js from cwd
       // If babel.config.js doesn't exist, Babel will use no presets (code won't be transformed)
       // This is expected - projects should have babel.config.js with @react-native/babel-preset
-      caller: { bundler: 'bungae', name: 'bungae', platform: options.platform },
+      caller: {
+        bundler: 'metro',
+        name: 'metro',
+        platform: options.platform,
+        // Metro includes these additional caller options for @react-native/babel-preset
+        isDev: options.dev,
+        isServer: false,
+        // Engine can be 'hermes' or 'jsc' - default to 'hermes' for React Native
+        engine: 'hermes',
+      },
       cloneInputAst: false, // Metro sets this to avoid cloning overhead
       code: false, // Metro-compatible: return AST only, serializer generates code
       cwd: options.root, // Metro sets cwd to projectRoot - Babel auto-discovers babel.config.js from here
@@ -406,6 +445,37 @@ async function transformWithBabel(
         });
 
     // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
+    // Debug: Check if Babel loaded babel.config.js (only in dev mode and for first few files)
+    if (options.dev && filePath.includes('node_modules/react-native')) {
+      try {
+        // Use loadOptionsAsync to check if babel.config.js is loaded
+        // Pass only config-related options, not transform options
+        const loadedOptions = await babel.loadOptionsAsync({
+          cwd: options.root,
+          filename: filePath,
+          caller: babelConfig.caller,
+          babelrc: true, // Metro default: enableBabelRCLookup is true
+          configFile: true, // Metro default: Babel reads babel.config.js
+        });
+        if (loadedOptions?.presets && loadedOptions.presets.length > 0) {
+          const presetNames = loadedOptions.presets.map((p: any) => {
+            if (Array.isArray(p)) return p[0];
+            return typeof p === 'string' ? p : 'unknown';
+          });
+          console.log(
+            `[bungae] Babel loaded ${loadedOptions.presets.length} preset(s) for ${filePath}: ${presetNames.join(', ')}`,
+          );
+        } else {
+          console.warn(
+            `[bungae] WARNING: Babel did not load any presets for ${filePath}. Codegen may not run.`,
+          );
+          console.warn(`[bungae] cwd: ${options.root}, filename: ${filePath}`);
+        }
+      } catch (error) {
+        console.warn(`[bungae] Failed to load Babel options: ${error}`);
+      }
+    }
+
     const transformResult = await babel.transformFromAstAsync(sourceAst, code, babelConfig);
 
     if (!transformResult?.ast) {
@@ -486,12 +556,17 @@ async function buildGraph(
       return filePath.endsWith(normalizedExt);
     });
     if (isAsset) {
+      // Debug: Log asset processing
+      if (config.dev) {
+        console.log(`[bungae] Processing asset: ${filePath}`);
+      }
+
       // Resolve AssetRegistry dependency
       const assetRegistryPath = 'react-native/Libraries/Image/AssetRegistry';
       let resolvedAssetRegistry: string | null = null;
       try {
         resolvedAssetRegistry = require.resolve(assetRegistryPath, {
-          paths: [config.root],
+          paths: [config.root, ...config.resolver.nodeModulesPaths],
         });
       } catch {
         // AssetRegistry not found, skip asset processing
@@ -502,6 +577,11 @@ async function buildGraph(
       }
 
       const assetCode = generateAssetModuleCode(filePath, config.root);
+      
+      // Debug: Log generated asset code
+      if (config.dev) {
+        console.log(`[bungae] Generated asset code for ${filePath}:`, assetCode.substring(0, 200));
+      }
       // Parse asset code to AST (simple module.exports assignment)
       const babel = await import('@babel/core');
       const assetAst = await babel.parseAsync(assetCode, {
@@ -674,6 +754,26 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
 
   console.log(`[bungae] Building dependency graph (Babel + Metro-compatible)...`);
 
+  // Get modules to run before main module (Metro-compatible)
+  // This needs to be done before building graph to ensure these modules are included
+  // Pass nodeModulesPaths for monorepo support (Metro-compatible)
+  let runBeforeMainModule: string[] = [];
+  if (config.serializer?.getModulesRunBeforeMainModule) {
+    try {
+      runBeforeMainModule = config.serializer.getModulesRunBeforeMainModule(entryPath, {
+        projectRoot: root,
+        nodeModulesPaths: config.resolver.nodeModulesPaths,
+      });
+      if (dev && runBeforeMainModule.length > 0) {
+        console.log(`[bungae] Modules to run before main: ${runBeforeMainModule.join(', ')}`);
+      }
+    } catch (error) {
+      if (dev) {
+        console.warn(`[bungae] Error calling getModulesRunBeforeMainModule: ${error}`);
+      }
+    }
+  }
+
   // Build dependency graph
   const startTime = Date.now();
   const graph = await buildGraph(entryPath, config, (processed, total) => {
@@ -682,6 +782,43 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     }
   });
   console.log(`\n[bungae] Graph built: ${graph.size} modules in ${Date.now() - startTime}ms`);
+
+  // Metro behavior: Metro assumes runBeforeMainModule modules are already in the dependency graph.
+  // Check if InitializeCore is in the graph and log debug info if not found.
+  if (dev && runBeforeMainModule.length > 0) {
+    for (const modulePath of runBeforeMainModule) {
+      const found = graph.has(modulePath);
+      if (!found) {
+        // Check if any module in graph matches InitializeCore by path segments
+        const matchingModules = Array.from(graph.keys()).filter((path) =>
+          path.includes('InitializeCore'),
+        );
+        console.warn(
+          `[bungae] InitializeCore not found in dependency graph. Expected: ${modulePath}`,
+        );
+        if (matchingModules.length > 0) {
+          console.warn(
+            `[bungae] Found similar modules in graph: ${matchingModules.join(', ')}`,
+          );
+        } else {
+          console.warn(
+            `[bungae] No InitializeCore-related modules found in dependency graph. Graph size: ${graph.size}`,
+          );
+          // Debug: Check if react-native is in the graph
+          const reactNativeModules = Array.from(graph.keys()).filter((path) =>
+            path.includes('react-native'),
+          );
+          if (reactNativeModules.length > 0) {
+            console.warn(
+              `[bungae] Found react-native modules in graph (${reactNativeModules.length}): ${reactNativeModules.slice(0, 5).join(', ')}...`,
+            );
+          } else {
+            console.warn(`[bungae] No react-native modules found in dependency graph!`);
+          }
+        }
+      }
+    }
+  }
 
   // Convert to serializer modules
   const graphModules = await graphToSerializerModules(graph);
@@ -718,19 +855,6 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // Create module ID factory
   const createModuleId = createModuleIdFactory();
 
-  // Get modules to run before main module (Metro-compatible)
-  // This uses the getModulesRunBeforeMainModule function from config
-  let runBeforeMainModule: string[] = [];
-  if (config.serializer?.getModulesRunBeforeMainModule) {
-    try {
-      runBeforeMainModule = config.serializer.getModulesRunBeforeMainModule(entryPath);
-    } catch (error) {
-      if (dev) {
-        console.warn(`[bungae] Error calling getModulesRunBeforeMainModule: ${error}`);
-      }
-    }
-  }
-
   // Serialize bundle
   const bundle = await baseJSBundle(entryPath, prependModules, graphModules, {
     createModuleId,
@@ -761,7 +885,63 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       })
     : undefined;
 
-  return { code, map };
+  // Extract asset files from graph for Android/iOS asset copying
+  const assets: AssetInfo[] = [];
+  for (const [filePath, module] of graph.entries()) {
+    // Check if this is an asset file
+    const isAsset = config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return filePath.endsWith(normalizedExt);
+    });
+    
+    if (isAsset) {
+      const { width, height } = getImageSize(filePath);
+      const name = basename(filePath, extname(filePath));
+      const type = extname(filePath).slice(1);
+      const relativePath = relative(root, dirname(filePath));
+      const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+      const httpServerLocation = normalizedRelativePath && normalizedRelativePath !== '.' 
+        ? `/assets/${normalizedRelativePath}` 
+        : '/assets';
+      
+      // Extract scales from asset code (default to [1] if not found)
+      // Metro uses scales array to determine which drawable folders to create
+      let scales = [1]; // Default scale
+      try {
+        // Try to extract scales from the module code
+        const moduleCode = module.code;
+        if (moduleCode && typeof moduleCode === 'string' && moduleCode.includes('scales:')) {
+          const scalesMatch = moduleCode.match(/scales:\s*\[([^\]]+)\]/);
+          if (scalesMatch) {
+            const scalesStr = scalesMatch[1];
+            if (scalesStr) {
+              const extractedScales = scalesStr
+                .split(',')
+                .map((s) => parseFloat(s.trim()))
+                .filter((s) => !isNaN(s));
+              if (extractedScales.length > 0) {
+                scales = extractedScales;
+              }
+            }
+          }
+        }
+      } catch {
+        // If extraction fails, use default [1]
+      }
+      
+      assets.push({
+        filePath,
+        httpServerLocation,
+        name,
+        type,
+        width,
+        height,
+        scales,
+      });
+    }
+  }
+
+  return { code, map, assets };
 }
 
 /**
@@ -913,6 +1093,139 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
         return new Response('{}', {
           headers: { 'Content-Type': 'application/json' },
         });
+      }
+
+      // Handle asset requests (Metro-compatible)
+      // Metro serves assets over HTTP in dev mode (not copied to filesystem)
+      // Metro URL format: httpServerLocation + '/' + name + '@' + scale + '.' + type
+      // Metro generates: /assets/../../node_modules/.../react-light.png
+      // HTTP clients (OkHttp) normalize relative paths (../), so requests may come as:
+      // - /assets/../../node_modules/... (original)
+      // - /node_modules/... (normalized by HTTP client)
+      // We need to handle both cases
+      const isAssetRequest = url.pathname.startsWith('/assets/') || url.pathname.startsWith('/node_modules/');
+      if (isAssetRequest) {
+        try {
+          // Handle both /assets/... and /node_modules/... paths
+          let assetRelativePath: string;
+          if (url.pathname.startsWith('/assets/')) {
+            // Remove /assets/ prefix
+            assetRelativePath = url.pathname.slice('/assets/'.length);
+            // Metro behavior: httpServerLocation can contain relative paths like "../../node_modules/..."
+            // These are relative to project root. We need to resolve them correctly.
+            // Example: "../../node_modules/.../assets/react-light.png"
+            // Use path.resolve to properly handle ../ segments
+            // First, normalize the path by removing leading ../ and resolving
+            const pathSegments = assetRelativePath.split('/');
+            let resolvedSegments: string[] = [];
+            for (const segment of pathSegments) {
+              if (segment === '..') {
+                if (resolvedSegments.length > 0) {
+                  resolvedSegments.pop();
+                }
+              } else if (segment !== '.' && segment !== '') {
+                resolvedSegments.push(segment);
+              }
+            }
+            assetRelativePath = resolvedSegments.join('/');
+          } else if (url.pathname.startsWith('/node_modules/')) {
+            // HTTP client normalized /assets/../../node_modules/... to /node_modules/...
+            // This is already an absolute path from project root
+            assetRelativePath = url.pathname.slice('/node_modules/'.length);
+            // Prepend node_modules/ to make it relative to project root
+            assetRelativePath = `node_modules/${assetRelativePath}`;
+          } else {
+            return new Response('Bad Request', { status: 400 });
+          }
+          
+          // Remove scale suffix if present (e.g., react-light@2x.png -> react-light.png)
+          // Metro adds @scale suffix for scaled assets, but we need the original file
+          assetRelativePath = assetRelativePath.replace(/@\d+x\./, '.');
+          
+          // Normalize path separators: convert any backslashes to forward slashes (Windows compatibility)
+          assetRelativePath = assetRelativePath.replace(/\\/g, '/');
+          
+          // Convert forward slashes to platform-specific separators for file system access
+          const normalizedPath = assetRelativePath.replace(/\//g, sep);
+          
+          // Try resolving from project root first
+          let resolvedAssetPath = resolve(config.root, normalizedPath);
+          
+          // If not found, try from monorepo node_modules paths
+          if (!existsSync(resolvedAssetPath)) {
+            for (const nodeModulesPath of config.resolver.nodeModulesPaths) {
+              const monorepoPath = resolve(config.root, nodeModulesPath);
+              // Try resolving from monorepo root
+              const alternativePath = resolve(monorepoPath, '..', normalizedPath);
+              if (existsSync(alternativePath)) {
+                resolvedAssetPath = alternativePath;
+                break;
+              }
+            }
+          }
+          
+          // Use resolved path (rename to avoid variable shadowing)
+          const finalAssetPath = resolvedAssetPath;
+
+          // Security: Ensure the resolved path is within allowed directories
+          const normalizedAssetPath = resolve(finalAssetPath);
+          const normalizedRoot = resolve(config.root);
+          
+          // Check if path is within project root
+          let isAllowed = normalizedAssetPath.startsWith(normalizedRoot);
+          
+          // Also check monorepo node_modules paths
+          if (!isAllowed) {
+            isAllowed = config.resolver.nodeModulesPaths.some((p) => {
+              const monorepoNodeModules = resolve(config.root, p);
+              return normalizedAssetPath.startsWith(monorepoNodeModules);
+            });
+          }
+          
+          if (!isAllowed) {
+            console.warn(`[bungae] Asset path outside allowed directories: ${normalizedAssetPath}`);
+            return new Response('Forbidden', { status: 403 });
+          }
+
+          // Check if file exists
+          if (!existsSync(normalizedAssetPath)) {
+            console.warn(`[bungae] Asset not found: ${normalizedAssetPath} (requested: ${url.pathname})`);
+            // Debug: Log the resolution attempt
+            if (config.dev) {
+              console.warn(`[bungae] Debug - assetRelativePath: ${assetRelativePath}, normalizedPath: ${normalizedPath}, resolvedAssetPath: ${resolvedAssetPath}`);
+            }
+            return new Response('Not Found', { status: 404 });
+          }
+
+          // Read and serve the asset file
+          const file = Bun.file(finalAssetPath);
+          const ext = extname(normalizedAssetPath).toLowerCase();
+          
+          // Determine content type based on extension
+          const contentTypeMap: Record<string, string> = {
+            '.png': 'image/png',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
+            '.bmp': 'image/bmp',
+            '.svg': 'image/svg+xml',
+            '.ico': 'image/x-icon',
+            '.json': 'application/json',
+          };
+
+          const contentType = contentTypeMap[ext] || 'application/octet-stream';
+
+          return new Response(file, {
+            headers: {
+              'Content-Type': contentType,
+              'Cache-Control': 'public, max-age=31536000', // Cache assets for 1 year
+            },
+          });
+        } catch (error) {
+          console.error(`[bungae] Error serving asset ${url.pathname}:`, error);
+          return new Response('Internal Server Error', { status: 500 });
+        }
       }
 
       if (url.pathname === '/' || url.pathname === '/index.html') {

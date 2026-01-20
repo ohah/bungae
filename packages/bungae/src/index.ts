@@ -68,6 +68,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
   // Build using Graph bundler with Metro __d()/__r() module system
   // This ensures correct module execution order for React Native
   const buildResult = await buildWithGraph(config);
+  
+  // Extract asset files from the build result for Android/iOS asset copying
+  const assetFiles = buildResult.assets || [];
 
   // Ensure output directory exists
   const outputDir = resolve(root, outDir);
@@ -113,9 +116,12 @@ export async function build(config: ResolvedConfig): Promise<void> {
   console.log(`   Bundler: Bungae v${VERSION}`);
   console.log(`   Dev mode: ${dev}, Platform: ${platform}`);
 
-  // For release builds, also copy to React Native expected locations
-  // Always copy for iOS/Android release builds (dev === false)
-  if (platform === 'android' || platform === 'ios') {
+  // Copy bundle and assets to React Native expected locations
+  // Metro behavior:
+  // - Development mode: Assets are served over HTTP from dev server (not copied to filesystem)
+  // - Release mode: Assets are copied to drawable folders via `react-native bundle --assets-dest`
+  // We copy assets only in release builds (dev === false) to match Metro behavior
+  if ((platform === 'android' || platform === 'ios') && !dev) {
     console.log(`   🔄 Attempting to copy bundle for ${platform} (dev: ${dev})...`);
     if (platform === 'android') {
       // Android: Copy to android/app/src/main/assets/
@@ -126,7 +132,67 @@ export async function build(config: ResolvedConfig): Promise<void> {
         mkdirSync(androidAssetsDir, { recursive: true });
         const androidBundlePath = join(androidAssetsDir, bundleFileName);
         copyFileSync(bundlePath, androidBundlePath);
-        console.log(`   📦 Copied to: ${androidBundlePath}`);
+        console.log(`   📦 Copied bundle to: ${androidBundlePath}`);
+        
+        // Copy assets to Android drawable folders (Metro-compatible)
+        // Metro copies assets to multiple drawable folders based on scales array
+        // Scale mapping from Metro's assetPathUtils.js: 0.75->ldpi, 1->mdpi, 1.5->hdpi, 2->xhdpi, 3->xxhdpi, 4->xxxhdpi
+        if (assetFiles && assetFiles.length > 0) {
+          // Metro scale to drawable folder mapping (from Metro's assetPathUtils.js)
+          const scaleToDrawable: Record<number, string> = {
+            0.75: 'ldpi',
+            1: 'mdpi',
+            1.5: 'hdpi',
+            2: 'xhdpi',
+            3: 'xxhdpi',
+            4: 'xxxhdpi',
+          };
+          
+          // Helper function to get drawable folder name from scale (Metro-compatible)
+          const getDrawableFolderName = (scale: number): string => {
+            if (scaleToDrawable[scale]) {
+              return `drawable-${scaleToDrawable[scale]}`;
+            }
+            // For custom scales, Metro uses format: drawable-{round(160*scale)}dpi
+            if (Number.isFinite(scale) && scale > 0) {
+              return `drawable-${Math.round(160 * scale)}dpi`;
+            }
+            return 'drawable-mdpi'; // Fallback
+          };
+          
+          console.log(`   🖼️  Copying ${assetFiles.length} asset(s) to Android drawable folders...`);
+          
+          for (const asset of assetFiles) {
+            // Metro file naming: convert httpServerLocation path to filename
+            // Example: /assets/../../node_modules/.../assets -> __node_modules_..._assets
+            let assetFileName = asset.httpServerLocation
+              .replace(/^\/assets\//, '') // Remove /assets/ prefix
+              .replace(/^(\.\.\/)+/, '') // Remove leading ../
+              .replace(/\//g, '_') // Convert / to _
+              .replace(/[^a-z0-9_]/gi, '') // Remove special characters (Metro-compatible)
+              + `_${asset.name}.${asset.type}`;
+            
+            // Ensure filename starts with __ (Metro convention for node_modules assets)
+            if (!assetFileName.startsWith('__')) {
+              assetFileName = `__${assetFileName}`;
+            }
+            
+            // Metro copies asset to drawable folder(s) based on scales array
+            // For scales: [1], copy to drawable-mdpi
+            // For scales: [1, 2, 3], copy to drawable-mdpi, drawable-xhdpi, drawable-xxhdpi
+            const scales = asset.scales || [1];
+            for (const scale of scales) {
+              const drawableFolderName = getDrawableFolderName(scale);
+              const drawableDir = join(root, 'android', 'app', 'src', 'main', 'res', drawableFolderName);
+              mkdirSync(drawableDir, { recursive: true });
+              
+              const targetPath = join(drawableDir, assetFileName);
+              copyFileSync(asset.filePath, targetPath);
+              console.log(`      ✅ ${asset.name}.${asset.type} -> ${drawableFolderName}/${assetFileName}`);
+            }
+          }
+          console.log(`   ✅ Assets copied to Android drawable folders`);
+        }
       } else {
         console.log(`   ⚠️  Android assets directory not found: ${androidParentDir}`);
       }
