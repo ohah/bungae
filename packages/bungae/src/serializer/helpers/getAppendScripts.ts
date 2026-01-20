@@ -95,6 +95,12 @@ export function getAppendScripts(
         const moduleId = options.createModuleId(module.path);
         const code = options.getRunModuleStatement(moduleId, options.globalPrefix);
 
+        if (options.dev && modulePath.includes('InitializeCore')) {
+          console.log(
+            `[bungae] Found InitializeCore module for execution: ${module.path} (ID: ${moduleId})`,
+          );
+        }
+
         output.push({
           path: `require-${modulePath}`,
           code,
@@ -103,8 +109,11 @@ export function getAppendScripts(
       } else if (options.dev) {
         // In dev mode, warn if runBeforeMainModule module is not found
         console.warn(
-          `Warning: Module "${modulePath}" specified in runBeforeMainModule was not found in the dependency graph.`,
+          `[bungae] Warning: Module "${modulePath}" specified in runBeforeMainModule was not found in the dependency graph.`,
         );
+        if (modulePath.includes('InitializeCore')) {
+          console.error(`[bungae] CRITICAL: InitializeCore not found! Touch events will not work.`);
+        }
       }
     }
   }
