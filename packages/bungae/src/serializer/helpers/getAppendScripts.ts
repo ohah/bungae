@@ -24,15 +24,71 @@ export function getAppendScripts(
       const module = modules.find((m) => {
         // Exact path match
         if (m.path === modulePath) return true;
+
         // Try resolving both paths to see if they point to the same file
         try {
           const pathModule = require('path');
-          const resolved1 = pathModule.resolve(m.path);
-          const resolved2 = pathModule.resolve(modulePath);
-          return resolved1 === resolved2;
+          const fs = require('fs');
+
+          // Normalize both paths
+          let resolved1: string;
+          let resolved2: string;
+
+          // Resolve m.path (could be relative or absolute)
+          if (pathModule.isAbsolute(m.path)) {
+            resolved1 = pathModule.normalize(m.path);
+          } else {
+            // If relative, resolve from process.cwd()
+            resolved1 = pathModule.resolve(process.cwd(), m.path);
+          }
+
+          // Resolve modulePath (could be relative or absolute)
+          if (pathModule.isAbsolute(modulePath)) {
+            resolved2 = pathModule.normalize(modulePath);
+          } else {
+            // If relative, resolve from process.cwd()
+            resolved2 = pathModule.resolve(process.cwd(), modulePath);
+          }
+
+          // Compare normalized paths
+          if (resolved1 === resolved2) return true;
+
+          // Also try comparing with realpath (follows symlinks)
+          try {
+            const real1 = fs.realpathSync(resolved1);
+            const real2 = fs.realpathSync(resolved2);
+            if (real1 === real2) return true;
+          } catch {
+            // realpathSync may fail if file doesn't exist, ignore
+          }
+
+          // Fallback: check if paths end with the same relative path segment
+          // This handles cases like:
+          // - m.path: "../../node_modules/.../InitializeCore.js"
+          // - modulePath: "/absolute/path/.../InitializeCore.js"
+          const normalized1 = pathModule.normalize(m.path).replace(/\\/g, '/');
+          const normalized2 = pathModule.normalize(modulePath).replace(/\\/g, '/');
+
+          // Extract last 3 path segments for comparison
+          const segments1 = normalized1
+            .split('/')
+            .filter((s: string) => s)
+            .slice(-3);
+          const segments2 = normalized2
+            .split('/')
+            .filter((s: string) => s)
+            .slice(-3);
+
+          if (segments1.length === segments2.length && segments1.length > 0) {
+            if (segments1.join('/') === segments2.join('/')) {
+              return true;
+            }
+          }
         } catch {
           return false;
         }
+
+        return false;
       });
 
       if (module) {

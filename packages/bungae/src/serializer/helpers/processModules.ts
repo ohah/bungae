@@ -15,6 +15,13 @@ export async function processModules(
 ): Promise<ReadonlyArray<[Module, string]>> {
   const filter = options.processModuleFilter || (() => true);
 
+  // Collect all module paths for dependency validation
+  const allModulePaths = new Set(modules.map((m) => m.path));
+  const optionsWithPaths = {
+    ...options,
+    allModulePaths,
+  } as SerializerOptions & { allModulePaths: Set<string> };
+
   // For script modules (source-map, source-url, etc.), return code as-is
   // For JS modules, wrap with __d()
   const results = await Promise.all(
@@ -33,7 +40,7 @@ export async function processModules(
       // If it's not a JS module by extension, we still wrap it
       // (Metro handles modules without extensions as JS modules)
       if (isJsModule(module) || !module.path.includes('.')) {
-        return [module, await wrapModule(module, options)] as [Module, string];
+        return [module, await wrapModule(module, optionsWithPaths)] as [Module, string];
       }
 
       // For truly non-JS modules (like JSON), return as-is

@@ -246,7 +246,9 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
   );
 
   // Step 2: Wrap in function and add __d() call
-  const params = await getModuleParams(module, options);
+  // Pass all module paths to getModuleParams for validation
+  const allModulePaths = (options as { allModulePaths?: Set<string> }).allModulePaths;
+  const params = await getModuleParams(module, options, allModulePaths);
   return addParamsToDefineCall(convertedCode, options.globalPrefix, ...params);
 }
 
@@ -270,11 +272,28 @@ function isScriptModule(module: Module): boolean {
 export async function getModuleParams(
   module: Module,
   options: SerializerOptions,
+  allModulePaths?: Set<string>,
 ): Promise<Array<unknown>> {
   const moduleId = options.createModuleId(module.path);
 
   // Convert dependencies to module IDs
-  const dependencyIds = module.dependencies.map((dep) => options.createModuleId(dep));
+  // Warn if a dependency path is not in the bundle (dev mode only)
+  const dependencyIds = module.dependencies.map((dep) => {
+    const depId = options.createModuleId(dep);
+
+    // In dev mode, check if the dependency path exists in the bundle
+    if (options.dev && allModulePaths && !allModulePaths.has(dep)) {
+      // This is a warning, not an error, as the module might be resolved differently
+      // (e.g., platform-specific files)
+      console.warn(
+        `[bungae] Warning: Dependency "${dep}" of module "${module.path}" ` +
+          `is not in the bundle. This may cause "unknown module" errors. ` +
+          `Module ID assigned: ${depId}`,
+      );
+    }
+
+    return depId;
+  });
 
   const params: Array<unknown> = [moduleId, dependencyIds];
 
@@ -289,14 +308,33 @@ export async function getModuleParams(
 }
 
 /**
- * Check if module is a JS module (or JSON, which should be wrapped as JS)
+ * Check if module is a JS module (or JSON/asset, which should be wrapped as JS)
+ * Asset modules are also JS modules because they contain code that registers the asset
  */
 export function isJsModule(module: Module): boolean {
-  return (
+  // Standard JS/TS/JSON modules
+  if (
     module.path.endsWith('.js') ||
     module.path.endsWith('.jsx') ||
     module.path.endsWith('.ts') ||
     module.path.endsWith('.tsx') ||
     module.path.endsWith('.json')
-  );
+  ) {
+    return true;
+  }
+
+  // Asset modules (images, fonts, etc.) - these are converted to JS modules
+  // that call AssetRegistry.registerAsset()
+  // Check if the code contains registerAsset (asset module marker)
+  if (module.code.includes('registerAsset')) {
+    return true;
+  }
+
+  // Also check for common asset extensions
+  const assetExts = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.svg'];
+  if (assetExts.some((ext) => module.path.endsWith(ext))) {
+    return true;
+  }
+
+  return false;
 }
