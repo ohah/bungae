@@ -183,14 +183,84 @@ describe('Serializer Helpers', () => {
       expect(isJsModule(module)).toBe(true);
     });
 
-    test('should return false for non-JS files', () => {
+    test('should return false for non-JS files without registerAsset', () => {
       const module: Module = {
-        path: '/test.png',
-        code: '',
+        path: '/test.txt',
+        code: 'plain text content',
         dependencies: [],
       };
 
       expect(isJsModule(module)).toBe(false);
+    });
+
+    test('should return true for PNG files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/icon.png',
+        code: 'module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({});',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for JPG files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/photo.jpg',
+        code: 'module.exports = require("AssetRegistry").registerAsset({});',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for JPEG files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/photo.jpeg',
+        code: '',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for GIF files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/animation.gif',
+        code: '',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for WebP files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/image.webp',
+        code: '',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for SVG files (asset modules)', () => {
+      const module: Module = {
+        path: '/assets/logo.svg',
+        code: '',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return true for modules containing registerAsset (regardless of extension)', () => {
+      const module: Module = {
+        path: '/assets/custom-asset.custom',
+        code: 'module.exports = AssetRegistry.registerAsset({ name: "test" });',
+        dependencies: [],
+      };
+
+      expect(isJsModule(module)).toBe(true);
     });
   });
 

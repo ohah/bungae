@@ -23,6 +23,7 @@
   "scripts": {
     "dev": "bun run --filter='bungae' dev",
     "build": "bun run --filter='bungae' build",
+    "build:start": "bun run build && bun run --filter='ExampleApp' start:bungae",
     "test": "bun test packages/**",
     "test:watch": "bun test --watch packages/**",
     "test:coverage": "bun test --coverage packages/**",

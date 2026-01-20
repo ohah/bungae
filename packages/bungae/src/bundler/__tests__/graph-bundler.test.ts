@@ -473,4 +473,209 @@ console.log(config.name);
       await expect(buildWithGraph(config)).rejects.toThrow('Entry file not found');
     });
   });
+
+  describe('Asset Module Resolution', () => {
+    // Skip asset tests that require react-native AssetRegistry
+    test.skipIf(skipMetroRuntimeTests)('should generate asset module for PNG files', async () => {
+      // Create a minimal PNG file (1x1 transparent pixel)
+      const pngBuffer = Buffer.from([
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a, // PNG signature
+        0x00,
+        0x00,
+        0x00,
+        0x0d,
+        0x49,
+        0x48,
+        0x44,
+        0x52, // IHDR chunk
+        0x00,
+        0x00,
+        0x00,
+        0x01, // width: 1
+        0x00,
+        0x00,
+        0x00,
+        0x01, // height: 1
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00, // bit depth, color type, etc.
+        0x1f,
+        0x15,
+        0xc4,
+        0x89, // CRC
+        0x00,
+        0x00,
+        0x00,
+        0x0a,
+        0x49,
+        0x44,
+        0x41,
+        0x54, // IDAT chunk
+        0x78,
+        0x9c,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0d,
+        0x0a,
+        0x2d,
+        0xb4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4e,
+        0x44, // IEND chunk
+        0xae,
+        0x42,
+        0x60,
+        0x82,
+      ]);
+
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
+      const imageFile = join(assetsDir, 'icon.png');
+      writeFileSync(imageFile, pngBuffer);
+
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+const icon = require('./assets/icon.png');
+console.log(icon);
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // Asset should be registered with AssetRegistry
+      expect(result.code).toContain('registerAsset');
+      expect(result.code).toContain('__packager_asset');
+      expect(result.code).toContain('"name":"icon"');
+      expect(result.code).toContain('"type":"png"');
+    });
+
+    test.skipIf(skipMetroRuntimeTests)('should resolve asset dependencies correctly', async () => {
+      // Create a minimal PNG file
+      const pngBuffer = Buffer.from([
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        0x00,
+        0x00,
+        0x00,
+        0x0d,
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        0x00,
+        0x00,
+        0x00,
+        0x10, // width: 16
+        0x00,
+        0x00,
+        0x00,
+        0x10, // height: 16
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00,
+        0x1f,
+        0x15,
+        0xc4,
+        0x89,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4e,
+        0x44,
+        0xae,
+        0x42,
+        0x60,
+        0x82,
+      ]);
+
+      const imagesDir = join(testDir, 'images');
+      mkdirSync(imagesDir, { recursive: true });
+      const imageFile = join(imagesDir, 'logo.png');
+      writeFileSync(imageFile, pngBuffer);
+
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+const logo = require('./images/logo.png');
+console.log('Logo:', logo);
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // Asset module should have AssetRegistry as dependency
+      expect(result.code).toContain('AssetRegistry');
+      // Asset should have correct dimensions
+      expect(result.code).toContain('"width":16');
+      expect(result.code).toContain('"height":16');
+    });
+
+    test('should detect asset files by extension', async () => {
+      // Test that assetExts config is respected
+      const config = getDefaultConfig(testDir);
+
+      // Default asset extensions should include common image formats
+      expect(config.resolver.assetExts).toContain('.png');
+      expect(config.resolver.assetExts).toContain('.jpg');
+      expect(config.resolver.assetExts).toContain('.jpeg');
+      expect(config.resolver.assetExts).toContain('.gif');
+      expect(config.resolver.assetExts).toContain('.webp');
+    });
+  });
 });

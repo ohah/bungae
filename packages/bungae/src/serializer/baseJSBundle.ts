@@ -58,6 +58,8 @@ export async function baseJSBundle(
 
   // Try to find InitializeCore module in graph modules
   // InitializeCore should be included in the dependency graph when react-native is imported
+  // Note: InitializeCore should already be in the dependency graph (via react-native imports)
+  // We only find it and add to runBeforeMainModule, we don't add it manually to avoid dependency issues
   const initializeCoreModule = sortedModules.find(
     (m) =>
       m.path.includes('Core/InitializeCore') ||

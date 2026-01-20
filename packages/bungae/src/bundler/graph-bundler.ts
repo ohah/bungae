@@ -14,7 +14,7 @@
  */
 
 import { existsSync, readFileSync } from 'fs';
-import { dirname, join, resolve, relative } from 'path';
+import { dirname, join, resolve, relative, basename, extname } from 'path';
 
 import type { ServerWebSocket } from 'bun';
 
@@ -27,6 +27,74 @@ import {
 } from '../serializer';
 import type { Module } from '../serializer/types';
 import { extractDependencies } from '../transformer/utils';
+
+/**
+ * Get image dimensions from a PNG file (basic implementation)
+ */
+function getImageSize(filePath: string): { width: number; height: number } {
+  try {
+    const buffer = readFileSync(filePath);
+    const ext = extname(filePath).toLowerCase();
+
+    if (ext === '.png') {
+      // PNG: width at offset 16, height at offset 20 (big endian)
+      if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50) {
+        const width = buffer.readUInt32BE(16);
+        const height = buffer.readUInt32BE(20);
+        return { width, height };
+      }
+    } else if (ext === '.jpg' || ext === '.jpeg') {
+      // JPEG: Find SOF0 marker (0xFF 0xC0) and read dimensions
+      let offset = 2;
+      while (offset < buffer.length) {
+        if (buffer[offset] !== 0xff) break;
+        const marker = buffer[offset + 1];
+        if (marker === 0xc0 || marker === 0xc2) {
+          // SOF0 or SOF2
+          const height = buffer.readUInt16BE(offset + 5);
+          const width = buffer.readUInt16BE(offset + 7);
+          return { width, height };
+        }
+        const length = buffer.readUInt16BE(offset + 2);
+        offset += 2 + length;
+      }
+    } else if (ext === '.gif') {
+      // GIF: width at offset 6, height at offset 8 (little endian)
+      if (buffer.length >= 10 && buffer.toString('ascii', 0, 3) === 'GIF') {
+        const width = buffer.readUInt16LE(6);
+        const height = buffer.readUInt16LE(8);
+        return { width, height };
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+
+  // Default size if we can't read the image
+  return { width: 0, height: 0 };
+}
+
+/**
+ * Generate asset module code that registers the asset with AssetRegistry
+ */
+function generateAssetModuleCode(assetPath: string, projectRoot: string): string {
+  const { width, height } = getImageSize(assetPath);
+  const name = basename(assetPath, extname(assetPath));
+  const type = extname(assetPath).slice(1); // Remove the dot
+  const relativePath = relative(projectRoot, dirname(assetPath));
+
+  // Generate Metro-compatible asset registration
+  return `module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({
+  "__packager_asset": true,
+  "httpServerLocation": "/assets/${relativePath}",
+  "width": ${width},
+  "height": ${height},
+  "scales": [1],
+  "hash": "${Date.now().toString(16)}",
+  "name": "${name}",
+  "type": "${type}"
+});`;
+}
 
 /**
  * Module in the dependency graph
@@ -45,6 +113,39 @@ interface GraphModule {
 export interface BuildResult {
   code: string;
   map?: string;
+}
+
+/**
+ * Try to find platform-specific version of a file
+ * e.g., Settings.js -> Settings.android.js or Settings.ios.js
+ */
+function tryPlatformSpecificFile(
+  resolvedPath: string,
+  platform: string,
+  resolver: ResolvedConfig['resolver'],
+): string | null {
+  // Get the base path without extension
+  const extMatch = resolvedPath.match(/\.[^.]+$/);
+  if (!extMatch) return null;
+
+  const ext = extMatch[0];
+  const basePath = resolvedPath.slice(0, -ext.length);
+
+  // Try platform-specific extension first
+  const platformPath = `${basePath}.${platform}${ext}`;
+  if (existsSync(platformPath)) {
+    return platformPath;
+  }
+
+  // Try .native extension if preferNativePlatform
+  if (resolver.preferNativePlatform) {
+    const nativePath = `${basePath}.native${ext}`;
+    if (existsSync(nativePath)) {
+      return nativePath;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -98,9 +199,19 @@ async function resolveModule(
       }
     }
 
-    // Try without extension (if it's already a file)
+    // Try without extension (if it's already a file, including assets)
     if (existsSync(basePath)) {
       return basePath;
+    }
+
+    // Try asset extensions (for image requires like require('./image.png'))
+    // assetExts already include the dot (e.g., '.png', '.jpg')
+    for (const ext of resolver.assetExts) {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      const assetPath = `${basePath}${normalizedExt}`;
+      if (existsSync(assetPath)) {
+        return assetPath;
+      }
     }
 
     // Try index files
@@ -132,6 +243,15 @@ async function resolveModule(
         resolved = withoutFlow;
       } else {
         return null;
+      }
+    }
+
+    // Check for platform-specific version of the resolved file
+    // e.g., Settings.js -> Settings.android.js or Settings.ios.js
+    if (platform !== 'web') {
+      const platformResolved = tryPlatformSpecificFile(resolved, platform, resolver);
+      if (platformResolved) {
+        return platformResolved;
       }
     }
 
@@ -197,13 +317,8 @@ async function transformFile(
     return `module.exports = ${code};`;
   }
 
-  // Asset files: Return empty (handled separately)
-  const isAsset = config.resolver.assetExts.some((ext) => filePath.endsWith(ext));
-  if (isAsset) {
-    return '';
-  }
-
   // Use Babel for all transformations (Metro-compatible)
+  // Note: Asset files are handled in processModule before reaching here
   return transformWithBabel(code, filePath, { dev, platform });
 }
 
@@ -262,6 +377,17 @@ async function transformWithBabel(
         },
       ],
     ],
+    plugins: [
+      // Replace Platform.OS with the actual platform value at build time
+      // This enables proper platform-specific code branching
+      [
+        require.resolve('babel-plugin-transform-define'),
+        {
+          'Platform.OS': JSON.stringify(options.platform),
+          'process.env.NODE_ENV': JSON.stringify(options.dev ? 'development' : 'production'),
+        },
+      ],
+    ],
     compact: !options.dev,
     comments: options.dev,
   });
@@ -303,11 +429,50 @@ async function buildGraph(
       return;
     }
 
-    // Skip asset files
-    const isAsset = config.resolver.assetExts.some((ext) => filePath.endsWith(ext));
+    // Handle asset files (images, etc.) - generate AssetRegistry module
+    // assetExts already include the dot (e.g., '.png', '.jpg')
+    const isAsset = config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return filePath.endsWith(normalizedExt);
+    });
     if (isAsset) {
+      // Resolve AssetRegistry dependency
+      const assetRegistryPath = 'react-native/Libraries/Image/AssetRegistry';
+      let resolvedAssetRegistry: string | null = null;
+      try {
+        resolvedAssetRegistry = require.resolve(assetRegistryPath, {
+          paths: [config.root],
+        });
+      } catch {
+        // AssetRegistry not found, skip asset processing
+        console.warn(`[bungae] AssetRegistry not found, skipping asset: ${filePath}`);
+        visited.add(filePath);
+        processing.delete(filePath);
+        return;
+      }
+
+      const assetCode = generateAssetModuleCode(filePath, config.root);
+      const module: GraphModule = {
+        path: filePath,
+        code: assetCode,
+        transformedCode: assetCode,
+        dependencies: resolvedAssetRegistry ? [resolvedAssetRegistry] : [],
+        originalDependencies: [assetRegistryPath],
+      };
+      modules.set(filePath, module);
       visited.add(filePath);
       processing.delete(filePath);
+      processedCount++;
+      onProgress?.(processedCount, totalCount);
+
+      // Process AssetRegistry dependency if not already processed
+      if (
+        resolvedAssetRegistry &&
+        !visited.has(resolvedAssetRegistry) &&
+        !processing.has(resolvedAssetRegistry)
+      ) {
+        await processModule(resolvedAssetRegistry);
+      }
       return;
     }
 
@@ -336,13 +501,20 @@ async function buildGraph(
     const transformedCode = await transformFile(filePath, code, config);
 
     // Extract dependencies from original code
-    const dependencies = await extractDependencies(code, filePath);
+    const originalDeps = await extractDependencies(code, filePath);
 
-    // Resolve dependencies
+    // Extract dependencies from transformed code
+    // Babel may add new imports (e.g., react/jsx-runtime for JSX)
+    const transformedDeps = await extractDependencies(transformedCode, filePath);
+
+    // Merge dependencies (remove duplicates)
+    const allDeps = Array.from(new Set([...originalDeps, ...transformedDeps]));
+
+    // Resolve dependencies (including asset files)
     const resolvedDependencies: string[] = [];
     const originalDependencies: string[] = [];
 
-    for (const dep of dependencies) {
+    for (const dep of allDeps) {
       if (!dep || !dep.trim()) continue;
 
       const resolved = await resolveModule(filePath, dep, config);
@@ -421,7 +593,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     throw new Error(`Entry file not found: ${entryPath}`);
   }
 
-  console.log(`[bungae] Building dependency graph...`);
+  console.log(`[bungae] Building dependency graph (Babel + Metro-compatible)...`);
 
   // Build dependency graph
   const startTime = Date.now();
@@ -497,11 +669,13 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   const port = server?.port ?? 8081;
   const hostname = 'localhost';
 
-  console.log(`Starting Bungae dev server (Graph mode) on http://${hostname}:${port}`);
+  console.log(
+    `Starting Bungae dev server (Babel mode, Metro-compatible) on http://${hostname}:${port}`,
+  );
 
-  let cachedBuild: BuildResult | null = null;
-  let isBuilding = false;
-  let buildPromise: Promise<BuildResult> | null = null;
+  // Platform-aware cache: key is platform name
+  const cachedBuilds = new Map<string, BuildResult>();
+  const buildingPlatforms = new Map<string, Promise<BuildResult>>();
 
   // Track connected HMR clients
   const hmrClients = new Set<{ send: (msg: string) => void }>();
@@ -531,9 +705,19 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
       if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
         try {
-          // Use cached build if available
+          // Get platform from URL query parameter (React Native passes this)
+          const requestPlatform = url.searchParams.get('platform') || platform;
+
+          // Create platform-specific config
+          const platformConfig: ResolvedConfig = {
+            ...config,
+            platform: requestPlatform as 'ios' | 'android' | 'web',
+          };
+
+          // Use cached build if available for this platform
+          const cachedBuild = cachedBuilds.get(requestPlatform);
           if (cachedBuild) {
-            console.log('Serving cached bundle...');
+            console.log(`Serving cached ${requestPlatform} bundle...`);
             const bundleWithMapRef = cachedBuild.map
               ? `${cachedBuild.code}\n//# sourceMappingURL=${url.pathname}.map`
               : cachedBuild.code;
@@ -546,33 +730,50 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             });
           }
 
-          // If already building, wait for it
-          if (isBuilding && buildPromise) {
-            console.log('Waiting for ongoing build...');
-            cachedBuild = await buildPromise;
-          } else {
-            // Start new build
-            console.log('Building bundle (Graph mode)...');
-            isBuilding = true;
-            buildPromise = buildWithGraph(config);
-            cachedBuild = await buildPromise;
-            isBuilding = false;
-            buildPromise = null;
+          // If already building for this platform, wait for it
+          const existingBuildPromise = buildingPlatforms.get(requestPlatform);
+          if (existingBuildPromise) {
+            console.log(`Waiting for ongoing ${requestPlatform} build...`);
+            const build = await existingBuildPromise;
+            cachedBuilds.set(requestPlatform, build);
+
+            const bundleWithMapRef = build.map
+              ? `${build.code}\n//# sourceMappingURL=${url.pathname}.map`
+              : build.code;
+
+            return new Response(bundleWithMapRef, {
+              headers: {
+                'Content-Type': 'application/javascript',
+                'Cache-Control': 'no-cache',
+              },
+            });
           }
 
-          const bundleWithMapRef = cachedBuild.map
-            ? `${cachedBuild.code}\n//# sourceMappingURL=${url.pathname}.map`
-            : cachedBuild.code;
+          // Start new build for this platform
+          console.log(`Building ${requestPlatform} bundle (Babel mode, Metro-compatible)...`);
+          const buildPromise = buildWithGraph(platformConfig);
+          buildingPlatforms.set(requestPlatform, buildPromise);
 
-          return new Response(bundleWithMapRef, {
-            headers: {
-              'Content-Type': 'application/javascript',
-              'Cache-Control': 'no-cache',
-            },
-          });
+          try {
+            const build = await buildPromise;
+            cachedBuilds.set(requestPlatform, build);
+            buildingPlatforms.delete(requestPlatform);
+
+            const bundleWithMapRef = build.map
+              ? `${build.code}\n//# sourceMappingURL=${url.pathname}.map`
+              : build.code;
+
+            return new Response(bundleWithMapRef, {
+              headers: {
+                'Content-Type': 'application/javascript',
+                'Cache-Control': 'no-cache',
+              },
+            });
+          } catch (buildError) {
+            buildingPlatforms.delete(requestPlatform);
+            throw buildError;
+          }
         } catch (error) {
-          isBuilding = false;
-          buildPromise = null;
           console.error('Build error:', error);
           return new Response(`// Build error: ${error}`, {
             status: 500,
@@ -588,6 +789,9 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
       }
 
       if (url.pathname.endsWith('.map')) {
+        // Get platform from URL query parameter for sourcemap
+        const mapPlatform = url.searchParams.get('platform') || platform;
+        const cachedBuild = cachedBuilds.get(mapPlatform);
         if (cachedBuild?.map) {
           return new Response(cachedBuild.map, {
             headers: { 'Content-Type': 'application/json' },
