@@ -52,5 +52,14 @@ export function getPreludeCode(options: {
     isDev ? 'development' : 'production',
   )};`;
 
-  return `var ${vars.join(',')};${processEnv}`;
+  // Set Bungae identifiers on globalThis if they exist in extraVars
+  let bungaeIdentifiers = '';
+  if (extraVars.__BUNGAE_BUNDLER__ !== undefined) {
+    bungaeIdentifiers += `globalThis.__BUNGAE_BUNDLER__=${JSON.stringify(extraVars.__BUNGAE_BUNDLER__)};`;
+  }
+  if (extraVars.__BUNGAE_VERSION__ !== undefined) {
+    bungaeIdentifiers += `globalThis.__BUNGAE_VERSION__=${JSON.stringify(extraVars.__BUNGAE_VERSION__)};`;
+  }
+
+  return `var ${vars.join(',')};${processEnv}${bungaeIdentifiers}`;
 }
