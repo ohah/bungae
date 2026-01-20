@@ -173,14 +173,81 @@ describe('Serializer Helpers', () => {
       expect(isJsModule(module)).toBe(true);
     });
 
-    test('should return false for .json files', () => {
+    test('should return true for .json files', () => {
       const module: Module = {
         path: '/test.json',
         code: '',
         dependencies: [],
       };
 
+      expect(isJsModule(module)).toBe(true);
+    });
+
+    test('should return false for non-JS files', () => {
+      const module: Module = {
+        path: '/test.png',
+        code: '',
+        dependencies: [],
+      };
+
       expect(isJsModule(module)).toBe(false);
+    });
+  });
+
+  describe('Script Module Handling', () => {
+    const createOptions = (): SerializerOptions => ({
+      createModuleId: (_path) => 0,
+      getRunModuleStatement: (id) => `require(${id});`,
+      dev: true,
+      projectRoot: '/project',
+      serverRoot: '/project',
+      globalPrefix: '',
+      runModule: true,
+    });
+
+    test('should return virtual script code as-is without transformation', async () => {
+      const module: Module = {
+        path: '__prelude__',
+        code: 'var __DEV__=true;',
+        dependencies: [],
+        type: 'js/script/virtual',
+      };
+
+      const result = await wrapModule(module, createOptions());
+
+      expect(result).toBe('var __DEV__=true;');
+    });
+
+    test('should wrap script modules in IIFE with global parameter', async () => {
+      const module: Module = {
+        path: '/polyfills/error-guard.js',
+        code: 'global.ErrorUtils = {};',
+        dependencies: [],
+        type: 'js/script',
+      };
+
+      const result = await wrapModule(module, createOptions());
+
+      // Should be wrapped in IIFE
+      expect(result).toContain('(function (global)');
+      expect(result).toContain('globalThis');
+      // Should contain the original code
+      expect(result).toContain('ErrorUtils');
+    });
+
+    test('should handle metro-runtime polyfill that is already wrapped', async () => {
+      const module: Module = {
+        path: '/node_modules/metro-runtime/src/polyfills/require.js',
+        code: '(function (global) { global.__r = function() {}; })',
+        dependencies: [],
+        type: 'js/script',
+      };
+
+      const result = await wrapModule(module, createOptions());
+
+      // Should call the existing IIFE with globalThis fallback
+      expect(result).toContain('globalThis');
+      expect(result).toContain('global.__r');
     });
   });
 
@@ -233,7 +300,7 @@ describe('Serializer Helpers', () => {
       expect(code).toContain('__d');
     });
 
-    test('should include non-JS modules as-is', async () => {
+    test('should wrap JSON modules with __d() (Metro-compatible)', async () => {
       const modules: Module[] = [
         {
           path: '/module1.js',
@@ -249,10 +316,10 @@ describe('Serializer Helpers', () => {
 
       const result = await processModules(modules, createOptions());
 
-      // Non-JS modules are included but not wrapped with __d()
+      // Both JS and JSON modules should be wrapped with __d() (Metro-compatible)
       expect(result.length).toBe(2);
       expect(result.find(([m]) => m.path === '/module1.js')?.[1]).toContain('__d');
-      expect(result.find(([m]) => m.path === '/data.json')?.[1]).toBe('{}');
+      expect(result.find(([m]) => m.path === '/data.json')?.[1]).toContain('__d');
     });
 
     test('should respect processModuleFilter', async () => {

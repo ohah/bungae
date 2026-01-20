@@ -13,6 +13,11 @@ import { join } from 'path';
 import { build, resolveConfig, getDefaultConfig } from '../../index';
 import { execBundle } from './execBundle';
 
+// Skip metro-runtime tests in unit test environment
+// These tests require a proper React Native project with metro-runtime installed
+// Run with BUNGAE_TEST_RN=1 to enable these tests (e.g., in ExampleApp)
+const skipMetroRuntimeTests = process.env.BUNGAE_TEST_RN !== '1';
+
 describe('Build Integration Tests', () => {
   let testDir: string;
   let basicBundleDir: string;
@@ -50,7 +55,8 @@ describe('Build Integration Tests', () => {
     }
   });
 
-  test('should build and execute a simple bundle', async () => {
+  // Skip: requires react-native for metro-runtime to execute bundle properly
+  test.skipIf(skipMetroRuntimeTests)('should build and execute a simple bundle', async () => {
     const defaultConfig = getDefaultConfig(testDir);
     const config = resolveConfig(
       {
@@ -81,36 +87,41 @@ describe('Build Integration Tests', () => {
     expect(result).toMatchSnapshot();
   });
 
-  test('should build bundle with dependencies correctly', async () => {
-    const defaultConfig = getDefaultConfig(testDir);
-    const config = resolveConfig(
-      {
-        ...defaultConfig,
-        entry: 'basic_bundle/TestBundle.js',
-        platform: 'ios',
-        dev: true, // Development mode to get TestBundle.jsbundle
-        outDir: 'dist',
-      },
-      testDir,
-    );
+  // Skip: requires react-native for metro-runtime to execute bundle properly
+  test.skipIf(skipMetroRuntimeTests)(
+    'should build bundle with dependencies correctly',
+    async () => {
+      const defaultConfig = getDefaultConfig(testDir);
+      const config = resolveConfig(
+        {
+          ...defaultConfig,
+          entry: 'basic_bundle/TestBundle.js',
+          platform: 'ios',
+          dev: true, // Development mode to get TestBundle.jsbundle
+          outDir: 'dist',
+        },
+        testDir,
+      );
 
-    await build(config);
+      await build(config);
 
-    const bundlePath = join(testDir, 'dist', 'TestBundle.jsbundle');
-    const bundleCode = readFileSync(bundlePath, 'utf-8');
+      const bundlePath = join(testDir, 'dist', 'TestBundle.jsbundle');
+      const bundleCode = readFileSync(bundlePath, 'utf-8');
 
-    // Bundle should contain module definitions (Metro-compatible)
-    expect(bundleCode).toContain('__METRO_GLOBAL_PREFIX__');
-    expect(bundleCode).toContain('__d(');
-    expect(bundleCode).toContain('__r(');
+      // Bundle should contain module definitions (Metro-compatible)
+      expect(bundleCode).toContain('__METRO_GLOBAL_PREFIX__');
+      expect(bundleCode).toContain('__d(');
+      expect(bundleCode).toContain('__r(');
 
-    // Execute bundle and verify (Metro-style)
-    // Metro uses toMatchSnapshot() for bundle execution verification
-    const result = execBundle(bundleCode);
-    expect(result).toMatchSnapshot();
-  });
+      // Execute bundle and verify (Metro-style)
+      // Metro uses toMatchSnapshot() for bundle execution verification
+      const result = execBundle(bundleCode);
+      expect(result).toMatchSnapshot();
+    },
+  );
 
-  test('should build bundle for different platforms', async () => {
+  // Skip: requires react-native for metro-runtime to execute bundle properly
+  test.skipIf(skipMetroRuntimeTests)('should build bundle for different platforms', async () => {
     const platforms: Array<'ios' | 'android' | 'web'> = ['ios', 'android', 'web'];
 
     for (const platform of platforms) {

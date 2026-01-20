@@ -36,6 +36,9 @@ describe('mergeConfig', () => {
           polyfills: [],
           prelude: [],
           bundleType: 'plain',
+          extraVars: {},
+          getModulesRunBeforeMainModule: () => [],
+          getPolyfills: () => [],
         },
         server: {
           port: 8081,

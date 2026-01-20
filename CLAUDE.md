@@ -15,39 +15,60 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ### Resolution (모듈 해석)
 
-- **Bun.build() 기본 해석 활용**: Node.js 표준 모듈 해석, Package Exports 지원
-- **Platform Resolver Plugin**: React Native 플랫폼 확장자 (`.ios.js`, `.android.js`, `.native.js`) 처리
-- **구현 전략**: Bun의 내장 해석을 활용하고, 플랫폼 확장자만 Plugin으로 추가
+- **자체 모듈 해석**: `require.resolve()` 기반 모듈 해석
+- **Platform Resolver**: React Native 플랫폼 확장자 (`.ios.js`, `.android.js`, `.native.js`) 처리
+- **구현 위치**: `graph-bundler.ts`의 `resolveModule()` 함수
 
 ### Transformation (코드 변환)
 
-Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작업을 담당:
+**현재 구현 (Phase 1+)**: Metro와 동일하게 **Babel + Hermes Parser** 사용
 
 ```
-1. Hermes Parser Plugin - Flow + JSX 파싱 (Babel only)
-2. Flow Enum Transform   - Flow enum 처리 (Babel only)
-3. Flow Type Stripping   - Flow 타입 제거 (Babel only)
-4. ESM → CJS Conversion  - 모듈 변환 (SWC - fast)
-5. JSX Transformation    - JSX 변환 (SWC - fast)
+Entry → Hermes Parser (Flow 파싱) → @react-native/babel-preset (모든 변환) → Output
 ```
 
-| 단계 | 도구           | 역할                | 이유                                |
-| ---- | -------------- | ------------------- | ----------------------------------- |
-| 1-3  | Babel + Hermes | Flow 파싱/타입 제거 | Hermes parser만 Flow 구문 처리 가능 |
-| 4    | SWC            | ESM → CJS 변환      | Babel보다 빠름                      |
-| 5    | SWC            | JSX 변환            | 빠른 JSX 변환                       |
+| 도구                       | 역할                                           |
+| -------------------------- | ---------------------------------------------- |
+| Hermes Parser              | Flow 구문 파싱 (Metro와 동일)                  |
+| @react-native/babel-preset | Flow 제거, JSX 변환, ESM→CJS 변환 (all-in-one) |
 
-#### 점진적 Babel 제거 계획
+**구현 위치**: `graph-bundler.ts`의 `transformWithBabel()` 함수
 
-현재 Flow 처리를 위해 Babel을 사용하지만, 장기적으로 Babel 의존성을 최소화할 계획:
+#### 미사용 코드 (주석 처리됨)
 
-- **Phase 1 (현재)**: Flow 파일용 Babel + SWC로 나머지 변환
-- **Phase 2**: Hermes Parser 직접 통합 - Babel 없이 Hermes Parser AST 조작으로 Flow 타입 제거 구현
-  - 참고: https://github.com/facebook/hermes/tree/main/lib/Parser
-  - Hermes Parser는 React Native의 공식 파서로, Flow 구문을 네이티브 지원
-  - Babel 의존성 제거 및 성능 향상 기대
-- **Phase 3**: SWC Flow 지원 대기 (대안) 또는 전체 파이프라인을 SWC로 통합
-- **Phase 4**: Babel은 특수 플러그인 필요 시에만 사용 (reanimated, styled-components 등)
+다음 파일들은 현재 사용하지 않으며, 향후 최적화를 위해 보관:
+
+- `bun-transformer.ts` - Bun.Transpiler 사용 (Flow 미지원)
+- `swc-transformer.ts` - SWC 사용 (Flow 미지원)
+- `bun-bundler.ts` - Bun.build() 사용 (Metro 모듈 시스템 미지원)
+
+#### 점진적 네이티브 전환 계획
+
+**전략**: Metro와 동일하게 동작하면서 점진적으로 Babel → 네이티브로 교체
+
+```
+Phase 1+ (현재): Babel + Hermes Parser (Metro 동일)
+     ↓
+Phase 2: Hermes Parser + SWC (Babel 일부 제거)
+     ↓
+Phase 3: Hermes Parser + Bun.Transpiler (Babel 최소화)
+     ↓
+Phase 4: Bun 네이티브
+```
+
+**교체 대상 (우선순위순)**:
+
+1. **ESM → CJS 변환**: `@babel/plugin-transform-modules-commonjs` → SWC
+2. **JSX 변환**: `@babel/preset-react` → SWC 또는 Bun.Transpiler
+3. **Flow 타입 제거**: `@babel/plugin-transform-flow-strip-types` → Hermes Parser 직접 조작
+4. **기타 변환**: 개별 Babel 플러그인 → SWC 플러그인
+
+**검증 방식**: Metro 벤치마킹 테스트
+
+- Metro 번들과 Bungae 번들을 동일 입력으로 생성
+- 번들 출력 비교 (구조, 모듈 순서, 코드)
+- 성능 비교 (빌드 시간, 번들 크기)
+- React Native 앱에서 실제 동작 테스트
 
 ### Serialization (번들 직렬화)
 
@@ -57,15 +78,15 @@ Metro의 변환 파이프라인을 따르되, 각 도구가 가장 잘하는 작
 ## Bun API 활용
 
 ```typescript
-// ✅ Good: Bun 네이티브 API 사용
+// ✅ 현재 사용 중
+Bun.serve(); // HTTP 서버 + WebSocket (HMR)
 Bun.file(); // 파일 I/O
-Bun.serve(); // HTTP 서버
-Bun.Transpiler; // 코드 변환
+
+// 🔄 향후 사용 예정 (점진적 전환)
+Bun.Transpiler; // 코드 변환 (현재는 Babel 사용)
+Bun.build(); // 번들링 (현재는 자체 그래프 빌더 사용)
 Bun.worker(); // 병렬 처리
 Bun.hash(); // 캐시 키 생성
-
-// ❌ Avoid: 불필요한 Babel 사용
-// Bun 내장 트랜스파일러로 충분한 경우 Babel 사용 지양
 ```
 
 ## 코드 작성 가이드
@@ -104,12 +125,13 @@ Bun.hash(); // 캐시 키 생성
    - `preferNativePlatform` 옵션 지원
    - 테스트 코드 작성 완료 (5개 테스트 케이스 모두 통과)
 
-3. **코드 변환 (Transformation)** (Phase 1-3)
-   - Bun.Transpiler 기반 변환 구현
-   - TypeScript/TSX/JSX → JavaScript 변환
+3. **코드 변환 (Transformation)** (Phase 1-3 → Phase 1+)
+   - **현재**: Babel + Hermes Parser 기반 변환 (Metro 동일)
+   - @react-native/babel-preset 사용 (Metro와 동일한 변환)
+   - TypeScript/TSX/JSX/Flow → JavaScript 변환
    - 의존성 추출 (require, import, dynamic import)
-   - Babel 선택적 통합 스켈레톤 (Phase 2에서 구현)
-   - Metro 스타일 테스트 코드 (10개 테스트 케이스 모두 통과)
+   - Metro 스타일 테스트 코드 통과
+   - **미사용 코드 보관**: `bun-transformer.ts`, `swc-transformer.ts` (향후 최적화용)
 
 4. **Serialization** (Phase 1-3)
    - baseJSBundle 구현 (Metro 호환)

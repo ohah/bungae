@@ -8,25 +8,103 @@ import { addParamsToDefineCall } from './addParamsToDefineCall';
 import { convertRequirePaths } from './convertRequirePaths';
 
 /**
+ * Transform script code (Flow -> JS) using Babel
+ * Script modules like polyfills need to be transformed but not wrapped in __d()
+ * Metro transforms polyfills with the same babel preset as regular modules
+ */
+async function transformScriptCode(code: string, filePath: string): Promise<string> {
+  try {
+    const babel = await import('@babel/core');
+    const hermesParser = await import('hermes-parser');
+
+    // Parse with Hermes parser (handles Flow syntax like Metro)
+    let ast;
+    try {
+      ast = hermesParser.parse(code, {
+        babel: true,
+        sourceType: 'script',
+      });
+    } catch {
+      // If Hermes parser fails, try Babel parser
+      try {
+        const result = await babel.parseAsync(code, {
+          filename: filePath,
+          sourceType: 'script',
+          parserOpts: {
+            plugins: ['flow'],
+          },
+        });
+        ast = result;
+      } catch {
+        // If parsing fails, return code as-is
+        return code;
+      }
+    }
+
+    // Use @react-native/babel-preset like Metro does for polyfills
+    // enableBabelRuntime: false to inline helpers
+    const result = await babel.transformFromAstAsync(ast, code, {
+      filename: filePath,
+      babelrc: false,
+      configFile: false,
+      sourceType: 'script',
+      presets: [
+        [
+          require.resolve('@react-native/babel-preset'),
+          {
+            dev: true,
+            unstable_transformProfile: 'hermes-stable',
+            enableBabelRuntime: false,
+            disableImportExportTransform: true, // Script modules don't need ESM->CJS
+            disableStaticViewConfigsCodegen: true,
+          },
+        ],
+      ],
+      compact: false,
+      comments: true,
+    });
+
+    return result?.code || code;
+  } catch (error) {
+    // If transformation fails, return code as-is
+    console.warn(`[bungae] Failed to transform script ${filePath}:`, error);
+    return code;
+  }
+}
+
+/**
  * Wrap module code with __d() call
  */
 export async function wrapModule(module: Module, options: SerializerOptions): Promise<string> {
   // Script modules (type: 'js/script' or 'js/script/virtual') run as-is without __d() wrapping
   // This is Metro-compatible behavior - check module.type field
   if (isScriptModule(module)) {
+    // Virtual script (prelude) doesn't need transformation
+    if (module.type === 'js/script/virtual') {
+      return module.code;
+    }
+
+    // Script modules (polyfills, metro-runtime) need Flow transformation like Metro does
+    // Metro transforms all modules including polyfills through its transform pipeline
+    const transformedCode = await transformScriptCode(module.code, module.path);
+
+    // All script modules need to be wrapped in IIFE with global parameter
+    // Metro wraps all polyfills: (function (global) { ... })(globalThis || global || window || this)
+    const globalThisFallback =
+      "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
+
     // Metro runtime polyfill is already wrapped in IIFE: (function (global) { ... })
     // We just need to call it with the global object
-    if (module.type === 'js/script' && module.path.includes('metro-runtime/src/polyfills/')) {
-      const globalThisFallback =
-        "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
-      const trimmedCode = module.code.trim();
+    if (module.path.includes('metro-runtime/src/polyfills/')) {
+      const trimmedCode = transformedCode.trim();
       if (trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function')) {
         const codeWithoutSemicolon = trimmedCode.replace(/;?\s*$/, '');
         return `${codeWithoutSemicolon}(${globalThisFallback});`;
       }
-      return `!(function(global){${module.code}})(${globalThisFallback});`;
     }
-    return module.code;
+
+    // Wrap other polyfills (console.js, error-guard.js) in IIFE
+    return `(function (global) {\n${transformedCode}\n})(${globalThisFallback});`;
   }
 
   // For regular modules, wrap code in function and add __d() call
@@ -211,13 +289,14 @@ export async function getModuleParams(
 }
 
 /**
- * Check if module is a JS module
+ * Check if module is a JS module (or JSON, which should be wrapped as JS)
  */
 export function isJsModule(module: Module): boolean {
   return (
     module.path.endsWith('.js') ||
     module.path.endsWith('.jsx') ||
     module.path.endsWith('.ts') ||
-    module.path.endsWith('.tsx')
+    module.path.endsWith('.tsx') ||
+    module.path.endsWith('.json')
   );
 }

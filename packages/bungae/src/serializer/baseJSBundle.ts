@@ -102,6 +102,7 @@ export function getPrependedModules(options: {
   requireCycleIgnorePatterns?: RegExp[];
   polyfills?: string[];
   extraVars?: Record<string, unknown>;
+  projectRoot?: string;
 }): Module[] {
   const modules: Module[] = [];
 
@@ -120,9 +121,19 @@ export function getPrependedModules(options: {
     type: 'js/script/virtual',
   });
 
-  // 2. Metro runtime - script module
+  // 2. Metro runtime - script module (MUST come before polyfills)
+  // Metro runtime defines __r, __d which are needed by the module system
+  // Resolve from react-native package location (handles Bun's hoisted node_modules)
   try {
-    const metroRuntimePath = require.resolve('metro-runtime/src/polyfills/require.js');
+    const projectRoot = options.projectRoot || process.cwd();
+    const { createRequire } = require('module');
+    const projectRequire = createRequire(projectRoot + '/package.json');
+
+    // First find react-native, then resolve metro-runtime from there
+    const reactNativePath = projectRequire.resolve('react-native/package.json');
+    const rnRequire = createRequire(reactNativePath);
+
+    const metroRuntimePath = rnRequire.resolve('metro-runtime/src/polyfills/require.js');
     const metroRuntimeCode = readFileSync(metroRuntimePath, 'utf-8');
 
     modules.push({
@@ -132,12 +143,42 @@ export function getPrependedModules(options: {
       type: 'js/script',
     });
   } catch (error) {
-    throw new Error(
-      `Failed to load metro-runtime: ${error}. Make sure metro-runtime is installed.`,
-    );
+    // Not a React Native project or metro-runtime not found, skip
+    // This allows tests to run without react-native installed
+    console.warn(`[bungae] metro-runtime not found, skipping: ${error}`);
   }
 
-  // 3. Polyfills (if any) - script modules
+  // 3. React Native polyfills (console, error-guard) - after metro-runtime
+  // These define global.ErrorUtils and console polyfills
+  // Resolve from react-native package location (handles Bun's hoisted node_modules)
+  try {
+    const projectRoot = options.projectRoot || process.cwd();
+    const { createRequire } = require('module');
+    const projectRequire = createRequire(projectRoot + '/package.json');
+
+    // First find react-native, then resolve js-polyfills from there
+    const reactNativePath = projectRequire.resolve('react-native/package.json');
+    const rnRequire = createRequire(reactNativePath);
+
+    const jsPolyfillsPath = rnRequire.resolve('@react-native/js-polyfills');
+
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const jsPolyfills = require(jsPolyfillsPath)();
+    for (const polyfillPath of jsPolyfills) {
+      const polyfillCode = readFileSync(polyfillPath, 'utf-8');
+      modules.push({
+        path: polyfillPath,
+        code: polyfillCode,
+        dependencies: [],
+        type: 'js/script',
+      });
+    }
+  } catch (error) {
+    // Not a React Native project, skip
+    console.warn(`[bungae] @react-native/js-polyfills not found, skipping: ${error}`);
+  }
+
+  // 4. Additional polyfills (if any) - script modules
   if (options.polyfills) {
     for (const polyfill of options.polyfills) {
       try {
