@@ -950,7 +950,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   if (allRequires) {
     for (const req of allRequires) {
       const match = req.match(/__r\(([^)]+)\)/);
-      if (match) {
+      if (match && match[1]) {
         const moduleIdStr = match[1].trim();
         // Try to parse as number first, then as string
         const moduleId = /^\d+$/.test(moduleIdStr) ? Number(moduleIdStr) : moduleIdStr;
@@ -1015,190 +1015,19 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     pathToModuleId.set(path, moduleId);
   }
   
-  // Use the graph's dependency information to recursively find all required modules
-  const bundledModulePaths = new Set<string>();
-  const pathsToProcess = new Set<string>();
-  
-  // Start with modules that are directly __r() called
-  for (const moduleId of requiredModuleIds) {
-    const modulePath = moduleIdToPath.get(moduleId);
-    if (modulePath) {
-      pathsToProcess.add(modulePath);
-    }
-  }
-  
-  const processedPaths = new Set<string>();
-  
-  // Recursively follow dependencies from __r() called modules
-  while (pathsToProcess.size > 0) {
-    const currentPath = Array.from(pathsToProcess)[0];
-    if (!currentPath) break;
-    pathsToProcess.delete(currentPath);
-    
-    if (processedPaths.has(currentPath)) {
-      continue;
-    }
-    processedPaths.add(currentPath);
-    bundledModulePaths.add(currentPath);
-    
-    // Get this module's dependencies from the graph
-    // BUT: Metro only includes dependencies that are actually used in the bundle code
-    // We need to check if the dependency is actually referenced in this module's code via dependencyMap
-    const graphModule = graph.get(currentPath);
-    if (graphModule) {
-      // Find this module's code to see which dependencies are actually used
-      const moduleId = pathToModuleId.get(currentPath);
-      if (moduleId !== undefined) {
-        const moduleCode = bundle.modules.find(([id]) => id === moduleId)?.[1];
-        if (moduleCode) {
-          // Find the dependencyMap for this module
-          // Format: __d(function..., moduleId, [dep1, dep2, ...])
-          const depMapMatch = moduleCode.match(/__d\([^,]+,\s*(\d+),\s*\[([^\]]+)\]/);
-          if (depMapMatch) {
-            const moduleIdFromCode = Number(depMapMatch[1]);
-            if (moduleIdFromCode === moduleId || String(moduleIdFromCode) === String(moduleId)) {
-              const depsStr = depMapMatch[2];
-              if (!depsStr) continue;
-              const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
-              
-              // Find which dependencyMap indices are actually used in the code
-              const usedDepIndices = new Set<number>();
-              const dependencyMapMatches = moduleCode.match(/dependencyMap\[(\d+)\]/g);
-              if (dependencyMapMatches) {
-                for (const match of dependencyMapMatches) {
-                  const indexMatch = match.match(/dependencyMap\[(\d+)\]/);
-                  if (indexMatch) {
-                    usedDepIndices.add(Number(indexMatch[1]));
-                  }
-                }
-              }
-              
-              // Only follow dependencies that are actually used (referenced in dependencyMap)
-              for (const depIndex of usedDepIndices) {
-                if (depIndex < deps.length) {
-                  const depModuleIdStr = deps[depIndex];
-                  if (!depModuleIdStr) continue;
-                  const depModuleId = /^\d+$/.test(depModuleIdStr) ? Number(depModuleIdStr) : depModuleIdStr;
-                  const depPath = moduleIdToPath.get(depModuleId);
-                  if (!depPath) continue;
-                  if (depPath && !processedPaths.has(depPath)) {
-                    pathsToProcess.add(depPath);
-                  }
-                }
-              }
-            }
-          } else {
-            // If we can't find dependencyMap, fallback to following all dependencies
-            // (this should not happen for normal modules)
-            for (const depPath of graphModule.dependencies) {
-              if (depPath && !processedPaths.has(depPath)) {
-                const depModuleId = pathToModuleId.get(depPath);
-                if (depModuleId !== undefined) {
-                  const isInBundle = bundle.modules.some(([id]) => id === depModuleId);
-                  if (isInBundle) {
-                    pathsToProcess.add(depPath);
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  
-  // IMPORTANT: Log to verify this code path is executing and show the actual numbers
-  // This will help us debug why all assets are still being included
+  // Log debug info
   if (requiredModuleIds.size === 0) {
-    // If no modules found, this is a problem - log it
     console.error(`[bungae] ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`);
     console.error(`[bungae] ERROR: This means NO assets should be copied (Metro behavior)`);
   } else {
     console.log(`[bungae] INFO: Using ${requiredModuleIds.size} required modules (__r() called) out of ${bundle.modules.length} total modules`);
-    console.log(`[bungae] INFO: bundledModulePaths.size = ${bundledModulePaths.size}`);
-  }
-  
-  // Log the difference for debugging
-  const totalModulesInBundle = bundle.modules.length;
-  const actuallyRequiredModules = requiredModuleIds.size;
-  console.log(`[bungae] DEBUG: Modules in bundle.modules: ${totalModulesInBundle}`);
-  console.log(`[bungae] DEBUG: Modules actually __r() called: ${actuallyRequiredModules}`);
-  console.log(`[bungae] DEBUG: Using ONLY __r() called modules for asset detection`);
-  
-  // CRITICAL: If requiredModuleIds is empty or too small, we should NOT fallback
-  // Metro only includes modules that are actually __r() called
-  // If no modules are found, it means the bundle code analysis failed
-  // In that case, we should still use only requiredModuleIds (which might be empty)
-  // This ensures we only copy assets that are actually used
-  if (requiredModuleIds.size === 0) {
-    console.warn(`[bungae] WARNING: No modules found in __r() calls! This might indicate a problem.`);
-    console.warn(`[bungae] WARNING: Will use empty set for asset detection (no assets will be copied)`);
-  } else if (requiredModuleIds.size < bundle.modules.length / 10) {
-    // If we found very few modules, log a warning but still use only requiredModuleIds
-    console.warn(`[bungae] WARNING: Found only ${requiredModuleIds.size} required modules out of ${bundle.modules.length} total modules`);
-    console.warn(`[bungae] WARNING: This might be normal if most modules are not actually used`);
-  }
-  
-  // CRITICAL: Check which assets are actually used in bundle code
-  // Metro only includes assets that are actually require()'d in the bundle code
-  // We need to check if asset module IDs are referenced in dependencyMap of used modules
-  
-  // Find all asset module IDs
-  const allAssetModuleIds = new Set<number | string>();
-  for (const [moduleId] of bundle.modules) {
-    const modulePath = moduleIdToPath.get(moduleId);
-    if (modulePath) {
-      const isAsset = config.resolver.assetExts.some((ext) => {
-        const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-        return modulePath.endsWith(normalizedExt);
-      });
-      if (isAsset) {
-        allAssetModuleIds.add(moduleId);
-      }
-    }
-  }
-  
-  // Check which asset module IDs are actually referenced in bundle code
-  // Pattern: dependencyMap[index] where index points to asset module ID
-  const usedAssetModuleIds = new Set<number | string>();
-  for (const assetModuleId of allAssetModuleIds) {
-    // Check if this asset module ID is in any dependencyMap
-    // Find modules that have this asset in their dependencyMap
-    for (const [moduleId, moduleCode] of bundle.modules) {
-      if (requiredModuleIds.has(moduleId)) {
-        // This module is __r() called, check if it uses the asset
-        const depMapMatch = moduleCode.match(/__d\([^,]+,\s*(\d+),\s*\[([^\]]+)\]/);
-        if (depMapMatch) {
-          const depsStr = depMapMatch[2];
-          if (!depsStr) continue;
-          const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
-          // Check if asset module ID is in this dependencyMap
-          const assetModuleIdStr = String(assetModuleId);
-          const assetModuleIdNum = typeof assetModuleId === 'number' ? assetModuleId : Number(assetModuleId);
-          const depIndex = deps.findIndex(d => {
-            const dNum = /^\d+$/.test(d) ? Number(d) : null;
-            return d === assetModuleIdStr || d === String(assetModuleIdNum) || dNum === assetModuleIdNum;
-          });
-          
-          if (depIndex >= 0) {
-            // Check if dependencyMap[depIndex] is used in the code
-            // Escape special regex characters in depIndex
-            const depMapRegex = new RegExp(`dependencyMap\\[${depIndex}\\]`);
-            if (depMapRegex.test(moduleCode)) {
-              usedAssetModuleIds.add(assetModuleId);
-              console.log(`[bungae] Found used asset ${assetModuleId} at dependencyMap[${depIndex}] in module ${moduleId}`);
-              break;
-            }
-          }
-        }
-      }
-    }
   }
   
   // Only include assets that are actually used
   // Start with __r() called modules and recursively add their dependencies
   // This follows the dependency graph from __r() called modules to find all used modules including assets
-  const finalBundledModulePaths = new Set<string>();
+  // CRITICAL: We only include modules that are actually require()'d, not just referenced in dependencyMap
+  const bundledModulePaths = new Set<string>();
   const modulesToInclude = new Set(requiredModuleIds);
   const processedModuleIds = new Set<number | string>();
   
@@ -1207,6 +1036,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // Recursively add dependencies of __r() called modules
   while (modulesToInclude.size > 0) {
     const currentModuleId = Array.from(modulesToInclude)[0];
+    if (currentModuleId === undefined) break;
     modulesToInclude.delete(currentModuleId);
     
     if (processedModuleIds.has(currentModuleId)) {
@@ -1216,7 +1046,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     
     const modulePath = moduleIdToPath.get(currentModuleId);
     if (modulePath) {
-      finalBundledModulePaths.add(modulePath);
+      bundledModulePaths.add(modulePath);
       
       // Find this module's code and get its dependencies from dependencyMap
       const moduleCode = bundle.modules.find(([id]) => id === currentModuleId)?.[1];
@@ -1250,13 +1080,111 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
             // Find which dependencyMap indices are actually used in require() calls
             // Metro only includes dependencies that are actually require()'d
             // Pattern: require(dependencyMap[index])
+            // CRITICAL: In release builds, exclude requires inside __DEV__ conditional blocks
             const usedDepIndices = new Set<number>();
             const requireMatches = moduleCode.match(/require\(dependencyMap\[(\d+)\]\)/g);
             if (requireMatches) {
               for (const match of requireMatches) {
                 const indexMatch = match.match(/require\(dependencyMap\[(\d+)\]\)/);
                 if (indexMatch) {
-                  usedDepIndices.add(Number(indexMatch[1]));
+                  const depIndex = Number(indexMatch[1]);
+                  
+                  // In release builds, exclude requires inside __DEV__ conditional blocks
+                  // Metro replaces __DEV__ with false in release builds, so conditional blocks are removed
+                  // But if __DEV__ is still in the code, we need to exclude requires inside those blocks
+                  if (!config.dev) {
+                    // Find the position of this require in the code
+                    let requirePos = -1;
+                    let searchStart = 0;
+                    while (true) {
+                      const pos = moduleCode.indexOf(match, searchStart);
+                      if (pos === -1) break;
+                      // Check if this is the same require we're looking for (by checking the index)
+                      const testMatch = moduleCode.substring(pos).match(/require\(dependencyMap\[(\d+)\]\)/);
+                      if (testMatch && Number(testMatch[1]) === depIndex) {
+                        requirePos = pos;
+                        break;
+                      }
+                      searchStart = pos + 1;
+                    }
+                    
+                    if (requirePos >= 0) {
+                      // Look backwards to find if this require is inside a __DEV__ conditional
+                      const beforeRequire = moduleCode.substring(Math.max(0, requirePos - 2000), requirePos);
+                      
+                      // Find the last occurrence of __DEV__ conditional patterns before this require
+                      // Patterns: if (__DEV__), if (process.env.NODE_ENV === 'development'), __DEV__ &&, __DEV__ ?
+                      // Also check for transformed patterns: if (false), if ('production' === 'development'), false &&
+                      const devConditionPatterns = [
+                        { pattern: /if\s*\(\s*__DEV__\s*\)/g, needsBrace: true },
+                        { pattern: /if\s*\(\s*process\.env\.NODE_ENV\s*===\s*['"]development['"]\s*\)/g, needsBrace: true },
+                        { pattern: /__DEV__\s*&&/g, needsBrace: false },
+                        { pattern: /__DEV__\s*\?/g, needsBrace: false },
+                        // Transformed patterns (after Babel transformation in release builds)
+                        { pattern: /if\s*\(\s*false\s*\)/g, needsBrace: true },
+                        { pattern: /if\s*\(\s*['"]production['"]\s*===\s*['"]development['"]\s*\)/g, needsBrace: true },
+                        { pattern: /if\s*\(\s*['"]development['"]\s*!==\s*['"]production['"]\s*\)/g, needsBrace: true },
+                        { pattern: /false\s*&&/g, needsBrace: false },
+                      ];
+                      
+                      let isInDevBlock = false;
+                      for (const { pattern, needsBrace } of devConditionPatterns) {
+                        const matches = [...beforeRequire.matchAll(pattern)];
+                        if (matches.length > 0) {
+                          // Find the last match
+                          const lastMatch = matches[matches.length - 1];
+                          if (lastMatch && lastMatch.index !== undefined) {
+                            const matchPos = lastMatch.index;
+                            const codeAfterMatch = beforeRequire.substring(matchPos);
+                            
+                            if (needsBrace) {
+                              // Count braces to see if we're still inside the conditional block
+                              let braceCount = 0;
+                              let inString = false;
+                              let stringChar = '';
+                              
+                              for (let i = 0; i < codeAfterMatch.length; i++) {
+                                const char = codeAfterMatch[i];
+                                if (!inString && (char === '"' || char === "'" || char === '`')) {
+                                  inString = true;
+                                  stringChar = char;
+                                } else if (inString && char === stringChar && (i === 0 || codeAfterMatch[i - 1] !== '\\')) {
+                                  inString = false;
+                                } else if (!inString) {
+                                  if (char === '{') braceCount++;
+                                  else if (char === '}') braceCount--;
+                                }
+                              }
+                              
+                              // If we have unclosed braces, we're still inside the conditional block
+                              if (braceCount > 0) {
+                                isInDevBlock = true;
+                                break;
+                              }
+                            } else {
+                              // For && and ? operators, check if require is on the same "line" (before next ; or })
+                              const matchLength = lastMatch[0]?.length || 0;
+                              const codeAfterMatchToRequire = moduleCode.substring(matchPos + matchLength, requirePos);
+                              // Check if require is part of the expression (no semicolon, closing brace, or newline before it)
+                              // Patterns: __DEV__ &&, __DEV__ ?, false && (transformed __DEV__ &&)
+                              const isDevPattern = lastMatch[0].includes('__DEV__') || lastMatch[0].includes('false');
+                              if (isDevPattern && !codeAfterMatchToRequire.match(/[;}\n]/)) {
+                                isInDevBlock = true;
+                                break;
+                              }
+                            }
+                          }
+                        }
+                      }
+                      
+                      if (isInDevBlock) {
+                        console.log(`[bungae] Excluding require(dependencyMap[${depIndex}]) in module ${currentModuleId} - inside __DEV__ conditional (release build)`);
+                        continue;
+                      }
+                    }
+                  }
+                  
+                  usedDepIndices.add(depIndex);
                 }
               }
             }
@@ -1288,30 +1216,14 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                   // 1. The dependencyMap[depIndex] is actually used in require() calls
                   // 2. The depModuleId at dependencyMap[depIndex] is actually an asset module ID
                   // 3. The require() call is for the asset (not just any dependencyMap[index])
+                  // NOTE: usedDepIndices already contains only indices that are require()'d,
+                  // so if depIndex is in usedDepIndices, it means require(dependencyMap[depIndex]) is called
                   if (isAsset) {
-                    // Check if dependencyMap[depIndex] is actually used in require() calls
-                    // AND verify that the require() call is specifically for this asset module ID
-                    // Pattern: require(dependencyMap[depIndex])
-                    // We need to verify that dependencyMap[depIndex] resolves to this asset module ID
-                    const requirePattern = new RegExp(`require\\(dependencyMap\\[${depIndex}\\]\\)`);
-                    const isRequireCalled = requirePattern.test(moduleCode);
-                    
-                    if (isRequireCalled) {
-                      // CRITICAL: Metro only includes assets from modules that are actually executed
-                      // In release builds, LogBox modules are in the bundle but not executed
-                      // We need to check if the parent module (currentModuleId) is actually executed
-                      // Metro does this by checking if the module is reachable from __r() called modules
-                      // AND if the require() call is in an executable code path (not in dead code)
-                      
-                      // For now, we include the asset if it's require()'d in a module that's reachable from __r() called modules
-                      // This matches Metro's behavior: Metro includes assets that are require()'d in executed modules
-                      if (!processedModuleIds.has(depModuleId)) {
-                        modulesToInclude.add(depModuleId);
-                        console.log(`[bungae] Found used asset: ${basename(depPath)} (module ${depModuleId}) from module ${currentModuleId} at dependencyMap[${depIndex}]`);
-                      }
-                    } else {
-                      // Asset is in dependencyMap but not require()'d - skip it
-                      console.log(`[bungae] Skipping unused asset: ${basename(depPath)} (module ${depModuleId}) - dependencyMap[${depIndex}] not require()'d in module ${currentModuleId}`);
+                    // Since depIndex is in usedDepIndices, it means require(dependencyMap[depIndex]) is called
+                    // This is the asset that is actually required
+                    if (!processedModuleIds.has(depModuleId)) {
+                      modulesToInclude.add(depModuleId);
+                      console.log(`[bungae] Found used asset: ${basename(depPath)} (module ${depModuleId}) from module ${currentModuleId} at dependencyMap[${depIndex}]`);
                     }
                   } else {
                     // For non-assets, add if not already processed
@@ -1328,13 +1240,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     }
   }
   
-  console.log(`[bungae] Recursive traversal complete: ${finalBundledModulePaths.size} total modules included`);
-  
-  // Update bundledModulePaths to only include actually used modules
-  bundledModulePaths.clear();
-  for (const path of finalBundledModulePaths) {
-    bundledModulePaths.add(path);
-  }
+  console.log(`[bungae] Recursive traversal complete: ${bundledModulePaths.size} total modules included`);
   
   // Debug: Log detailed asset detection
   const allAssetPaths = Array.from(graph.keys()).filter((path) =>
@@ -1354,16 +1260,28 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   console.log(
     `[bungae] Asset detection: ${allAssetPaths.length} total assets in graph, ${bundledAssetPaths.length} assets actually used in bundle code`,
   );
-  console.log(`[bungae] Bundle modules count: ${bundle.modules.length}, Required modules (__r() called): ${requiredModuleIds.size}, Used asset modules: ${usedAssetModuleIds.size}`);
+  console.log(`[bungae] Bundle modules count: ${bundle.modules.length}, Required modules (__r() called): ${requiredModuleIds.size}`);
   
   if (allAssetPaths.length > 0) {
     if (allAssetPaths.length !== bundledAssetPaths.length) {
       const excludedAssets = allAssetPaths.filter((p) => !bundledAssetPaths.includes(p));
       console.log(`[bungae] Excluded assets (not used in bundle code): ${excludedAssets.map(p => basename(p)).join(', ')}`);
     }
-    console.log(`[bungae] Bundled assets (actually used): ${bundledAssetPaths.map(p => basename(p)).join(', ')}`);
+    if (bundledAssetPaths.length > 0) {
+      console.log(`[bungae] Bundled assets (actually used): ${bundledAssetPaths.map(p => basename(p)).join(', ')}`);
+      // Log full paths for debugging
+      console.log(`[bungae] Bundled asset full paths:`);
+      for (const path of bundledAssetPaths) {
+        console.log(`[bungae]   - ${path}`);
+      }
+    }
   }
   
+  // Metro behavior: Extract assets from modules that are actually included in bundle
+  // Metro's getAssets function receives graph.dependencies (all modules in bundle)
+  // and filters them with processModuleFilter, then extracts assets
+  // We use bundledModulePaths which contains only modules that are actually executed
+  // (reachable from __r() called modules via require() calls)
   const assets: AssetInfo[] = [];
   for (const modulePath of bundledModulePaths) {
     // Check if this is an asset file
