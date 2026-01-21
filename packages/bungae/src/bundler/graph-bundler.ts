@@ -1348,20 +1348,6 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     }
   }
 
-  // Debug: Log detailed asset detection
-  const _allAssetPaths = Array.from(graph.keys()).filter((path) =>
-    config.resolver.assetExts.some((ext) => {
-      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-      return path.endsWith(normalizedExt);
-    }),
-  );
-  const _bundledAssetPaths = Array.from(bundledModulePaths).filter((path) =>
-    config.resolver.assetExts.some((ext) => {
-      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-      return path.endsWith(normalizedExt);
-    }),
-  );
-
   // Metro behavior: Extract assets from modules that are actually included in bundle
   // Metro's getAssets function receives graph.dependencies (all modules in bundle)
   // and filters them with processModuleFilter, then extracts assets
