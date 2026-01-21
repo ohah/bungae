@@ -47,7 +47,10 @@ export interface SerializerConfig {
   /** Extra global variables to inject into prelude (Metro-compatible) */
   extraVars?: Record<string, unknown>;
   /** Get modules to run before main module (Metro-compatible) */
-  getModulesRunBeforeMainModule?: (entryFilePath: string) => string[];
+  getModulesRunBeforeMainModule?: (
+    entryFilePath: string,
+    options?: { projectRoot: string; nodeModulesPaths: string[] },
+  ) => string[];
   /** Get polyfills (Metro-compatible) */
   getPolyfills?: (options: { platform: string | null }) => string[];
 }

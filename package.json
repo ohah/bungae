@@ -23,7 +23,12 @@
   "scripts": {
     "dev": "bun run --filter='bungae' dev",
     "build": "bun run --filter='bungae' build",
-    "build:start": "bun run build && cd examples/ExampleApp && bun run start:bungae",
+    "bungae:start": "bun run build && cd examples/ExampleApp && bun run start:bungae",
+    "bungae:build": "bun run build && cd examples/ExampleApp && bun run build:bungae",
+    "bungae:build:ios": "bun run build && cd examples/ExampleApp && bun run build:bungae --platform ios --mode release",
+    "bungae:build:android": "bun run build && cd examples/ExampleApp && bun run build:bungae --platform android --mode release",
+    "bundle:metro:ios": "cd examples/ExampleApp && bun run bundle:metro:ios",
+    "bundle:metro:android": "cd examples/ExampleApp && bun run bundle:metro:android",
     "test": "bun test packages/**",
     "test:watch": "bun test --watch packages/**",
     "test:coverage": "bun test --coverage packages/**",

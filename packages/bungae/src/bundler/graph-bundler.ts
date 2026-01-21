@@ -410,12 +410,23 @@ async function transformWithBabel(
       sourceType: 'module',
       // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically
       // We add our custom plugin for Platform.OS replacement
+      // Also override object-rest-spread plugin to use loose mode (Object.assign) for Metro compatibility
       plugins: [
         [
           require.resolve('babel-plugin-transform-define'),
           {
             'Platform.OS': options.platform, // Don't use JSON.stringify - babel-plugin-transform-define handles it
             'process.env.NODE_ENV': JSON.stringify(options.dev ? 'development' : 'production'),
+          },
+        ],
+        // Override @babel/plugin-transform-object-rest-spread to use loose mode
+        // This makes it use Object.assign instead of helper functions, matching Metro's behavior
+        // Adding this plugin here will override the same plugin from @react-native/babel-preset
+        [
+          require.resolve('@babel/plugin-transform-object-rest-spread'),
+          {
+            loose: true,
+            useBuiltIns: true,
           },
         ],
       ],
@@ -885,20 +896,489 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       })
     : undefined;
 
-  // Extract asset files from graph for Android/iOS asset copying
+  // Extract asset files from bundle modules (only assets actually included in bundle)
+  // Metro only copies assets that are actually required/imported in the bundle
+  // CRITICAL: We need to analyze the actual bundle code to see which modules are actually required
+  // Metro does this by checking which modules are actually __r() called in the bundle code
+  
+  // Create reverse mapping: moduleId -> module path from graphModules
+  const moduleIdToPath = new Map<number | string, string>();
+  for (const module of graphModules) {
+    const moduleId = createModuleId(module.path);
+    moduleIdToPath.set(moduleId, module.path);
+  }
+  
+  // Analyze bundle code to find which modules are actually required
+  // Metro includes modules in bundle.modules, but we need to check if they're actually used
+  // Look for __r(moduleId) calls in the bundle code to see which modules are actually required
+  const requiredModuleIds = new Set<number | string>();
+  
+  // Check pre code for requires
+  if (bundle.pre) {
+    const preRequires = bundle.pre.match(/__r\((\d+)\)/g);
+    if (preRequires) {
+      for (const req of preRequires) {
+        const match = req.match(/__r\((\d+)\)/);
+        if (match) {
+          requiredModuleIds.add(Number(match[1]));
+        }
+      }
+    }
+  }
+  
+  // Check post code for requires
+  if (bundle.post) {
+    const postRequires = bundle.post.match(/__r\((\d+)\)/g);
+    if (postRequires) {
+      for (const req of postRequires) {
+        const match = req.match(/__r\((\d+)\)/);
+        if (match) {
+          requiredModuleIds.add(Number(match[1]));
+        }
+      }
+    }
+  }
+  
+  // Analyze the entire bundle code to find which modules are actually required
+  // Metro includes all modules that are reachable from entry point, but we need to check
+  // which ones are actually __r() called in the bundle code
+  const allBundleCode = bundle.pre + '\n' + bundle.modules.map(([, code]) => code).join('\n') + '\n' + bundle.post;
+  
+  // Find all __r() calls in the bundle code
+  // Use a more robust regex that handles both number and string IDs
+  const allRequires = allBundleCode.match(/__r\(([^)]+)\)/g);
+  if (allRequires) {
+    for (const req of allRequires) {
+      const match = req.match(/__r\(([^)]+)\)/);
+      if (match) {
+        const moduleIdStr = match[1].trim();
+        // Try to parse as number first, then as string
+        const moduleId = /^\d+$/.test(moduleIdStr) ? Number(moduleIdStr) : moduleIdStr;
+        requiredModuleIds.add(moduleId);
+      }
+    }
+  }
+  
+  // Force log to see if this code is executing
+  console.error(`[bungae] FORCE LOG: Found ${allRequires?.length || 0} __r() calls, ${requiredModuleIds.size} unique module IDs`);
+  
+  // CRITICAL: Metro only includes assets that are actually __r() called in the bundle code
+  // Even if a module is defined with __d(), it's not included unless it's actually required
+  // So we ONLY include modules that are in requiredModuleIds (from __r() calls)
+  
+  console.log(`[bungae] Found ${requiredModuleIds.size} required module IDs from __r() calls in bundle code`);
+  console.log(`[bungae] Total modules in bundle.modules: ${bundle.modules.length}`);
+  
+  // Debug: Check which asset modules are in requiredModuleIds
+  const requiredAssetIds = Array.from(requiredModuleIds).filter((id) => {
+    const path = moduleIdToPath.get(id);
+    return path && config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return path.endsWith(normalizedExt);
+    });
+  });
+  console.log(`[bungae] Required asset module IDs (actually __r() called): ${requiredAssetIds.join(', ')}`);
+  for (const assetId of requiredAssetIds) {
+    const path = moduleIdToPath.get(assetId);
+    if (path) {
+      console.log(`[bungae]   - Asset ${assetId}: ${basename(path)}`);
+    }
+  }
+  
+  // Also check which asset modules are in bundle.modules but NOT in requiredModuleIds
+  const allAssetIds = bundle.modules.map(([id]) => id).filter((id) => {
+    const path = moduleIdToPath.get(id);
+    return path && config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return path.endsWith(normalizedExt);
+    });
+  });
+  const unusedAssetIds = allAssetIds.filter((id) => !requiredModuleIds.has(id));
+  if (unusedAssetIds.length > 0) {
+    console.log(`[bungae] Unused asset module IDs (in bundle but not __r() called): ${unusedAssetIds.join(', ')}`);
+    for (const assetId of unusedAssetIds) {
+      const path = moduleIdToPath.get(assetId);
+      if (path) {
+        console.log(`[bungae]   - Asset ${assetId}: ${basename(path)} (NOT required, will be excluded)`);
+      }
+    }
+  }
+  
+  // CRITICAL FIX: Only include modules that are actually required in the bundle code
+  // Metro only copies assets that are actually __r() called, not just defined with __d()
+  // However, assets are not directly __r() called - they are required by other modules
+  // We need to follow the dependency graph from __r() called modules to find assets
+  
+  // Create reverse mapping: path -> moduleId (for dependency lookup)
+  const pathToModuleId = new Map<string, number | string>();
+  for (const [moduleId, path] of moduleIdToPath.entries()) {
+    pathToModuleId.set(path, moduleId);
+  }
+  
+  // Use the graph's dependency information to recursively find all required modules
+  const bundledModulePaths = new Set<string>();
+  const pathsToProcess = new Set<string>();
+  
+  // Start with modules that are directly __r() called
+  for (const moduleId of requiredModuleIds) {
+    const modulePath = moduleIdToPath.get(moduleId);
+    if (modulePath) {
+      pathsToProcess.add(modulePath);
+    }
+  }
+  
+  const processedPaths = new Set<string>();
+  
+  // Recursively follow dependencies from __r() called modules
+  while (pathsToProcess.size > 0) {
+    const currentPath = Array.from(pathsToProcess)[0];
+    if (!currentPath) break;
+    pathsToProcess.delete(currentPath);
+    
+    if (processedPaths.has(currentPath)) {
+      continue;
+    }
+    processedPaths.add(currentPath);
+    bundledModulePaths.add(currentPath);
+    
+    // Get this module's dependencies from the graph
+    // BUT: Metro only includes dependencies that are actually used in the bundle code
+    // We need to check if the dependency is actually referenced in this module's code via dependencyMap
+    const graphModule = graph.get(currentPath);
+    if (graphModule) {
+      // Find this module's code to see which dependencies are actually used
+      const moduleId = pathToModuleId.get(currentPath);
+      if (moduleId !== undefined) {
+        const moduleCode = bundle.modules.find(([id]) => id === moduleId)?.[1];
+        if (moduleCode) {
+          // Find the dependencyMap for this module
+          // Format: __d(function..., moduleId, [dep1, dep2, ...])
+          const depMapMatch = moduleCode.match(/__d\([^,]+,\s*(\d+),\s*\[([^\]]+)\]/);
+          if (depMapMatch) {
+            const moduleIdFromCode = Number(depMapMatch[1]);
+            if (moduleIdFromCode === moduleId || String(moduleIdFromCode) === String(moduleId)) {
+              const depsStr = depMapMatch[2];
+              if (!depsStr) continue;
+              const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
+              
+              // Find which dependencyMap indices are actually used in the code
+              const usedDepIndices = new Set<number>();
+              const dependencyMapMatches = moduleCode.match(/dependencyMap\[(\d+)\]/g);
+              if (dependencyMapMatches) {
+                for (const match of dependencyMapMatches) {
+                  const indexMatch = match.match(/dependencyMap\[(\d+)\]/);
+                  if (indexMatch) {
+                    usedDepIndices.add(Number(indexMatch[1]));
+                  }
+                }
+              }
+              
+              // Only follow dependencies that are actually used (referenced in dependencyMap)
+              for (const depIndex of usedDepIndices) {
+                if (depIndex < deps.length) {
+                  const depModuleIdStr = deps[depIndex];
+                  if (!depModuleIdStr) continue;
+                  const depModuleId = /^\d+$/.test(depModuleIdStr) ? Number(depModuleIdStr) : depModuleIdStr;
+                  const depPath = moduleIdToPath.get(depModuleId);
+                  if (!depPath) continue;
+                  if (depPath && !processedPaths.has(depPath)) {
+                    pathsToProcess.add(depPath);
+                  }
+                }
+              }
+            }
+          } else {
+            // If we can't find dependencyMap, fallback to following all dependencies
+            // (this should not happen for normal modules)
+            for (const depPath of graphModule.dependencies) {
+              if (depPath && !processedPaths.has(depPath)) {
+                const depModuleId = pathToModuleId.get(depPath);
+                if (depModuleId !== undefined) {
+                  const isInBundle = bundle.modules.some(([id]) => id === depModuleId);
+                  if (isInBundle) {
+                    pathsToProcess.add(depPath);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // IMPORTANT: Log to verify this code path is executing and show the actual numbers
+  // This will help us debug why all assets are still being included
+  if (requiredModuleIds.size === 0) {
+    // If no modules found, this is a problem - log it
+    console.error(`[bungae] ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`);
+    console.error(`[bungae] ERROR: This means NO assets should be copied (Metro behavior)`);
+  } else {
+    console.log(`[bungae] INFO: Using ${requiredModuleIds.size} required modules (__r() called) out of ${bundle.modules.length} total modules`);
+    console.log(`[bungae] INFO: bundledModulePaths.size = ${bundledModulePaths.size}`);
+  }
+  
+  // Log the difference for debugging
+  const totalModulesInBundle = bundle.modules.length;
+  const actuallyRequiredModules = requiredModuleIds.size;
+  console.log(`[bungae] DEBUG: Modules in bundle.modules: ${totalModulesInBundle}`);
+  console.log(`[bungae] DEBUG: Modules actually __r() called: ${actuallyRequiredModules}`);
+  console.log(`[bungae] DEBUG: Using ONLY __r() called modules for asset detection`);
+  
+  // CRITICAL: If requiredModuleIds is empty or too small, we should NOT fallback
+  // Metro only includes modules that are actually __r() called
+  // If no modules are found, it means the bundle code analysis failed
+  // In that case, we should still use only requiredModuleIds (which might be empty)
+  // This ensures we only copy assets that are actually used
+  if (requiredModuleIds.size === 0) {
+    console.warn(`[bungae] WARNING: No modules found in __r() calls! This might indicate a problem.`);
+    console.warn(`[bungae] WARNING: Will use empty set for asset detection (no assets will be copied)`);
+  } else if (requiredModuleIds.size < bundle.modules.length / 10) {
+    // If we found very few modules, log a warning but still use only requiredModuleIds
+    console.warn(`[bungae] WARNING: Found only ${requiredModuleIds.size} required modules out of ${bundle.modules.length} total modules`);
+    console.warn(`[bungae] WARNING: This might be normal if most modules are not actually used`);
+  }
+  
+  // CRITICAL: Check which assets are actually used in bundle code
+  // Metro only includes assets that are actually require()'d in the bundle code
+  // We need to check if asset module IDs are referenced in dependencyMap of used modules
+  
+  // Find all asset module IDs
+  const allAssetModuleIds = new Set<number | string>();
+  for (const [moduleId] of bundle.modules) {
+    const modulePath = moduleIdToPath.get(moduleId);
+    if (modulePath) {
+      const isAsset = config.resolver.assetExts.some((ext) => {
+        const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+        return modulePath.endsWith(normalizedExt);
+      });
+      if (isAsset) {
+        allAssetModuleIds.add(moduleId);
+      }
+    }
+  }
+  
+  // Check which asset module IDs are actually referenced in bundle code
+  // Pattern: dependencyMap[index] where index points to asset module ID
+  const usedAssetModuleIds = new Set<number | string>();
+  for (const assetModuleId of allAssetModuleIds) {
+    // Check if this asset module ID is in any dependencyMap
+    // Find modules that have this asset in their dependencyMap
+    for (const [moduleId, moduleCode] of bundle.modules) {
+      if (requiredModuleIds.has(moduleId)) {
+        // This module is __r() called, check if it uses the asset
+        const depMapMatch = moduleCode.match(/__d\([^,]+,\s*(\d+),\s*\[([^\]]+)\]/);
+        if (depMapMatch) {
+          const depsStr = depMapMatch[2];
+          if (!depsStr) continue;
+          const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
+          // Check if asset module ID is in this dependencyMap
+          const assetModuleIdStr = String(assetModuleId);
+          const assetModuleIdNum = typeof assetModuleId === 'number' ? assetModuleId : Number(assetModuleId);
+          const depIndex = deps.findIndex(d => {
+            const dNum = /^\d+$/.test(d) ? Number(d) : null;
+            return d === assetModuleIdStr || d === String(assetModuleIdNum) || dNum === assetModuleIdNum;
+          });
+          
+          if (depIndex >= 0) {
+            // Check if dependencyMap[depIndex] is used in the code
+            // Escape special regex characters in depIndex
+            const depMapRegex = new RegExp(`dependencyMap\\[${depIndex}\\]`);
+            if (depMapRegex.test(moduleCode)) {
+              usedAssetModuleIds.add(assetModuleId);
+              console.log(`[bungae] Found used asset ${assetModuleId} at dependencyMap[${depIndex}] in module ${moduleId}`);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  // Only include assets that are actually used
+  // Start with __r() called modules and recursively add their dependencies
+  // This follows the dependency graph from __r() called modules to find all used modules including assets
+  const finalBundledModulePaths = new Set<string>();
+  const modulesToInclude = new Set(requiredModuleIds);
+  const processedModuleIds = new Set<number | string>();
+  
+  console.log(`[bungae] Starting recursive dependency traversal from ${requiredModuleIds.size} __r() called modules: ${Array.from(requiredModuleIds).join(', ')}`);
+  
+  // Recursively add dependencies of __r() called modules
+  while (modulesToInclude.size > 0) {
+    const currentModuleId = Array.from(modulesToInclude)[0];
+    modulesToInclude.delete(currentModuleId);
+    
+    if (processedModuleIds.has(currentModuleId)) {
+      continue;
+    }
+    processedModuleIds.add(currentModuleId);
+    
+    const modulePath = moduleIdToPath.get(currentModuleId);
+    if (modulePath) {
+      finalBundledModulePaths.add(modulePath);
+      
+      // Find this module's code and get its dependencies from dependencyMap
+      const moduleCode = bundle.modules.find(([id]) => id === currentModuleId)?.[1];
+      if (moduleCode) {
+        // Try multiple regex patterns to match __d() format
+        // Format: __d(function..., moduleId, [deps...])
+        // The function can be very long, so we need a more flexible regex
+        let depMapMatch = moduleCode.match(/__d\([^,]+,\s*(\d+),\s*\[([^\]]+)\]/);
+        if (!depMapMatch) {
+          // Try without spaces around moduleId
+          depMapMatch = moduleCode.match(/__d\([^,]+,(\d+),\[([^\]]+)\]/);
+        }
+        if (!depMapMatch) {
+          // Try matching the end of __d() call: },moduleId,[deps])
+          depMapMatch = moduleCode.match(/},\s*(\d+),\s*\[([^\]]+)\]/);
+        }
+        if (depMapMatch) {
+          const moduleIdFromMatch = Number(depMapMatch[1]);
+          // Verify this matches the current module ID
+          if (moduleIdFromMatch === currentModuleId || String(moduleIdFromMatch) === String(currentModuleId)) {
+            console.log(`[bungae] DEBUG: Found dependencyMap for module ${currentModuleId}: [${depMapMatch[2]}]`);
+          } else {
+            // Module ID mismatch, skip
+            depMapMatch = null;
+          }
+        }
+        if (depMapMatch) {
+          const depsStr = depMapMatch[2];
+          if (depsStr) {
+            const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
+            // Find which dependencyMap indices are actually used in require() calls
+            // Metro only includes dependencies that are actually require()'d
+            // Pattern: require(dependencyMap[index])
+            const usedDepIndices = new Set<number>();
+            const requireMatches = moduleCode.match(/require\(dependencyMap\[(\d+)\]\)/g);
+            if (requireMatches) {
+              for (const match of requireMatches) {
+                const indexMatch = match.match(/require\(dependencyMap\[(\d+)\]\)/);
+                if (indexMatch) {
+                  usedDepIndices.add(Number(indexMatch[1]));
+                }
+              }
+            }
+            
+            // Debug: log which indices are used
+            if (usedDepIndices.size > 0) {
+              console.log(`[bungae] DEBUG: Module ${currentModuleId} uses dependencyMap indices: ${Array.from(usedDepIndices).sort((a, b) => a - b).join(', ')}`);
+            }
+            
+            // Add dependencies that are actually used (referenced in dependencyMap)
+            // CRITICAL: Only add dependencies that are actually used in the code
+            // For assets, we need to be extra careful - Metro only includes assets that are actually require()'d
+            for (const depIndex of usedDepIndices) {
+              if (depIndex < deps.length) {
+                const depModuleIdStr = deps[depIndex];
+                if (depModuleIdStr) {
+                  const depModuleId = /^\d+$/.test(depModuleIdStr) ? Number(depModuleIdStr) : depModuleIdStr;
+                  const depPath = moduleIdToPath.get(depModuleId);
+                  
+                  if (!depPath) continue;
+                  
+                  // Check if this is an asset
+                  const isAsset = config.resolver.assetExts.some((ext) => {
+                    const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+                    return depPath.endsWith(normalizedExt);
+                  });
+                  
+                  // CRITICAL FIX: For assets, we need to verify that:
+                  // 1. The dependencyMap[depIndex] is actually used in require() calls
+                  // 2. The depModuleId at dependencyMap[depIndex] is actually an asset module ID
+                  // 3. The require() call is for the asset (not just any dependencyMap[index])
+                  if (isAsset) {
+                    // Check if dependencyMap[depIndex] is actually used in require() calls
+                    // AND verify that the require() call is specifically for this asset module ID
+                    // Pattern: require(dependencyMap[depIndex])
+                    // We need to verify that dependencyMap[depIndex] resolves to this asset module ID
+                    const requirePattern = new RegExp(`require\\(dependencyMap\\[${depIndex}\\]\\)`);
+                    const isRequireCalled = requirePattern.test(moduleCode);
+                    
+                    if (isRequireCalled) {
+                      // CRITICAL: Metro only includes assets from modules that are actually executed
+                      // In release builds, LogBox modules are in the bundle but not executed
+                      // We need to check if the parent module (currentModuleId) is actually executed
+                      // Metro does this by checking if the module is reachable from __r() called modules
+                      // AND if the require() call is in an executable code path (not in dead code)
+                      
+                      // For now, we include the asset if it's require()'d in a module that's reachable from __r() called modules
+                      // This matches Metro's behavior: Metro includes assets that are require()'d in executed modules
+                      if (!processedModuleIds.has(depModuleId)) {
+                        modulesToInclude.add(depModuleId);
+                        console.log(`[bungae] Found used asset: ${basename(depPath)} (module ${depModuleId}) from module ${currentModuleId} at dependencyMap[${depIndex}]`);
+                      }
+                    } else {
+                      // Asset is in dependencyMap but not require()'d - skip it
+                      console.log(`[bungae] Skipping unused asset: ${basename(depPath)} (module ${depModuleId}) - dependencyMap[${depIndex}] not require()'d in module ${currentModuleId}`);
+                    }
+                  } else {
+                    // For non-assets, add if not already processed
+                    if (!processedModuleIds.has(depModuleId)) {
+                      modulesToInclude.add(depModuleId);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  console.log(`[bungae] Recursive traversal complete: ${finalBundledModulePaths.size} total modules included`);
+  
+  // Update bundledModulePaths to only include actually used modules
+  bundledModulePaths.clear();
+  for (const path of finalBundledModulePaths) {
+    bundledModulePaths.add(path);
+  }
+  
+  // Debug: Log detailed asset detection
+  const allAssetPaths = Array.from(graph.keys()).filter((path) =>
+    config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return path.endsWith(normalizedExt);
+    }),
+  );
+  const bundledAssetPaths = Array.from(bundledModulePaths).filter((path) =>
+    config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return path.endsWith(normalizedExt);
+    }),
+  );
+  
+  // CRITICAL: Log the actual numbers
+  console.log(
+    `[bungae] Asset detection: ${allAssetPaths.length} total assets in graph, ${bundledAssetPaths.length} assets actually used in bundle code`,
+  );
+  console.log(`[bungae] Bundle modules count: ${bundle.modules.length}, Required modules (__r() called): ${requiredModuleIds.size}, Used asset modules: ${usedAssetModuleIds.size}`);
+  
+  if (allAssetPaths.length > 0) {
+    if (allAssetPaths.length !== bundledAssetPaths.length) {
+      const excludedAssets = allAssetPaths.filter((p) => !bundledAssetPaths.includes(p));
+      console.log(`[bungae] Excluded assets (not used in bundle code): ${excludedAssets.map(p => basename(p)).join(', ')}`);
+    }
+    console.log(`[bungae] Bundled assets (actually used): ${bundledAssetPaths.map(p => basename(p)).join(', ')}`);
+  }
+  
   const assets: AssetInfo[] = [];
-  for (const [filePath, module] of graph.entries()) {
+  for (const modulePath of bundledModulePaths) {
     // Check if this is an asset file
     const isAsset = config.resolver.assetExts.some((ext) => {
       const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-      return filePath.endsWith(normalizedExt);
+      return modulePath.endsWith(normalizedExt);
     });
     
     if (isAsset) {
-      const { width, height } = getImageSize(filePath);
-      const name = basename(filePath, extname(filePath));
-      const type = extname(filePath).slice(1);
-      const relativePath = relative(root, dirname(filePath));
+      // Get original module from graph to access code for scales extraction
+      const graphModule = graph.get(modulePath);
+      const { width, height } = getImageSize(modulePath);
+      const name = basename(modulePath, extname(modulePath));
+      const type = extname(modulePath).slice(1);
+      const relativePath = relative(root, dirname(modulePath));
       const normalizedRelativePath = relativePath.replace(/\\/g, '/');
       const httpServerLocation = normalizedRelativePath && normalizedRelativePath !== '.' 
         ? `/assets/${normalizedRelativePath}` 
@@ -909,7 +1389,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       let scales = [1]; // Default scale
       try {
         // Try to extract scales from the module code
-        const moduleCode = module.code;
+        const moduleCode = graphModule?.code;
         if (moduleCode && typeof moduleCode === 'string' && moduleCode.includes('scales:')) {
           const scalesMatch = moduleCode.match(/scales:\s*\[([^\]]+)\]/);
           if (scalesMatch) {
@@ -930,7 +1410,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       }
       
       assets.push({
-        filePath,
+        filePath: modulePath,
         httpServerLocation,
         name,
         type,

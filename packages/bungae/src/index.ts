@@ -71,6 +71,13 @@ export async function build(config: ResolvedConfig): Promise<void> {
   
   // Extract asset files from the build result for Android/iOS asset copying
   const assetFiles = buildResult.assets || [];
+  
+  // Log asset detection
+  if (assetFiles.length > 0) {
+    console.log(`   📦 Found ${assetFiles.length} asset file(s) in bundle`);
+  } else {
+    console.log(`   ⚠️  No asset files detected in bundle`);
+  }
 
   // Ensure output directory exists
   const outputDir = resolve(root, outDir);
@@ -120,8 +127,8 @@ export async function build(config: ResolvedConfig): Promise<void> {
   // Metro behavior:
   // - Development mode: Assets are served over HTTP from dev server (not copied to filesystem)
   // - Release mode: Assets are copied to drawable folders via `react-native bundle --assets-dest`
-  // We copy assets only in release builds (dev === false) to match Metro behavior
-  if ((platform === 'android' || platform === 'ios') && !dev) {
+  // We copy assets in both dev and release builds for better compatibility
+  if (platform === 'android' || platform === 'ios') {
     console.log(`   🔄 Attempting to copy bundle for ${platform} (dev: ${dev})...`);
     if (platform === 'android') {
       // Android: Copy to android/app/src/main/assets/
@@ -162,6 +169,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
           
           console.log(`   🖼️  Copying ${assetFiles.length} asset(s) to Android drawable folders...`);
           
+          // Collect all drawable resource names for keep.xml
+          const drawableResourceNames: string[] = [];
+          
           for (const asset of assetFiles) {
             // Metro file naming: convert httpServerLocation path to filename
             // Example: /assets/../../node_modules/.../assets -> __node_modules_..._assets
@@ -177,6 +187,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
               assetFileName = `__${assetFileName}`;
             }
             
+            // Remove file extension for drawable resource name (Metro-compatible)
+            const drawableResourceName = assetFileName.replace(/\.(png|jpg|jpeg|gif|webp|bmp|avif|ico|icns|icxl)$/i, '');
+            
             // Metro copies asset to drawable folder(s) based on scales array
             // For scales: [1], copy to drawable-mdpi
             // For scales: [1, 2, 3], copy to drawable-mdpi, drawable-xhdpi, drawable-xxhdpi
@@ -190,8 +203,29 @@ export async function build(config: ResolvedConfig): Promise<void> {
               copyFileSync(asset.filePath, targetPath);
               console.log(`      ✅ ${asset.name}.${asset.type} -> ${drawableFolderName}/${assetFileName}`);
             }
+            
+            // Add drawable resource name to keep list (only once per asset, not per scale)
+            if (!drawableResourceNames.includes(drawableResourceName)) {
+              drawableResourceNames.push(drawableResourceName);
+            }
           }
           console.log(`   ✅ Assets copied to Android drawable folders`);
+          
+          // Generate/update keep.xml file (Metro-compatible)
+          // Metro creates keep.xml to prevent Android resource shrinking from removing drawable resources
+          if (drawableResourceNames.length > 0) {
+            const rawDir = join(root, 'android', 'app', 'src', 'main', 'res', 'raw');
+            mkdirSync(rawDir, { recursive: true });
+            const keepXmlPath = join(rawDir, 'keep.xml');
+            
+            // Generate keep.xml content (Metro-compatible format)
+            const keepXmlContent = `<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:keep="${drawableResourceNames.map(name => `@drawable/${name}`).join(',')}" />
+`;
+            
+            writeFileSync(keepXmlPath, keepXmlContent, 'utf-8');
+            console.log(`   ✅ Updated keep.xml with ${drawableResourceNames.length} drawable resource(s)`);
+          }
         }
       } else {
         console.log(`   ⚠️  Android assets directory not found: ${androidParentDir}`);
@@ -215,6 +249,41 @@ export async function build(config: ResolvedConfig): Promise<void> {
           );
         } else {
           console.log(`   ❌ ERROR: Copy failed - file not found at ${iosBundlePath}`);
+        }
+        
+        // Copy assets to iOS (Metro-compatible)
+        // Metro copies assets to ios/assets/ directory with the same structure as httpServerLocation
+        if (assetFiles && assetFiles.length > 0) {
+          console.log(`   🖼️  Copying ${assetFiles.length} asset(s) to iOS assets directory...`);
+          
+          // Metro creates ios/assets/ folder structure
+          const iosAssetsDir = join(iosDir, 'assets');
+          mkdirSync(iosAssetsDir, { recursive: true });
+          
+          for (const asset of assetFiles) {
+            // Metro iOS asset path: ios/assets/{httpServerLocation}/{name}.{type}
+            // Example: /assets/../../node_modules/.../assets -> ios/assets/__node_modules_..._assets/{name}.{type}
+            let assetPath = asset.httpServerLocation
+              .replace(/^\/assets\//, '') // Remove /assets/ prefix
+              .replace(/^(\.\.\/)+/, '') // Remove leading ../
+              .replace(/\//g, '_') // Convert / to _
+              .replace(/[^a-z0-9_]/gi, '') // Remove special characters (Metro-compatible)
+              + `_${asset.name}.${asset.type}`;
+            
+            // Ensure filename starts with __ (Metro convention for node_modules assets)
+            if (!assetPath.startsWith('__')) {
+              assetPath = `__${assetPath}`;
+            }
+            
+            // Metro copies assets to ios/assets/ directory
+            const iosAssetPath = join(iosAssetsDir, assetPath);
+            const iosAssetDir = dirname(iosAssetPath);
+            mkdirSync(iosAssetDir, { recursive: true });
+            
+            copyFileSync(asset.filePath, iosAssetPath);
+            console.log(`      ✅ ${asset.name}.${asset.type} -> assets/${assetPath}`);
+          }
+          console.log(`   ✅ Assets copied to iOS assets directory`);
         }
       } else {
         console.log(`   ⚠️  iOS directory not found: ${iosDir}`);

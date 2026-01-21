@@ -34,20 +34,23 @@ export function getAppendScripts(
           let resolved1: string;
           let resolved2: string;
 
+          // Use projectRoot from options if available, otherwise use process.cwd()
+          const projectRoot = options.projectRoot || process.cwd();
+
           // Resolve m.path (could be relative or absolute)
           if (pathModule.isAbsolute(m.path)) {
             resolved1 = pathModule.normalize(m.path);
           } else {
-            // If relative, resolve from process.cwd()
-            resolved1 = pathModule.resolve(process.cwd(), m.path);
+            // If relative, resolve from projectRoot (not process.cwd())
+            resolved1 = pathModule.resolve(projectRoot, m.path);
           }
 
           // Resolve modulePath (could be relative or absolute)
           if (pathModule.isAbsolute(modulePath)) {
             resolved2 = pathModule.normalize(modulePath);
           } else {
-            // If relative, resolve from process.cwd()
-            resolved2 = pathModule.resolve(process.cwd(), modulePath);
+            // If relative, resolve from projectRoot (not process.cwd())
+            resolved2 = pathModule.resolve(projectRoot, modulePath);
           }
 
           // Compare normalized paths

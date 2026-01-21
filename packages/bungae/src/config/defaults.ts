@@ -41,19 +41,47 @@ export const DEFAULT_SERIALIZER: Required<SerializerConfig> = {
   prelude: [],
   bundleType: 'plain',
   extraVars: {},
-  getModulesRunBeforeMainModule: (entryFilePath: string) => {
+  getModulesRunBeforeMainModule: (
+    entryFilePath: string,
+    options?: { projectRoot: string; nodeModulesPaths: string[] },
+  ) => {
     // Match React Native's @react-native/metro-config default behavior
     // It includes InitializeCore (but not ReactNativePrivateInitializeCore)
     const modules: string[] = [];
 
     // Get entry file directory for path resolution
-    const { dirname } = require('path');
+    const { dirname, resolve } = require('path');
     const entryDir = dirname(entryFilePath);
+    const projectRoot = options?.projectRoot || entryDir;
+
+    // Build paths array for require.resolve (Metro-compatible monorepo support)
+    // Metro checks: entryDir, projectRoot, projectRoot/node_modules, and all nodeModulesPaths
+    const resolvePaths: string[] = [entryDir, projectRoot];
+
+    // Add projectRoot/node_modules
+    try {
+      const projectNodeModules = resolve(projectRoot, 'node_modules');
+      resolvePaths.push(projectNodeModules);
+    } catch {
+      // Ignore if resolve fails
+    }
+
+    // Add all nodeModulesPaths (for monorepo support)
+    if (options?.nodeModulesPaths) {
+      for (const nodeModulesPath of options.nodeModulesPaths) {
+        // nodeModulesPath can be relative (to projectRoot) or absolute
+        const absolutePath = require('path').isAbsolute(nodeModulesPath)
+          ? nodeModulesPath
+          : resolve(projectRoot, nodeModulesPath);
+        resolvePaths.push(absolutePath);
+      }
+    }
 
     try {
       // React Native's getDefaultConfig includes InitializeCore
+      // Metro resolves using all paths in order (monorepo support)
       const initializeCore = require.resolve('react-native/Libraries/Core/InitializeCore', {
-        paths: [entryDir],
+        paths: resolvePaths,
       });
       modules.push(initializeCore);
     } catch {
