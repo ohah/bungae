@@ -497,6 +497,301 @@ console.log(config.name);
     });
   });
 
+  describe('Dev-only Module Filtering', () => {
+    test('should include dev-only modules in development mode', async () => {
+      // Create a dev-only module (simulating React Native dev tools)
+      const devToolsDir = join(
+        testDir,
+        'node_modules',
+        'react-native',
+        'Libraries',
+        'Core',
+        'Devtools',
+      );
+      mkdirSync(devToolsDir, { recursive: true });
+      const openURLInBrowser = join(devToolsDir, 'openURLInBrowser.js');
+      writeFileSync(
+        openURLInBrowser,
+        `module.exports = function openURLInBrowser(url) {
+  console.log('Opening URL:', url);
+};`,
+        'utf-8',
+      );
+
+      // Create entry file that imports dev-only module
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const openURLInBrowser = require('react-native/Libraries/Core/Devtools/openURLInBrowser');
+openURLInBrowser('http://example.com');
+console.log('Dev mode');`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // In dev mode, dev-only modules should be included
+      expect(result.code).toContain('openURLInBrowser');
+      expect(result.code).toContain('Opening URL');
+    });
+
+    test('should exclude dev-only modules in production mode', async () => {
+      // Create a dev-only module (simulating React Native dev tools)
+      const devToolsDir = join(
+        testDir,
+        'node_modules',
+        'react-native',
+        'Libraries',
+        'Core',
+        'Devtools',
+      );
+      mkdirSync(devToolsDir, { recursive: true });
+      const openURLInBrowser = join(devToolsDir, 'openURLInBrowser.js');
+      writeFileSync(
+        openURLInBrowser,
+        `module.exports = function openURLInBrowser(url) {
+  console.log('Opening URL:', url);
+};`,
+        'utf-8',
+      );
+
+      // Create entry file that imports dev-only module
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const openURLInBrowser = require('react-native/Libraries/Core/Devtools/openURLInBrowser');
+openURLInBrowser('http://example.com');
+console.log('Production mode');`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // In production mode, dev-only module definitions should be excluded
+      // Note: The require() call in entry file may still be present, but the module definition won't be
+      // Check that the dev-only module's actual code (function definition) is not in the bundle
+      expect(result.code).not.toContain('Opening URL');
+      expect(result.code).not.toContain('function openURLInBrowser');
+      // Entry file code may still reference it, but the module definition should be excluded
+      // But regular code should still be included
+      expect(result.code).toContain('Production mode');
+    });
+
+    test('should exclude multiple dev-only modules in production mode', async () => {
+      // Create multiple dev-only modules
+      const devToolsDir = join(
+        testDir,
+        'node_modules',
+        'react-native',
+        'Libraries',
+        'Core',
+        'Devtools',
+      );
+      mkdirSync(devToolsDir, { recursive: true });
+
+      const openURLInBrowser = join(devToolsDir, 'openURLInBrowser.js');
+      writeFileSync(
+        openURLInBrowser,
+        `module.exports = function openURLInBrowser(url) {
+  console.log('Opening URL:', url);
+};`,
+        'utf-8',
+      );
+
+      const devToolsDir2 = join(testDir, 'node_modules', 'react-native', 'Libraries', 'Devtools');
+      mkdirSync(devToolsDir2, { recursive: true });
+      const anotherDevTool = join(devToolsDir2, 'openURLInBrowser.js');
+      writeFileSync(
+        anotherDevTool,
+        `module.exports = function anotherDevTool() {
+  console.log('Another dev tool');
+};`,
+        'utf-8',
+      );
+
+      // Create entry file that imports both dev-only modules
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const openURLInBrowser = require('react-native/Libraries/Core/Devtools/openURLInBrowser');
+const anotherDevTool = require('react-native/Libraries/Devtools/openURLInBrowser');
+openURLInBrowser('http://example.com');
+anotherDevTool();
+console.log('Production mode');`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // In production mode, all dev-only module definitions should be excluded
+      // Check that the dev-only modules' actual code is not in the bundle
+      expect(result.code).not.toContain('Another dev tool');
+      expect(result.code).not.toContain('Opening URL');
+      expect(result.code).not.toContain('function openURLInBrowser');
+      expect(result.code).not.toContain('function anotherDevTool');
+      // But regular code should still be included
+      expect(result.code).toContain('Production mode');
+    });
+
+    test('should include regular modules in both dev and production mode', async () => {
+      // Create a regular module (not dev-only)
+      const utilsDir = join(testDir, 'utils');
+      mkdirSync(utilsDir, { recursive: true });
+      const utils = join(utilsDir, 'helper.js');
+      writeFileSync(
+        utils,
+        `module.exports = function helper() {
+  return 'helper function';
+};`,
+        'utf-8',
+      );
+
+      // Create entry file that imports regular module
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const helper = require('./utils/helper');
+console.log(helper());`,
+        'utf-8',
+      );
+
+      // Test in development mode
+      const devConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const devResult = await buildWithGraph(devConfig);
+      expect(devResult.code).toContain('helper function');
+
+      // Test in production mode
+      const prodConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const prodResult = await buildWithGraph(prodConfig);
+      expect(prodResult.code).toContain('helper function');
+    });
+
+    test('should handle mixed dev-only and regular modules correctly', async () => {
+      // Create dev-only module
+      const devToolsDir = join(
+        testDir,
+        'node_modules',
+        'react-native',
+        'Libraries',
+        'Core',
+        'Devtools',
+      );
+      mkdirSync(devToolsDir, { recursive: true });
+      const openURLInBrowser = join(devToolsDir, 'openURLInBrowser.js');
+      writeFileSync(
+        openURLInBrowser,
+        `module.exports = function openURLInBrowser(url) {
+  console.log('Dev tool:', url);
+};`,
+        'utf-8',
+      );
+
+      // Create regular module
+      const utilsDir = join(testDir, 'utils');
+      mkdirSync(utilsDir, { recursive: true });
+      const utils = join(utilsDir, 'helper.js');
+      writeFileSync(
+        utils,
+        `module.exports = function helper() {
+  return 'regular helper';
+};`,
+        'utf-8',
+      );
+
+      // Create entry file that imports both
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const openURLInBrowser = require('react-native/Libraries/Core/Devtools/openURLInBrowser');
+const helper = require('./utils/helper');
+openURLInBrowser('http://example.com');
+console.log(helper());`,
+        'utf-8',
+      );
+
+      // Test in development mode - both should be included
+      const devConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const devResult = await buildWithGraph(devConfig);
+      expect(devResult.code).toContain('openURLInBrowser');
+      expect(devResult.code).toContain('regular helper');
+
+      // Test in production mode - only regular module should be included
+      const prodConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const prodResult = await buildWithGraph(prodConfig);
+      // Dev-only module definition should be excluded
+      expect(prodResult.code).not.toContain('Dev tool');
+      expect(prodResult.code).not.toContain('function openURLInBrowser');
+      // Regular module should still be included
+      expect(prodResult.code).toContain('regular helper');
+    });
+  });
+
   describe('Error Handling', () => {
     test('should throw error for non-existent entry file', async () => {
       const config = resolveConfig(
@@ -722,28 +1017,79 @@ console.log('Logo:', logo);
     // Helper to create a minimal PNG file
     function createMinimalPNG(): Buffer {
       return Buffer.from([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
-        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
-        0x00, 0x00, 0x00, 0x01, // width: 1
-        0x00, 0x00, 0x00, 0x01, // height: 1
-        0x08, 0x06, 0x00, 0x00, 0x00, // bit depth, color type, etc.
-        0x1f, 0x15, 0xc4, 0x89, // CRC
-        0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
-        0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4,
-        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, // IEND chunk
-        0xae, 0x42, 0x60, 0x82,
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a, // PNG signature
+        0x00,
+        0x00,
+        0x00,
+        0x0d,
+        0x49,
+        0x48,
+        0x44,
+        0x52, // IHDR chunk
+        0x00,
+        0x00,
+        0x00,
+        0x01, // width: 1
+        0x00,
+        0x00,
+        0x00,
+        0x01, // height: 1
+        0x08,
+        0x06,
+        0x00,
+        0x00,
+        0x00, // bit depth, color type, etc.
+        0x1f,
+        0x15,
+        0xc4,
+        0x89, // CRC
+        0x00,
+        0x00,
+        0x00,
+        0x0a,
+        0x49,
+        0x44,
+        0x41,
+        0x54, // IDAT chunk
+        0x78,
+        0x9c,
+        0x63,
+        0x00,
+        0x01,
+        0x00,
+        0x00,
+        0x05,
+        0x00,
+        0x01,
+        0x0d,
+        0x0a,
+        0x2d,
+        0xb4,
+        0x00,
+        0x00,
+        0x00,
+        0x00,
+        0x49,
+        0x45,
+        0x4e,
+        0x44, // IEND chunk
+        0xae,
+        0x42,
+        0x60,
+        0x82,
       ]);
     }
 
     // Create mock AssetRegistry for tests
     function setupMockAssetRegistry(): void {
-      const assetRegistryDir = join(
-        testDir,
-        'node_modules',
-        'react-native',
-        'Libraries',
-        'Image',
-      );
+      const assetRegistryDir = join(testDir, 'node_modules', 'react-native', 'Libraries', 'Image');
       mkdirSync(assetRegistryDir, { recursive: true });
       writeFileSync(
         join(assetRegistryDir, 'AssetRegistry.js'),
@@ -758,21 +1104,21 @@ module.exports = {
 
     test('should exclude assets from __DEV__ conditional blocks in release builds', async () => {
       setupMockAssetRegistry();
-        const assetsDir = join(testDir, 'assets');
-        mkdirSync(assetsDir, { recursive: true });
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
 
-        // Create production asset (always included)
-        const prodImage = join(assetsDir, 'prod-icon.png');
-        writeFileSync(prodImage, createMinimalPNG());
+      // Create production asset (always included)
+      const prodImage = join(assetsDir, 'prod-icon.png');
+      writeFileSync(prodImage, createMinimalPNG());
 
-        // Create dev-only asset (should be excluded in release)
-        const devImage = join(assetsDir, 'dev-icon.png');
-        writeFileSync(devImage, createMinimalPNG());
+      // Create dev-only asset (should be excluded in release)
+      const devImage = join(assetsDir, 'dev-icon.png');
+      writeFileSync(devImage, createMinimalPNG());
 
-        const entryFile = join(testDir, 'index.js');
-        writeFileSync(
-          entryFile,
-          `
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
 // Production asset - always included
 const prodIcon = require('./assets/prod-icon.png');
 
@@ -784,49 +1130,48 @@ if (__DEV__) {
 
 console.log('Prod icon:', prodIcon);
 `,
-          'utf-8',
-        );
+        'utf-8',
+      );
 
-        // Test release build (dev: false)
-        const releaseConfig = resolveConfig(
-          {
-            ...getDefaultConfig(testDir),
-            entry: 'index.js',
-            platform: 'ios',
-            dev: false,
-          },
-          testDir,
-        );
+      // Test release build (dev: false)
+      const releaseConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
 
-        const releaseResult = await buildWithGraph(releaseConfig);
+      const releaseResult = await buildWithGraph(releaseConfig);
 
-        // In release build, only prod-icon should be in assets
-        expect(releaseResult.assets).toBeDefined();
-        const releaseAssets = releaseResult.assets || [];
-        const releaseAssetNames = releaseAssets.map((a) => a.name);
-        expect(releaseAssetNames).toContain('prod-icon');
-        expect(releaseAssetNames).not.toContain('dev-icon');
-        expect(releaseAssets.length).toBe(1);
-      },
-    );
+      // In release build, only prod-icon should be in assets
+      expect(releaseResult.assets).toBeDefined();
+      const releaseAssets = releaseResult.assets || [];
+      const releaseAssetNames = releaseAssets.map((a) => a.name);
+      expect(releaseAssetNames).toContain('prod-icon');
+      expect(releaseAssetNames).not.toContain('dev-icon');
+      expect(releaseAssets.length).toBe(1);
+    });
 
     test('should include all assets in dev builds even if inside __DEV__ blocks', async () => {
       setupMockAssetRegistry();
-        const assetsDir = join(testDir, 'assets');
-        mkdirSync(assetsDir, { recursive: true });
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
 
-        // Create production asset
-        const prodImage = join(assetsDir, 'prod-icon.png');
-        writeFileSync(prodImage, createMinimalPNG());
+      // Create production asset
+      const prodImage = join(assetsDir, 'prod-icon.png');
+      writeFileSync(prodImage, createMinimalPNG());
 
-        // Create dev-only asset
-        const devImage = join(assetsDir, 'dev-icon.png');
-        writeFileSync(devImage, createMinimalPNG());
+      // Create dev-only asset
+      const devImage = join(assetsDir, 'dev-icon.png');
+      writeFileSync(devImage, createMinimalPNG());
 
-        const entryFile = join(testDir, 'index.js');
-        writeFileSync(
-          entryFile,
-          `
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
 // Production asset
 const prodIcon = require('./assets/prod-icon.png');
 
@@ -838,47 +1183,46 @@ if (__DEV__) {
 
 console.log('Prod icon:', prodIcon);
 `,
-          'utf-8',
-        );
+        'utf-8',
+      );
 
-        // Test dev build (dev: true)
-        const devConfig = resolveConfig(
-          {
-            ...getDefaultConfig(testDir),
-            entry: 'index.js',
-            platform: 'ios',
-            dev: true,
-          },
-          testDir,
-        );
+      // Test dev build (dev: true)
+      const devConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
 
-        const devResult = await buildWithGraph(devConfig);
+      const devResult = await buildWithGraph(devConfig);
 
-        // In dev build, both assets should be included
-        expect(devResult.assets).toBeDefined();
-        const devAssets = devResult.assets || [];
-        const devAssetNames = devAssets.map((a) => a.name);
-        expect(devAssetNames).toContain('prod-icon');
-        expect(devAssetNames).toContain('dev-icon');
-        expect(devAssets.length).toBe(2);
-      },
-    );
+      // In dev build, both assets should be included
+      expect(devResult.assets).toBeDefined();
+      const devAssets = devResult.assets || [];
+      const devAssetNames = devAssets.map((a) => a.name);
+      expect(devAssetNames).toContain('prod-icon');
+      expect(devAssetNames).toContain('dev-icon');
+      expect(devAssets.length).toBe(2);
+    });
 
     test('should exclude assets from __DEV__ && expressions in release builds', async () => {
       setupMockAssetRegistry();
-        const assetsDir = join(testDir, 'assets');
-        mkdirSync(assetsDir, { recursive: true });
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
 
-        const prodImage = join(assetsDir, 'prod-icon.png');
-        writeFileSync(prodImage, createMinimalPNG());
+      const prodImage = join(assetsDir, 'prod-icon.png');
+      writeFileSync(prodImage, createMinimalPNG());
 
-        const devImage = join(assetsDir, 'dev-icon.png');
-        writeFileSync(devImage, createMinimalPNG());
+      const devImage = join(assetsDir, 'dev-icon.png');
+      writeFileSync(devImage, createMinimalPNG());
 
-        const entryFile = join(testDir, 'index.js');
-        writeFileSync(
-          entryFile,
-          `
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
 const prodIcon = require('./assets/prod-icon.png');
 
 // Dev-only asset using && operator
@@ -886,46 +1230,45 @@ __DEV__ && require('./assets/dev-icon.png');
 
 console.log('Prod icon:', prodIcon);
 `,
-          'utf-8',
-        );
+        'utf-8',
+      );
 
-        const releaseConfig = resolveConfig(
-          {
-            ...getDefaultConfig(testDir),
-            entry: 'index.js',
-            platform: 'ios',
-            dev: false,
-          },
-          testDir,
-        );
+      const releaseConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
 
-        const releaseResult = await buildWithGraph(releaseConfig);
+      const releaseResult = await buildWithGraph(releaseConfig);
 
-        // In release build, dev-icon should be excluded
-        expect(releaseResult.assets).toBeDefined();
-        const releaseAssets = releaseResult.assets || [];
-        const releaseAssetNames = releaseAssets.map((a) => a.name);
-        expect(releaseAssetNames).toContain('prod-icon');
-        expect(releaseAssetNames).not.toContain('dev-icon');
-        expect(releaseAssets.length).toBe(1);
-      },
-    );
+      // In release build, dev-icon should be excluded
+      expect(releaseResult.assets).toBeDefined();
+      const releaseAssets = releaseResult.assets || [];
+      const releaseAssetNames = releaseAssets.map((a) => a.name);
+      expect(releaseAssetNames).toContain('prod-icon');
+      expect(releaseAssetNames).not.toContain('dev-icon');
+      expect(releaseAssets.length).toBe(1);
+    });
 
     test('should exclude assets from process.env.NODE_ENV === "development" conditionals in release builds', async () => {
       setupMockAssetRegistry();
-        const assetsDir = join(testDir, 'assets');
-        mkdirSync(assetsDir, { recursive: true });
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
 
-        const prodImage = join(assetsDir, 'prod-icon.png');
-        writeFileSync(prodImage, createMinimalPNG());
+      const prodImage = join(assetsDir, 'prod-icon.png');
+      writeFileSync(prodImage, createMinimalPNG());
 
-        const devImage = join(assetsDir, 'dev-icon.png');
-        writeFileSync(devImage, createMinimalPNG());
+      const devImage = join(assetsDir, 'dev-icon.png');
+      writeFileSync(devImage, createMinimalPNG());
 
-        const entryFile = join(testDir, 'index.js');
-        writeFileSync(
-          entryFile,
-          `
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
 const prodIcon = require('./assets/prod-icon.png');
 
 // Dev-only asset using process.env.NODE_ENV check
@@ -936,46 +1279,45 @@ if (process.env.NODE_ENV === 'development') {
 
 console.log('Prod icon:', prodIcon);
 `,
-          'utf-8',
-        );
+        'utf-8',
+      );
 
-        const releaseConfig = resolveConfig(
-          {
-            ...getDefaultConfig(testDir),
-            entry: 'index.js',
-            platform: 'ios',
-            dev: false,
-          },
-          testDir,
-        );
+      const releaseConfig = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
 
-        const releaseResult = await buildWithGraph(releaseConfig);
+      const releaseResult = await buildWithGraph(releaseConfig);
 
-        // In release build, dev-icon should be excluded
-        expect(releaseResult.assets).toBeDefined();
-        const releaseAssets = releaseResult.assets || [];
-        const releaseAssetNames = releaseAssets.map((a) => a.name);
-        expect(releaseAssetNames).toContain('prod-icon');
-        expect(releaseAssetNames).not.toContain('dev-icon');
-        expect(releaseAssets.length).toBe(1);
-      },
-    );
+      // In release build, dev-icon should be excluded
+      expect(releaseResult.assets).toBeDefined();
+      const releaseAssets = releaseResult.assets || [];
+      const releaseAssetNames = releaseAssets.map((a) => a.name);
+      expect(releaseAssetNames).toContain('prod-icon');
+      expect(releaseAssetNames).not.toContain('dev-icon');
+      expect(releaseAssets.length).toBe(1);
+    });
 
     test('should only include assets that are actually required in bundle code', async () => {
       setupMockAssetRegistry();
-        const assetsDir = join(testDir, 'assets');
-        mkdirSync(assetsDir, { recursive: true });
+      const assetsDir = join(testDir, 'assets');
+      mkdirSync(assetsDir, { recursive: true });
 
-        // Create multiple assets
-        const usedImage = join(assetsDir, 'used.png');
-        const unusedImage = join(assetsDir, 'unused.png');
-        writeFileSync(usedImage, createMinimalPNG());
-        writeFileSync(unusedImage, createMinimalPNG());
+      // Create multiple assets
+      const usedImage = join(assetsDir, 'used.png');
+      const unusedImage = join(assetsDir, 'unused.png');
+      writeFileSync(usedImage, createMinimalPNG());
+      writeFileSync(unusedImage, createMinimalPNG());
 
-        const entryFile = join(testDir, 'index.js');
-        writeFileSync(
-          entryFile,
-          `
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
 // Only this asset is actually required
 const used = require('./assets/used.png');
 console.log('Used:', used);
@@ -983,29 +1325,28 @@ console.log('Used:', used);
 // This asset is never required, so it should not be included
 // (even though it exists in the file system)
 `,
-          'utf-8',
-        );
+        'utf-8',
+      );
 
-        const config = resolveConfig(
-          {
-            ...getDefaultConfig(testDir),
-            entry: 'index.js',
-            platform: 'ios',
-            dev: false,
-          },
-          testDir,
-        );
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
 
-        const result = await buildWithGraph(config);
+      const result = await buildWithGraph(config);
 
-        // Only used asset should be included
-        expect(result.assets).toBeDefined();
-        const assets = result.assets || [];
-        const assetNames = assets.map((a) => a.name);
-        expect(assetNames).toContain('used');
-        expect(assetNames).not.toContain('unused');
-        expect(assets.length).toBe(1);
-      },
-    );
+      // Only used asset should be included
+      expect(result.assets).toBeDefined();
+      const assets = result.assets || [];
+      const assetNames = assets.map((a) => a.name);
+      expect(assetNames).toContain('used');
+      expect(assetNames).not.toContain('unused');
+      expect(assets.length).toBe(1);
+    });
   });
 });

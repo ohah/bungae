@@ -36,6 +36,8 @@ alwaysApply: true
 
 커밋하기 전에 반드시 다음 명령어들을 실행하세요:
 
+**⚠️ Windows 환경 참고**: Windows 환경에서는 `mise exec --`를 붙이지 않고 직접 실행해도 됩니다.
+
 ```bash
 # 1. 린트 체크 (경고도 에러로 처리)
 mise exec -- bun run lint
@@ -45,6 +47,14 @@ mise exec -- bun run format:check
 
 # 3. 타입 체크 (TypeScript)
 mise exec -- bun run typecheck
+```
+
+**Windows 환경에서는 다음과 같이 실행해도 됩니다:**
+```bash
+# Windows 환경 예시
+bun run lint
+bun run format:check
+bun run typecheck
 ```
 
 ### ✅ 자동 수정 가능한 경우
@@ -59,6 +69,13 @@ mise exec -- bun run lint:fix
 mise exec -- bun run format
 ```
 
+**Windows 환경에서는 다음과 같이 실행해도 됩니다:**
+```bash
+# Windows 환경 예시
+bun run lint:fix
+bun run format
+```
+
 ### ❌ 잘못된 방법
 
 린트 체크 없이 커밋하면 CI/CD에서 실패할 수 있습니다:
@@ -67,11 +84,9 @@ mise exec -- bun run format
 # ❌ 잘못된 예시 - 린트 체크 없이 커밋
 git add .
 git commit -m "feat: add new feature"
-
-# ❌ 잘못된 예시 - mise exec 없이 실행
-bun run lint
-bun run format:check
 ```
+
+**참고**: Windows 환경이 아닌 경우 `mise exec --` 없이 실행하면 안 됩니다. Windows 환경에서는 `mise exec --` 없이 직접 실행해도 됩니다.
 
 ## 권장 워크플로우
 
@@ -130,7 +145,8 @@ GitHub Actions에서도 동일한 체크가 실행됩니다:
 
 ## 참고
 
-- 모든 명령어는 `mise exec --`를 앞에 붙여서 실행해야 합니다
+- **일반 환경**: 모든 명령어는 `mise exec --`를 앞에 붙여서 실행해야 합니다
+- **Windows 환경**: `mise exec --`를 붙이지 않고 직접 실행해도 됩니다
 - 린트는 `oxlint`를 사용하며, 경고도 에러로 처리합니다 (`--deny-warnings`)
 - 포맷은 `oxfmt`를 사용합니다
 - CI/CD 실패를 방지하기 위해 로컬에서 반드시 체크하세요

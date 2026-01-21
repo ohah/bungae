@@ -24,6 +24,7 @@
     "dev": "bun run --filter='bungae' dev",
     "build": "bun run --filter='bungae' build",
     "bungae:start": "bun run build && cd examples/ExampleApp && bun run start:bungae",
+    "metro:start": "cd examples/ExampleApp && bun run start",
     "bungae:build": "bun run build && cd examples/ExampleApp && bun run build:bungae",
     "bungae:build:ios": "bun run build && cd examples/ExampleApp && bun run build:bungae --platform ios --mode release",
     "bungae:build:android": "bun run build && cd examples/ExampleApp && bun run build:bungae --platform android --mode release",
