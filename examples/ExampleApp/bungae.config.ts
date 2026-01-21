@@ -35,13 +35,10 @@ export default defineConfig({
     ],
     platforms: ['ios', 'android', 'native'],
     preferNativePlatform: true,
+    // Monorepo support: include monorepo root node_modules (Metro-compatible)
+    nodeModulesPaths: [join(__dirname, '../../node_modules')],
   },
   transformer: {
-    babel: {
-      include: [],
-      plugins: [],
-      presets: [],
-    },
     minifier: 'bun',
     inlineRequires: false,
   },
