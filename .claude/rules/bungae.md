@@ -40,6 +40,7 @@ Entry → [Resolution] → [Transformation] → [Serialization] → Bundle
 **모든 커밋 메시지는 반드시 영어로 작성해야 합니다.**
 
 - ✅ 올바른 예시:
+
   ```bash
   git commit -m "feat: implement Metro-compatible asset handling"
   git commit -m "fix: resolve path normalization issue in dev server"
@@ -53,6 +54,7 @@ Entry → [Resolution] → [Transformation] → [Serialization] → Bundle
   ```
 
 **커밋 메시지 형식:**
+
 - Conventional Commits 형식 사용: `type: description`
 - 타입: `feat`, `fix`, `refactor`, `docs`, `test`, `chore` 등
 - 설명: 간결하고 명확하게 작성 (50자 이내 권장)

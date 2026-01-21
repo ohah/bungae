@@ -98,12 +98,6 @@ export function getAppendScripts(
         const moduleId = options.createModuleId(module.path);
         const code = options.getRunModuleStatement(moduleId, options.globalPrefix);
 
-        if (options.dev && modulePath.includes('InitializeCore')) {
-          console.log(
-            `[bungae] Found InitializeCore module for execution: ${module.path} (ID: ${moduleId})`,
-          );
-        }
-
         output.push({
           path: `require-${modulePath}`,
           code,

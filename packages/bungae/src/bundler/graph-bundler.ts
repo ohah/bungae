@@ -21,7 +21,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-import type { Server, ServerWebSocket } from 'bun';
+import type { ServerWebSocket } from 'bun';
 
 import type { ResolvedConfig } from '../config/types';
 import {
@@ -95,9 +95,10 @@ function generateAssetModuleCode(assetPath: string, projectRoot: string): string
 
   // Metro behavior: if relativePath is empty or '.', use empty string for httpServerLocation
   // This means assets in project root are served from /assets/
-  const httpServerLocation = normalizedRelativePath && normalizedRelativePath !== '.' 
-    ? `/assets/${normalizedRelativePath}` 
-    : '/assets';
+  const httpServerLocation =
+    normalizedRelativePath && normalizedRelativePath !== '.'
+      ? `/assets/${normalizedRelativePath}`
+      : '/assets';
 
   // Generate Metro-compatible asset registration
   return `module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({
@@ -329,6 +330,7 @@ async function transformFile(
   filePath: string,
   code: string,
   config: ResolvedConfig,
+  entryPath?: string,
 ): Promise<{ ast: any } | null> {
   const { platform, dev } = config;
 
@@ -351,7 +353,12 @@ async function transformFile(
 
   // Use Babel for all transformations (Metro-compatible)
   // Note: Asset files are handled in processModule before reaching here
-  return transformWithBabel(code, filePath, { dev, platform, root: config.root });
+  return transformWithBabel(code, filePath, {
+    dev,
+    platform,
+    root: config.root,
+    entryPath,
+  });
 }
 
 /**
@@ -362,7 +369,7 @@ async function transformFile(
 async function transformWithBabel(
   code: string,
   filePath: string,
-  options: { dev: boolean; platform: string; root: string },
+  options: { dev: boolean; platform: string; root: string; entryPath?: string },
 ): Promise<{ ast: any }> {
   const babel = await import('@babel/core');
   const hermesParser = await import('hermes-parser');
@@ -456,12 +463,19 @@ async function transformWithBabel(
         });
 
     // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
-    // Debug: Check if Babel loaded babel.config.js (only in dev mode and for first few files)
-    if (options.dev && filePath.includes('node_modules/react-native')) {
+    // Debug: Check if Babel loaded babel.config.js (in dev mode for important files)
+    // Check for: entry file, JSX/TSX files, or react-native files
+    const isEntryFile = options.entryPath && filePath === options.entryPath;
+    const isJSXFile = fileExt.endsWith('.jsx') || fileExt.endsWith('.tsx');
+    const isReactNativeFile = filePath.includes('node_modules/react-native');
+    const shouldCheckPreset = options.dev && (isEntryFile || isJSXFile || isReactNativeFile);
+
+    if (shouldCheckPreset) {
       try {
         // Use loadOptionsAsync to check if babel.config.js is loaded
         // Pass only config-related options, not transform options
-        const loadedOptions = await babel.loadOptionsAsync({
+        // Note: loadOptionsAsync exists in Babel 7 but may not be in type definitions
+        const loadedOptions = await (babel.default as any).loadOptionsAsync({
           cwd: options.root,
           filename: filePath,
           caller: babelConfig.caller,
@@ -473,17 +487,22 @@ async function transformWithBabel(
             if (Array.isArray(p)) return p[0];
             return typeof p === 'string' ? p : 'unknown';
           });
+          const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
           console.log(
-            `[bungae] Babel loaded ${loadedOptions.presets.length} preset(s) for ${filePath}: ${presetNames.join(', ')}`,
+            `[bungae] Babel loaded ${loadedOptions.presets.length} preset(s) for ${fileType} file ${filePath}: ${presetNames.join(', ')}`,
           );
         } else {
+          const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
           console.warn(
-            `[bungae] WARNING: Babel did not load any presets for ${filePath}. Codegen may not run.`,
+            `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
           );
           console.warn(`[bungae] cwd: ${options.root}, filename: ${filePath}`);
+          console.warn(
+            `[bungae] Please ensure babel.config.js exists and includes @react-native/babel-preset`,
+          );
         }
       } catch (error) {
-        console.warn(`[bungae] Failed to load Babel options: ${error}`);
+        console.warn(`[bungae] Failed to load Babel options for ${filePath}:`, error);
       }
     }
 
@@ -567,11 +586,6 @@ async function buildGraph(
       return filePath.endsWith(normalizedExt);
     });
     if (isAsset) {
-      // Debug: Log asset processing
-      if (config.dev) {
-        console.log(`[bungae] Processing asset: ${filePath}`);
-      }
-
       // Resolve AssetRegistry dependency
       const assetRegistryPath = 'react-native/Libraries/Image/AssetRegistry';
       let resolvedAssetRegistry: string | null = null;
@@ -588,11 +602,7 @@ async function buildGraph(
       }
 
       const assetCode = generateAssetModuleCode(filePath, config.root);
-      
-      // Debug: Log generated asset code
-      if (config.dev) {
-        console.log(`[bungae] Generated asset code for ${filePath}:`, assetCode.substring(0, 200));
-      }
+
       // Parse asset code to AST (simple module.exports assignment)
       const babel = await import('@babel/core');
       const assetAst = await babel.parseAsync(assetCode, {
@@ -631,7 +641,7 @@ async function buildGraph(
     // JSON files: No dependencies, just wrap as module
     const isJSON = filePath.endsWith('.json');
     if (isJSON) {
-      const transformResult = await transformFile(filePath, code, config);
+      const transformResult = await transformFile(filePath, code, config, entryPath);
       const module: GraphModule = {
         path: filePath,
         code,
@@ -648,7 +658,7 @@ async function buildGraph(
     }
 
     // Transform code (returns AST only, Metro-compatible)
-    const transformResult = await transformFile(filePath, code, config);
+    const transformResult = await transformFile(filePath, code, config, entryPath);
     if (!transformResult) {
       // Flow file or other skipped file
       visited.add(filePath);
@@ -716,12 +726,92 @@ async function buildGraph(
 }
 
 /**
- * Convert graph modules to serializer modules
+ * Reorder graph modules in DFS order (Metro-compatible)
+ * Metro uses reorderGraph to ensure modules are in DFS traversal order
+ * This ensures consistent module ID assignment matching Metro's behavior
+ *
+ * Metro uses post-order DFS: dependencies are visited first, then parent module
+ * This means dependencies get lower module IDs than their parents
  */
-async function graphToSerializerModules(graph: Map<string, GraphModule>): Promise<Module[]> {
+function reorderGraph(graph: Map<string, GraphModule>, entryPath: string): GraphModule[] {
+  const ordered: GraphModule[] = [];
+  const visited = new Set<string>();
+
+  function visitModule(modulePath: string): void {
+    if (visited.has(modulePath)) {
+      return;
+    }
+
+    const module = graph.get(modulePath);
+    if (!module) {
+      return;
+    }
+
+    visited.add(modulePath);
+
+    // Visit dependencies first (post-order DFS)
+    // Metro processes dependencies in the order they appear in the dependencies array
+    // Dependencies are added to the ordered list before their parent module
+    for (const dep of module.dependencies) {
+      if (graph.has(dep) && !visited.has(dep)) {
+        visitModule(dep);
+      }
+    }
+
+    // Add module to ordered list after visiting all dependencies (post-order)
+    // This ensures dependencies get lower module IDs than their parents
+    ordered.push(module);
+  }
+
+  // Start DFS from entry point
+  if (graph.has(entryPath)) {
+    visitModule(entryPath);
+  }
+
+  // Handle any remaining modules that weren't reachable from entry
+  // (shouldn't happen in normal cases, but for safety)
+  for (const [path] of graph.entries()) {
+    if (!visited.has(path)) {
+      visitModule(path);
+    }
+  }
+
+  return ordered;
+}
+
+/**
+ * Convert graph modules to serializer modules
+ * Now accepts ordered modules array instead of Map to ensure consistent ordering
+ * In production builds, excludes dev-only modules like openURLInBrowser (Metro-compatible)
+ */
+async function graphToSerializerModules(
+  orderedModules: GraphModule[],
+  config: ResolvedConfig,
+): Promise<Module[]> {
   const generator = await import('@babel/generator');
+
+  // In production builds, exclude dev-only modules (Metro-compatible)
+  // Metro excludes openURLInBrowser and other dev tools in production builds
+  const filteredModules = config.dev
+    ? orderedModules
+    : orderedModules.filter((m) => {
+        // Exclude React Native dev tools modules in production
+        // These modules are only used in development mode
+        const isDevTool =
+          m.path.includes('openURLInBrowser') ||
+          m.path.includes('Devtools/openURLInBrowser') ||
+          m.path.includes('Core/Devtools');
+        if (isDevTool) {
+          console.log(
+            `[bungae] Excluding dev-only module from production build: ${m.path} (Metro-compatible)`,
+          );
+          return false;
+        }
+        return true;
+      });
+
   return Promise.all(
-    Array.from(graph.values()).map(async (m) => {
+    filteredModules.map(async (m) => {
       // Generate code from AST (Metro-compatible: serializer generates code from AST)
       // @babel/generator can handle File node directly (it uses program property)
       let code = '';
@@ -808,9 +898,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
           `[bungae] InitializeCore not found in dependency graph. Expected: ${modulePath}`,
         );
         if (matchingModules.length > 0) {
-          console.warn(
-            `[bungae] Found similar modules in graph: ${matchingModules.join(', ')}`,
-          );
+          console.warn(`[bungae] Found similar modules in graph: ${matchingModules.join(', ')}`);
         } else {
           console.warn(
             `[bungae] No InitializeCore-related modules found in dependency graph. Graph size: ${graph.size}`,
@@ -831,8 +919,18 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     }
   }
 
-  // Convert to serializer modules
-  const graphModules = await graphToSerializerModules(graph);
+  // Reorder graph modules in DFS order (Metro-compatible)
+  // This ensures module ID assignment matches Metro's behavior
+  const orderedGraphModules = reorderGraph(graph, entryPath);
+  if (dev) {
+    console.log(
+      `[bungae] Reordered ${orderedGraphModules.length} modules in DFS order (Metro-compatible)`,
+    );
+  }
+
+  // Convert to serializer modules (now using ordered array)
+  // Pass config to filter out dev-only modules in production builds
+  const graphModules = await graphToSerializerModules(orderedGraphModules, config);
 
   // Read Bungae version from package.json
   let bungaeVersion = '0.0.1';
@@ -842,7 +940,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       bungaeVersion = packageJson.version || '0.0.1';
     }
-  } catch (error) {
+  } catch {
     // Fallback to default version if package.json cannot be read
   }
 
@@ -900,19 +998,19 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // Metro only copies assets that are actually required/imported in the bundle
   // CRITICAL: We need to analyze the actual bundle code to see which modules are actually required
   // Metro does this by checking which modules are actually __r() called in the bundle code
-  
+
   // Create reverse mapping: moduleId -> module path from graphModules
   const moduleIdToPath = new Map<number | string, string>();
   for (const module of graphModules) {
     const moduleId = createModuleId(module.path);
     moduleIdToPath.set(moduleId, module.path);
   }
-  
+
   // Analyze bundle code to find which modules are actually required
   // Metro includes modules in bundle.modules, but we need to check if they're actually used
   // Look for __r(moduleId) calls in the bundle code to see which modules are actually required
   const requiredModuleIds = new Set<number | string>();
-  
+
   // Check pre code for requires
   if (bundle.pre) {
     const preRequires = bundle.pre.match(/__r\((\d+)\)/g);
@@ -925,7 +1023,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       }
     }
   }
-  
+
   // Check post code for requires
   if (bundle.post) {
     const postRequires = bundle.post.match(/__r\((\d+)\)/g);
@@ -938,12 +1036,13 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       }
     }
   }
-  
+
   // Analyze the entire bundle code to find which modules are actually required
   // Metro includes all modules that are reachable from entry point, but we need to check
   // which ones are actually __r() called in the bundle code
-  const allBundleCode = bundle.pre + '\n' + bundle.modules.map(([, code]) => code).join('\n') + '\n' + bundle.post;
-  
+  const allBundleCode =
+    bundle.pre + '\n' + bundle.modules.map(([, code]) => code).join('\n') + '\n' + bundle.post;
+
   // Find all __r() calls in the bundle code
   // Use a more robust regex that handles both number and string IDs
   const allRequires = allBundleCode.match(/__r\(([^)]+)\)/g);
@@ -958,71 +1057,57 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       }
     }
   }
-  
-  // Force log to see if this code is executing
-  console.error(`[bungae] FORCE LOG: Found ${allRequires?.length || 0} __r() calls, ${requiredModuleIds.size} unique module IDs`);
-  
+
   // CRITICAL: Metro only includes assets that are actually __r() called in the bundle code
   // Even if a module is defined with __d(), it's not included unless it's actually required
   // So we ONLY include modules that are in requiredModuleIds (from __r() calls)
-  
-  console.log(`[bungae] Found ${requiredModuleIds.size} required module IDs from __r() calls in bundle code`);
-  console.log(`[bungae] Total modules in bundle.modules: ${bundle.modules.length}`);
-  
+
   // Debug: Check which asset modules are in requiredModuleIds
-  const requiredAssetIds = Array.from(requiredModuleIds).filter((id) => {
+  const _requiredAssetIds = Array.from(requiredModuleIds).filter((id) => {
     const path = moduleIdToPath.get(id);
-    return path && config.resolver.assetExts.some((ext) => {
-      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-      return path.endsWith(normalizedExt);
-    });
+    return (
+      path &&
+      config.resolver.assetExts.some((ext) => {
+        const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+        return path.endsWith(normalizedExt);
+      })
+    );
   });
-  console.log(`[bungae] Required asset module IDs (actually __r() called): ${requiredAssetIds.join(', ')}`);
-  for (const assetId of requiredAssetIds) {
-    const path = moduleIdToPath.get(assetId);
-    if (path) {
-      console.log(`[bungae]   - Asset ${assetId}: ${basename(path)}`);
-    }
-  }
-  
+
   // Also check which asset modules are in bundle.modules but NOT in requiredModuleIds
-  const allAssetIds = bundle.modules.map(([id]) => id).filter((id) => {
-    const path = moduleIdToPath.get(id);
-    return path && config.resolver.assetExts.some((ext) => {
-      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
-      return path.endsWith(normalizedExt);
+  const allAssetIds = bundle.modules
+    .map(([id]) => id)
+    .filter((id) => {
+      const path = moduleIdToPath.get(id);
+      return (
+        path &&
+        config.resolver.assetExts.some((ext) => {
+          const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+          return path.endsWith(normalizedExt);
+        })
+      );
     });
-  });
-  const unusedAssetIds = allAssetIds.filter((id) => !requiredModuleIds.has(id));
-  if (unusedAssetIds.length > 0) {
-    console.log(`[bungae] Unused asset module IDs (in bundle but not __r() called): ${unusedAssetIds.join(', ')}`);
-    for (const assetId of unusedAssetIds) {
-      const path = moduleIdToPath.get(assetId);
-      if (path) {
-        console.log(`[bungae]   - Asset ${assetId}: ${basename(path)} (NOT required, will be excluded)`);
-      }
-    }
-  }
-  
+  const _unusedAssetIds = allAssetIds.filter((id) => !requiredModuleIds.has(id));
+
   // CRITICAL FIX: Only include modules that are actually required in the bundle code
   // Metro only copies assets that are actually __r() called, not just defined with __d()
   // However, assets are not directly __r() called - they are required by other modules
   // We need to follow the dependency graph from __r() called modules to find assets
-  
+
   // Create reverse mapping: path -> moduleId (for dependency lookup)
   const pathToModuleId = new Map<string, number | string>();
   for (const [moduleId, path] of moduleIdToPath.entries()) {
     pathToModuleId.set(path, moduleId);
   }
-  
+
   // Log debug info
   if (requiredModuleIds.size === 0) {
-    console.error(`[bungae] ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`);
+    console.error(
+      `[bungae] ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`,
+    );
     console.error(`[bungae] ERROR: This means NO assets should be copied (Metro behavior)`);
-  } else {
-    console.log(`[bungae] INFO: Using ${requiredModuleIds.size} required modules (__r() called) out of ${bundle.modules.length} total modules`);
   }
-  
+
   // Only include assets that are actually used
   // Start with __r() called modules and recursively add their dependencies
   // This follows the dependency graph from __r() called modules to find all used modules including assets
@@ -1030,24 +1115,22 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   const bundledModulePaths = new Set<string>();
   const modulesToInclude = new Set(requiredModuleIds);
   const processedModuleIds = new Set<number | string>();
-  
-  console.log(`[bungae] Starting recursive dependency traversal from ${requiredModuleIds.size} __r() called modules: ${Array.from(requiredModuleIds).join(', ')}`);
-  
+
   // Recursively add dependencies of __r() called modules
   while (modulesToInclude.size > 0) {
     const currentModuleId = Array.from(modulesToInclude)[0];
     if (currentModuleId === undefined) break;
     modulesToInclude.delete(currentModuleId);
-    
+
     if (processedModuleIds.has(currentModuleId)) {
       continue;
     }
     processedModuleIds.add(currentModuleId);
-    
+
     const modulePath = moduleIdToPath.get(currentModuleId);
     if (modulePath) {
       bundledModulePaths.add(modulePath);
-      
+
       // Find this module's code and get its dependencies from dependencyMap
       const moduleCode = bundle.modules.find(([id]) => id === currentModuleId)?.[1];
       if (moduleCode) {
@@ -1066,9 +1149,10 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
         if (depMapMatch) {
           const moduleIdFromMatch = Number(depMapMatch[1]);
           // Verify this matches the current module ID
-          if (moduleIdFromMatch === currentModuleId || String(moduleIdFromMatch) === String(currentModuleId)) {
-            console.log(`[bungae] DEBUG: Found dependencyMap for module ${currentModuleId}: [${depMapMatch[2]}]`);
-          } else {
+          if (
+            moduleIdFromMatch !== currentModuleId &&
+            String(moduleIdFromMatch) !== String(currentModuleId)
+          ) {
             // Module ID mismatch, skip
             depMapMatch = null;
           }
@@ -1076,7 +1160,10 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
         if (depMapMatch) {
           const depsStr = depMapMatch[2];
           if (depsStr) {
-            const deps = depsStr.split(',').map(d => d.trim()).filter(d => d && d !== '');
+            const deps = depsStr
+              .split(',')
+              .map((d) => d.trim())
+              .filter((d) => d && d !== '');
             // Find which dependencyMap indices are actually used in require() calls
             // Metro only includes dependencies that are actually require()'d
             // Pattern: require(dependencyMap[index])
@@ -1088,7 +1175,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                 const indexMatch = match.match(/require\(dependencyMap\[(\d+)\]\)/);
                 if (indexMatch) {
                   const depIndex = Number(indexMatch[1]);
-                  
+
                   // In release builds, exclude requires inside __DEV__ conditional blocks
                   // Metro replaces __DEV__ with false in release builds, so conditional blocks are removed
                   // But if __DEV__ is still in the code, we need to exclude requires inside those blocks
@@ -1100,33 +1187,48 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                       const pos = moduleCode.indexOf(match, searchStart);
                       if (pos === -1) break;
                       // Check if this is the same require we're looking for (by checking the index)
-                      const testMatch = moduleCode.substring(pos).match(/require\(dependencyMap\[(\d+)\]\)/);
+                      const testMatch = moduleCode
+                        .substring(pos)
+                        .match(/require\(dependencyMap\[(\d+)\]\)/);
                       if (testMatch && Number(testMatch[1]) === depIndex) {
                         requirePos = pos;
                         break;
                       }
                       searchStart = pos + 1;
                     }
-                    
+
                     if (requirePos >= 0) {
                       // Look backwards to find if this require is inside a __DEV__ conditional
-                      const beforeRequire = moduleCode.substring(Math.max(0, requirePos - 2000), requirePos);
-                      
+                      const beforeRequire = moduleCode.substring(
+                        Math.max(0, requirePos - 2000),
+                        requirePos,
+                      );
+
                       // Find the last occurrence of __DEV__ conditional patterns before this require
                       // Patterns: if (__DEV__), if (process.env.NODE_ENV === 'development'), __DEV__ &&, __DEV__ ?
                       // Also check for transformed patterns: if (false), if ('production' === 'development'), false &&
                       const devConditionPatterns = [
                         { pattern: /if\s*\(\s*__DEV__\s*\)/g, needsBrace: true },
-                        { pattern: /if\s*\(\s*process\.env\.NODE_ENV\s*===\s*['"]development['"]\s*\)/g, needsBrace: true },
+                        {
+                          pattern:
+                            /if\s*\(\s*process\.env\.NODE_ENV\s*===\s*['"]development['"]\s*\)/g,
+                          needsBrace: true,
+                        },
                         { pattern: /__DEV__\s*&&/g, needsBrace: false },
                         { pattern: /__DEV__\s*\?/g, needsBrace: false },
                         // Transformed patterns (after Babel transformation in release builds)
                         { pattern: /if\s*\(\s*false\s*\)/g, needsBrace: true },
-                        { pattern: /if\s*\(\s*['"]production['"]\s*===\s*['"]development['"]\s*\)/g, needsBrace: true },
-                        { pattern: /if\s*\(\s*['"]development['"]\s*!==\s*['"]production['"]\s*\)/g, needsBrace: true },
+                        {
+                          pattern: /if\s*\(\s*['"]production['"]\s*===\s*['"]development['"]\s*\)/g,
+                          needsBrace: true,
+                        },
+                        {
+                          pattern: /if\s*\(\s*['"]development['"]\s*!==\s*['"]production['"]\s*\)/g,
+                          needsBrace: true,
+                        },
                         { pattern: /false\s*&&/g, needsBrace: false },
                       ];
-                      
+
                       let isInDevBlock = false;
                       for (const { pattern, needsBrace } of devConditionPatterns) {
                         const matches = [...beforeRequire.matchAll(pattern)];
@@ -1136,26 +1238,30 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                           if (lastMatch && lastMatch.index !== undefined) {
                             const matchPos = lastMatch.index;
                             const codeAfterMatch = beforeRequire.substring(matchPos);
-                            
+
                             if (needsBrace) {
                               // Count braces to see if we're still inside the conditional block
                               let braceCount = 0;
                               let inString = false;
                               let stringChar = '';
-                              
+
                               for (let i = 0; i < codeAfterMatch.length; i++) {
                                 const char = codeAfterMatch[i];
                                 if (!inString && (char === '"' || char === "'" || char === '`')) {
                                   inString = true;
                                   stringChar = char;
-                                } else if (inString && char === stringChar && (i === 0 || codeAfterMatch[i - 1] !== '\\')) {
+                                } else if (
+                                  inString &&
+                                  char === stringChar &&
+                                  (i === 0 || codeAfterMatch[i - 1] !== '\\')
+                                ) {
                                   inString = false;
                                 } else if (!inString) {
                                   if (char === '{') braceCount++;
                                   else if (char === '}') braceCount--;
                                 }
                               }
-                              
+
                               // If we have unclosed braces, we're still inside the conditional block
                               if (braceCount > 0) {
                                 isInDevBlock = true;
@@ -1164,10 +1270,14 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                             } else {
                               // For && and ? operators, check if require is on the same "line" (before next ; or })
                               const matchLength = lastMatch[0]?.length || 0;
-                              const codeAfterMatchToRequire = moduleCode.substring(matchPos + matchLength, requirePos);
+                              const codeAfterMatchToRequire = moduleCode.substring(
+                                matchPos + matchLength,
+                                requirePos,
+                              );
                               // Check if require is part of the expression (no semicolon, closing brace, or newline before it)
                               // Patterns: __DEV__ &&, __DEV__ ?, false && (transformed __DEV__ &&)
-                              const isDevPattern = lastMatch[0].includes('__DEV__') || lastMatch[0].includes('false');
+                              const isDevPattern =
+                                lastMatch[0].includes('__DEV__') || lastMatch[0].includes('false');
                               if (isDevPattern && !codeAfterMatchToRequire.match(/[;}\n]/)) {
                                 isInDevBlock = true;
                                 break;
@@ -1176,24 +1286,21 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                           }
                         }
                       }
-                      
+
                       if (isInDevBlock) {
-                        console.log(`[bungae] Excluding require(dependencyMap[${depIndex}]) in module ${currentModuleId} - inside __DEV__ conditional (release build)`);
+                        console.log(
+                          `[bungae] Excluding require(dependencyMap[${depIndex}]) in module ${currentModuleId} - inside __DEV__ conditional (release build)`,
+                        );
                         continue;
                       }
                     }
                   }
-                  
+
                   usedDepIndices.add(depIndex);
                 }
               }
             }
-            
-            // Debug: log which indices are used
-            if (usedDepIndices.size > 0) {
-              console.log(`[bungae] DEBUG: Module ${currentModuleId} uses dependencyMap indices: ${Array.from(usedDepIndices).sort((a, b) => a - b).join(', ')}`);
-            }
-            
+
             // Add dependencies that are actually used (referenced in dependencyMap)
             // CRITICAL: Only add dependencies that are actually used in the code
             // For assets, we need to be extra careful - Metro only includes assets that are actually require()'d
@@ -1201,17 +1308,19 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
               if (depIndex < deps.length) {
                 const depModuleIdStr = deps[depIndex];
                 if (depModuleIdStr) {
-                  const depModuleId = /^\d+$/.test(depModuleIdStr) ? Number(depModuleIdStr) : depModuleIdStr;
+                  const depModuleId = /^\d+$/.test(depModuleIdStr)
+                    ? Number(depModuleIdStr)
+                    : depModuleIdStr;
                   const depPath = moduleIdToPath.get(depModuleId);
-                  
+
                   if (!depPath) continue;
-                  
+
                   // Check if this is an asset
                   const isAsset = config.resolver.assetExts.some((ext) => {
                     const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
                     return depPath.endsWith(normalizedExt);
                   });
-                  
+
                   // CRITICAL FIX: For assets, we need to verify that:
                   // 1. The dependencyMap[depIndex] is actually used in require() calls
                   // 2. The depModuleId at dependencyMap[depIndex] is actually an asset module ID
@@ -1223,7 +1332,6 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
                     // This is the asset that is actually required
                     if (!processedModuleIds.has(depModuleId)) {
                       modulesToInclude.add(depModuleId);
-                      console.log(`[bungae] Found used asset: ${basename(depPath)} (module ${depModuleId}) from module ${currentModuleId} at dependencyMap[${depIndex}]`);
                     }
                   } else {
                     // For non-assets, add if not already processed
@@ -1239,44 +1347,21 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       }
     }
   }
-  
-  console.log(`[bungae] Recursive traversal complete: ${bundledModulePaths.size} total modules included`);
-  
+
   // Debug: Log detailed asset detection
-  const allAssetPaths = Array.from(graph.keys()).filter((path) =>
+  const _allAssetPaths = Array.from(graph.keys()).filter((path) =>
     config.resolver.assetExts.some((ext) => {
       const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
       return path.endsWith(normalizedExt);
     }),
   );
-  const bundledAssetPaths = Array.from(bundledModulePaths).filter((path) =>
+  const _bundledAssetPaths = Array.from(bundledModulePaths).filter((path) =>
     config.resolver.assetExts.some((ext) => {
       const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
       return path.endsWith(normalizedExt);
     }),
   );
-  
-  // CRITICAL: Log the actual numbers
-  console.log(
-    `[bungae] Asset detection: ${allAssetPaths.length} total assets in graph, ${bundledAssetPaths.length} assets actually used in bundle code`,
-  );
-  console.log(`[bungae] Bundle modules count: ${bundle.modules.length}, Required modules (__r() called): ${requiredModuleIds.size}`);
-  
-  if (allAssetPaths.length > 0) {
-    if (allAssetPaths.length !== bundledAssetPaths.length) {
-      const excludedAssets = allAssetPaths.filter((p) => !bundledAssetPaths.includes(p));
-      console.log(`[bungae] Excluded assets (not used in bundle code): ${excludedAssets.map(p => basename(p)).join(', ')}`);
-    }
-    if (bundledAssetPaths.length > 0) {
-      console.log(`[bungae] Bundled assets (actually used): ${bundledAssetPaths.map(p => basename(p)).join(', ')}`);
-      // Log full paths for debugging
-      console.log(`[bungae] Bundled asset full paths:`);
-      for (const path of bundledAssetPaths) {
-        console.log(`[bungae]   - ${path}`);
-      }
-    }
-  }
-  
+
   // Metro behavior: Extract assets from modules that are actually included in bundle
   // Metro's getAssets function receives graph.dependencies (all modules in bundle)
   // and filters them with processModuleFilter, then extracts assets
@@ -1289,7 +1374,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
       return modulePath.endsWith(normalizedExt);
     });
-    
+
     if (isAsset) {
       // Get original module from graph to access code for scales extraction
       const graphModule = graph.get(modulePath);
@@ -1298,10 +1383,11 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       const type = extname(modulePath).slice(1);
       const relativePath = relative(root, dirname(modulePath));
       const normalizedRelativePath = relativePath.replace(/\\/g, '/');
-      const httpServerLocation = normalizedRelativePath && normalizedRelativePath !== '.' 
-        ? `/assets/${normalizedRelativePath}` 
-        : '/assets';
-      
+      const httpServerLocation =
+        normalizedRelativePath && normalizedRelativePath !== '.'
+          ? `/assets/${normalizedRelativePath}`
+          : '/assets';
+
       // Extract scales from asset code (default to [1] if not found)
       // Metro uses scales array to determine which drawable folders to create
       let scales = [1]; // Default scale
@@ -1326,7 +1412,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
       } catch {
         // If extraction fails, use default [1]
       }
-      
+
       assets.push({
         filePath: modulePath,
         httpServerLocation,
@@ -1479,6 +1565,66 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
         });
       }
 
+      // Handle /open-url endpoint (Metro-compatible)
+      // This endpoint is used by openURLInBrowser to open URLs in the default browser
+      // Metro format: POST /open-url with body: { url: "https://..." }
+      if (url.pathname === '/open-url') {
+        if (req.method === 'POST') {
+          try {
+            const body = (await req.json()) as { url?: string };
+            const targetUrl = body?.url;
+            if (targetUrl && typeof targetUrl === 'string') {
+              // Open URL in default browser
+              // Use Bun's built-in spawn for cross-platform support
+              const platform = process.platform;
+              let command: string;
+              let args: string[];
+
+              if (platform === 'win32') {
+                // Windows: use start command
+                command = 'cmd';
+                args = ['/c', 'start', '', targetUrl];
+              } else if (platform === 'darwin') {
+                // macOS: use open command
+                command = 'open';
+                args = [targetUrl];
+              } else {
+                // Linux and others: use xdg-open
+                command = 'xdg-open';
+                args = [targetUrl];
+              }
+
+              // Spawn process in background (detached) to avoid blocking
+              // Bun.spawn takes command and args separately
+              const proc = Bun.spawn([command, ...args], {
+                detached: true,
+                stdio: ['ignore', 'ignore', 'ignore'],
+              });
+              // Don't wait for the process to complete
+              proc.unref();
+
+              console.log(`[bungae] Opening URL in browser: ${targetUrl}`);
+              return new Response(JSON.stringify({ success: true }), {
+                headers: { 'Content-Type': 'application/json' },
+              });
+            } else {
+              return new Response(JSON.stringify({ error: 'Invalid URL' }), {
+                status: 400,
+                headers: { 'Content-Type': 'application/json' },
+              });
+            }
+          } catch (error) {
+            console.error('[bungae] Error opening URL:', error);
+            return new Response(JSON.stringify({ error: 'Failed to open URL' }), {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            });
+          }
+        } else {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+      }
+
       if (url.pathname.endsWith('.map')) {
         // Get platform from URL query parameter for sourcemap
         const mapPlatform = url.searchParams.get('platform') || platform;
@@ -1501,7 +1647,8 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
       // - /assets/../../node_modules/... (original)
       // - /node_modules/... (normalized by HTTP client)
       // We need to handle both cases
-      const isAssetRequest = url.pathname.startsWith('/assets/') || url.pathname.startsWith('/node_modules/');
+      const isAssetRequest =
+        url.pathname.startsWith('/assets/') || url.pathname.startsWith('/node_modules/');
       if (isAssetRequest) {
         try {
           // Handle both /assets/... and /node_modules/... paths
@@ -1535,20 +1682,20 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           } else {
             return new Response('Bad Request', { status: 400 });
           }
-          
+
           // Remove scale suffix if present (e.g., react-light@2x.png -> react-light.png)
           // Metro adds @scale suffix for scaled assets, but we need the original file
           assetRelativePath = assetRelativePath.replace(/@\d+x\./, '.');
-          
+
           // Normalize path separators: convert any backslashes to forward slashes (Windows compatibility)
           assetRelativePath = assetRelativePath.replace(/\\/g, '/');
-          
+
           // Convert forward slashes to platform-specific separators for file system access
           const normalizedPath = assetRelativePath.replace(/\//g, sep);
-          
+
           // Try resolving from project root first
           let resolvedAssetPath = resolve(config.root, normalizedPath);
-          
+
           // If not found, try from monorepo node_modules paths
           if (!existsSync(resolvedAssetPath)) {
             for (const nodeModulesPath of config.resolver.nodeModulesPaths) {
@@ -1561,17 +1708,17 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               }
             }
           }
-          
+
           // Use resolved path (rename to avoid variable shadowing)
           const finalAssetPath = resolvedAssetPath;
 
           // Security: Ensure the resolved path is within allowed directories
           const normalizedAssetPath = resolve(finalAssetPath);
           const normalizedRoot = resolve(config.root);
-          
+
           // Check if path is within project root
           let isAllowed = normalizedAssetPath.startsWith(normalizedRoot);
-          
+
           // Also check monorepo node_modules paths
           if (!isAllowed) {
             isAllowed = config.resolver.nodeModulesPaths.some((p) => {
@@ -1579,7 +1726,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               return normalizedAssetPath.startsWith(monorepoNodeModules);
             });
           }
-          
+
           if (!isAllowed) {
             console.warn(`[bungae] Asset path outside allowed directories: ${normalizedAssetPath}`);
             return new Response('Forbidden', { status: 403 });
@@ -1587,18 +1734,16 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
           // Check if file exists
           if (!existsSync(normalizedAssetPath)) {
-            console.warn(`[bungae] Asset not found: ${normalizedAssetPath} (requested: ${url.pathname})`);
-            // Debug: Log the resolution attempt
-            if (config.dev) {
-              console.warn(`[bungae] Debug - assetRelativePath: ${assetRelativePath}, normalizedPath: ${normalizedPath}, resolvedAssetPath: ${resolvedAssetPath}`);
-            }
+            console.warn(
+              `[bungae] Asset not found: ${normalizedAssetPath} (requested: ${url.pathname})`,
+            );
             return new Response('Not Found', { status: 404 });
           }
 
           // Read and serve the asset file
           const file = Bun.file(finalAssetPath);
           const ext = extname(normalizedAssetPath).toLowerCase();
-          
+
           // Determine content type based on extension
           const contentTypeMap: Record<string, string> = {
             '.png': 'image/png',
