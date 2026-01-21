@@ -12,7 +12,7 @@ alwaysApply: true
 
 ### ✅ 커밋 메시지 규칙
 
-**모든 커밋 메시지는 반드시 영어로 작성해야 합니다.**
+**⚠️ 중요: 모든 커밋 메시지는 반드시 영어로 작성해야 합니다. (All commit messages must be written in English)**
 
 - ✅ 올바른 예시:
   ```bash
@@ -94,7 +94,8 @@ mise exec -- bun run lint
 mise exec -- bun run format:check
 mise exec -- bun run typecheck
 
-# 모두 통과하면 커밋 (영어로 메시지 작성)
+# 모두 통과하면 커밋
+# ⚠️ 중요: 커밋 메시지는 반드시 영어로 작성 (All commit messages must be in English)
 git add .
 git commit -m "feat: your commit message in English"
 ```

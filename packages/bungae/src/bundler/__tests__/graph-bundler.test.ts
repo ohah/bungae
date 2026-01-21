@@ -717,4 +717,295 @@ console.log('Logo:', logo);
       expect(config.resolver.assetExts).toContain('.webp');
     });
   });
+
+  describe('Asset Extraction in Release Builds', () => {
+    // Helper to create a minimal PNG file
+    function createMinimalPNG(): Buffer {
+      return Buffer.from([
+        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+        0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+        0x00, 0x00, 0x00, 0x01, // width: 1
+        0x00, 0x00, 0x00, 0x01, // height: 1
+        0x08, 0x06, 0x00, 0x00, 0x00, // bit depth, color type, etc.
+        0x1f, 0x15, 0xc4, 0x89, // CRC
+        0x00, 0x00, 0x00, 0x0a, 0x49, 0x44, 0x41, 0x54, // IDAT chunk
+        0x78, 0x9c, 0x63, 0x00, 0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0d, 0x0a, 0x2d, 0xb4,
+        0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44, // IEND chunk
+        0xae, 0x42, 0x60, 0x82,
+      ]);
+    }
+
+    // Create mock AssetRegistry for tests
+    function setupMockAssetRegistry(): void {
+      const assetRegistryDir = join(
+        testDir,
+        'node_modules',
+        'react-native',
+        'Libraries',
+        'Image',
+      );
+      mkdirSync(assetRegistryDir, { recursive: true });
+      writeFileSync(
+        join(assetRegistryDir, 'AssetRegistry.js'),
+        `
+module.exports = {
+  registerAsset: (asset) => asset
+};
+`,
+        'utf-8',
+      );
+    }
+
+    test('should exclude assets from __DEV__ conditional blocks in release builds', async () => {
+      setupMockAssetRegistry();
+        const assetsDir = join(testDir, 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+
+        // Create production asset (always included)
+        const prodImage = join(assetsDir, 'prod-icon.png');
+        writeFileSync(prodImage, createMinimalPNG());
+
+        // Create dev-only asset (should be excluded in release)
+        const devImage = join(assetsDir, 'dev-icon.png');
+        writeFileSync(devImage, createMinimalPNG());
+
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(
+          entryFile,
+          `
+// Production asset - always included
+const prodIcon = require('./assets/prod-icon.png');
+
+// Dev-only asset - should be excluded in release builds
+if (__DEV__) {
+  const devIcon = require('./assets/dev-icon.png');
+  console.log('Dev icon:', devIcon);
+}
+
+console.log('Prod icon:', prodIcon);
+`,
+          'utf-8',
+        );
+
+        // Test release build (dev: false)
+        const releaseConfig = resolveConfig(
+          {
+            ...getDefaultConfig(testDir),
+            entry: 'index.js',
+            platform: 'ios',
+            dev: false,
+          },
+          testDir,
+        );
+
+        const releaseResult = await buildWithGraph(releaseConfig);
+
+        // In release build, only prod-icon should be in assets
+        expect(releaseResult.assets).toBeDefined();
+        const releaseAssets = releaseResult.assets || [];
+        const releaseAssetNames = releaseAssets.map((a) => a.name);
+        expect(releaseAssetNames).toContain('prod-icon');
+        expect(releaseAssetNames).not.toContain('dev-icon');
+        expect(releaseAssets.length).toBe(1);
+      },
+    );
+
+    test('should include all assets in dev builds even if inside __DEV__ blocks', async () => {
+      setupMockAssetRegistry();
+        const assetsDir = join(testDir, 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+
+        // Create production asset
+        const prodImage = join(assetsDir, 'prod-icon.png');
+        writeFileSync(prodImage, createMinimalPNG());
+
+        // Create dev-only asset
+        const devImage = join(assetsDir, 'dev-icon.png');
+        writeFileSync(devImage, createMinimalPNG());
+
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(
+          entryFile,
+          `
+// Production asset
+const prodIcon = require('./assets/prod-icon.png');
+
+// Dev-only asset - should be included in dev builds
+if (__DEV__) {
+  const devIcon = require('./assets/dev-icon.png');
+  console.log('Dev icon:', devIcon);
+}
+
+console.log('Prod icon:', prodIcon);
+`,
+          'utf-8',
+        );
+
+        // Test dev build (dev: true)
+        const devConfig = resolveConfig(
+          {
+            ...getDefaultConfig(testDir),
+            entry: 'index.js',
+            platform: 'ios',
+            dev: true,
+          },
+          testDir,
+        );
+
+        const devResult = await buildWithGraph(devConfig);
+
+        // In dev build, both assets should be included
+        expect(devResult.assets).toBeDefined();
+        const devAssets = devResult.assets || [];
+        const devAssetNames = devAssets.map((a) => a.name);
+        expect(devAssetNames).toContain('prod-icon');
+        expect(devAssetNames).toContain('dev-icon');
+        expect(devAssets.length).toBe(2);
+      },
+    );
+
+    test('should exclude assets from __DEV__ && expressions in release builds', async () => {
+      setupMockAssetRegistry();
+        const assetsDir = join(testDir, 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+
+        const prodImage = join(assetsDir, 'prod-icon.png');
+        writeFileSync(prodImage, createMinimalPNG());
+
+        const devImage = join(assetsDir, 'dev-icon.png');
+        writeFileSync(devImage, createMinimalPNG());
+
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(
+          entryFile,
+          `
+const prodIcon = require('./assets/prod-icon.png');
+
+// Dev-only asset using && operator
+__DEV__ && require('./assets/dev-icon.png');
+
+console.log('Prod icon:', prodIcon);
+`,
+          'utf-8',
+        );
+
+        const releaseConfig = resolveConfig(
+          {
+            ...getDefaultConfig(testDir),
+            entry: 'index.js',
+            platform: 'ios',
+            dev: false,
+          },
+          testDir,
+        );
+
+        const releaseResult = await buildWithGraph(releaseConfig);
+
+        // In release build, dev-icon should be excluded
+        expect(releaseResult.assets).toBeDefined();
+        const releaseAssets = releaseResult.assets || [];
+        const releaseAssetNames = releaseAssets.map((a) => a.name);
+        expect(releaseAssetNames).toContain('prod-icon');
+        expect(releaseAssetNames).not.toContain('dev-icon');
+        expect(releaseAssets.length).toBe(1);
+      },
+    );
+
+    test('should exclude assets from process.env.NODE_ENV === "development" conditionals in release builds', async () => {
+      setupMockAssetRegistry();
+        const assetsDir = join(testDir, 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+
+        const prodImage = join(assetsDir, 'prod-icon.png');
+        writeFileSync(prodImage, createMinimalPNG());
+
+        const devImage = join(assetsDir, 'dev-icon.png');
+        writeFileSync(devImage, createMinimalPNG());
+
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(
+          entryFile,
+          `
+const prodIcon = require('./assets/prod-icon.png');
+
+// Dev-only asset using process.env.NODE_ENV check
+if (process.env.NODE_ENV === 'development') {
+  const devIcon = require('./assets/dev-icon.png');
+  console.log('Dev icon:', devIcon);
+}
+
+console.log('Prod icon:', prodIcon);
+`,
+          'utf-8',
+        );
+
+        const releaseConfig = resolveConfig(
+          {
+            ...getDefaultConfig(testDir),
+            entry: 'index.js',
+            platform: 'ios',
+            dev: false,
+          },
+          testDir,
+        );
+
+        const releaseResult = await buildWithGraph(releaseConfig);
+
+        // In release build, dev-icon should be excluded
+        expect(releaseResult.assets).toBeDefined();
+        const releaseAssets = releaseResult.assets || [];
+        const releaseAssetNames = releaseAssets.map((a) => a.name);
+        expect(releaseAssetNames).toContain('prod-icon');
+        expect(releaseAssetNames).not.toContain('dev-icon');
+        expect(releaseAssets.length).toBe(1);
+      },
+    );
+
+    test('should only include assets that are actually required in bundle code', async () => {
+      setupMockAssetRegistry();
+        const assetsDir = join(testDir, 'assets');
+        mkdirSync(assetsDir, { recursive: true });
+
+        // Create multiple assets
+        const usedImage = join(assetsDir, 'used.png');
+        const unusedImage = join(assetsDir, 'unused.png');
+        writeFileSync(usedImage, createMinimalPNG());
+        writeFileSync(unusedImage, createMinimalPNG());
+
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(
+          entryFile,
+          `
+// Only this asset is actually required
+const used = require('./assets/used.png');
+console.log('Used:', used);
+
+// This asset is never required, so it should not be included
+// (even though it exists in the file system)
+`,
+          'utf-8',
+        );
+
+        const config = resolveConfig(
+          {
+            ...getDefaultConfig(testDir),
+            entry: 'index.js',
+            platform: 'ios',
+            dev: false,
+          },
+          testDir,
+        );
+
+        const result = await buildWithGraph(config);
+
+        // Only used asset should be included
+        expect(result.assets).toBeDefined();
+        const assets = result.assets || [];
+        const assetNames = assets.map((a) => a.name);
+        expect(assetNames).toContain('used');
+        expect(assetNames).not.toContain('unused');
+        expect(assets.length).toBe(1);
+      },
+    );
+  });
 });
