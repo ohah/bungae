@@ -1734,7 +1734,47 @@ async function createHMRUpdateMessage(
 }
 
 /**
- * Incremental build for HMR - rebuild only changed files
+ * Get all affected modules (changed files + their inverse dependencies)
+ * This includes modules that depend on changed files
+ */
+function getAffectedModules(
+  changedFiles: string[],
+  oldGraph: Map<string, GraphModule>,
+  root: string,
+): Set<string> {
+  const affected = new Set<string>();
+
+  // Normalize and add changed files
+  for (const changedFile of changedFiles) {
+    // If path is relative, resolve it relative to root
+    const normalizedPath = changedFile.startsWith('/')
+      ? changedFile
+      : resolve(root, changedFile);
+    affected.add(normalizedPath);
+  }
+
+  // Find all modules that depend on changed files (inverse dependencies)
+  const inverseDeps: Record<string, string[]> = {};
+  for (const changedFile of changedFiles) {
+    const normalizedPath = changedFile.startsWith('/')
+      ? changedFile
+      : resolve(root, changedFile);
+    getInverseDependencies(normalizedPath, oldGraph, inverseDeps);
+  }
+
+  // Add all inverse dependencies to affected set
+  for (const [path, deps] of Object.entries(inverseDeps)) {
+    affected.add(path);
+    for (const dep of deps) {
+      affected.add(dep);
+    }
+  }
+
+  return affected;
+}
+
+/**
+ * Incremental build for HMR - rebuild only changed files and affected modules
  */
 async function incrementalBuild(
   changedFiles: string[],
@@ -1748,18 +1788,214 @@ async function incrementalBuild(
     return null;
   }
 
-  // Rebuild the entire graph (for now, we'll optimize later)
-  // TODO: Only rebuild affected modules
-  const newGraph = await buildGraph(entryPath, platformConfig);
+  // Normalize changed file paths (resolve relative to root)
+  const normalizedChangedFiles = changedFiles.map((f) =>
+    f.startsWith('/') ? f : resolve(root, f),
+  );
+
+  // If no changed files, return empty delta
+  if (normalizedChangedFiles.length === 0) {
+    return {
+      delta: {
+        added: new Map(),
+        modified: new Map(),
+        deleted: new Set(),
+      },
+      newState: oldState,
+    };
+  }
+
+  // Get affected modules (changed files + their inverse dependencies)
+  const affectedModules = getAffectedModules(changedFiles, oldState.graph, root);
+
+  console.log(
+    `[bungae] Incremental build: ${normalizedChangedFiles.length} changed file(s), ${affectedModules.size} affected module(s)`,
+  );
+
+  // Start with a copy of the old graph
+  const newGraph = new Map(oldState.graph);
+
+  // Process affected modules
+  const modules = new Map<string, GraphModule>();
+  const visited = new Set<string>();
+  const processing = new Set<string>();
+
+  // Helper to process a single module (reuse logic from buildGraph)
+  async function processModule(filePath: string): Promise<void> {
+    if (visited.has(filePath) || processing.has(filePath)) {
+      return;
+    }
+
+    processing.add(filePath);
+
+    // Skip Flow files
+    if (filePath.endsWith('.flow.js') || filePath.endsWith('.flow')) {
+      visited.add(filePath);
+      processing.delete(filePath);
+      return;
+    }
+
+    // Handle asset files
+    const isAsset = platformConfig.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return filePath.endsWith(normalizedExt);
+    });
+    if (isAsset) {
+      const assetRegistryPath = 'react-native/Libraries/Image/AssetRegistry';
+      let resolvedAssetRegistry: string | null = null;
+      try {
+        resolvedAssetRegistry = require.resolve(assetRegistryPath, {
+          paths: [platformConfig.root, ...platformConfig.resolver.nodeModulesPaths],
+        });
+      } catch {
+        console.warn(`[bungae] AssetRegistry not found, skipping asset: ${filePath}`);
+        visited.add(filePath);
+        processing.delete(filePath);
+        return;
+      }
+
+      const assetCode = generateAssetModuleCode(filePath, platformConfig.root);
+      const babel = await import('@babel/core');
+      const assetAst = await babel.parseAsync(assetCode, {
+        filename: filePath,
+        sourceType: 'module',
+      });
+      const assetDeps = await extractDependenciesFromAst(assetAst);
+      const module: GraphModule = {
+        path: filePath,
+        code: assetCode,
+        transformedAst: assetAst,
+        dependencies: resolvedAssetRegistry ? [resolvedAssetRegistry] : [],
+        originalDependencies: assetDeps.length > 0 ? assetDeps : [assetRegistryPath],
+      };
+      modules.set(filePath, module);
+      newGraph.set(filePath, module);
+      visited.add(filePath);
+      processing.delete(filePath);
+
+      if (
+        resolvedAssetRegistry &&
+        !visited.has(resolvedAssetRegistry) &&
+        !processing.has(resolvedAssetRegistry)
+      ) {
+        await processModule(resolvedAssetRegistry);
+      }
+      return;
+    }
+
+    // Read file
+    if (!existsSync(filePath)) {
+      // File was deleted
+      visited.add(filePath);
+      processing.delete(filePath);
+      return;
+    }
+
+    const code = readFileSync(filePath, 'utf-8');
+
+    // JSON files
+    const isJSON = filePath.endsWith('.json');
+    if (isJSON) {
+      const transformResult = await transformFile(filePath, code, platformConfig, entryPath);
+      const module: GraphModule = {
+        path: filePath,
+        code,
+        transformedAst: transformResult?.ast || null,
+        dependencies: [],
+        originalDependencies: [],
+      };
+      modules.set(filePath, module);
+      newGraph.set(filePath, module);
+      visited.add(filePath);
+      processing.delete(filePath);
+      return;
+    }
+
+    // Transform code
+    const transformResult = await transformFile(filePath, code, platformConfig, entryPath);
+    if (!transformResult) {
+      visited.add(filePath);
+      processing.delete(filePath);
+      return;
+    }
+
+    // Extract dependencies
+    const allDeps = await extractDependenciesFromAst(transformResult.ast);
+    const resolvedDependencies: string[] = [];
+    const originalDependencies: string[] = [];
+
+    for (const dep of allDeps) {
+      if (!dep || !dep.trim()) continue;
+
+      const resolved = await resolveModule(filePath, dep, platformConfig);
+      if (resolved) {
+        resolvedDependencies.push(resolved);
+        originalDependencies.push(dep);
+      } else if (platformConfig.dev) {
+        console.warn(`[bungae] Failed to resolve "${dep}" from ${filePath}`);
+      }
+    }
+
+    // Create module
+    const module: GraphModule = {
+      path: filePath,
+      code,
+      transformedAst: transformResult.ast,
+      dependencies: resolvedDependencies,
+      originalDependencies,
+    };
+
+    modules.set(filePath, module);
+    newGraph.set(filePath, module);
+    visited.add(filePath);
+
+    // Process dependencies
+    // Only process if:
+    // 1. Not already visited/processing
+    // 2. Is affected (needs rebuild) OR not in old graph (new dependency)
+    for (const dep of resolvedDependencies) {
+      if (!visited.has(dep) && !processing.has(dep)) {
+        // If dependency is affected or not in old graph, process it
+        if (affectedModules.has(dep) || !oldState.graph.has(dep)) {
+          await processModule(dep);
+        } else {
+          // Dependency exists in old graph and is not affected, reuse it
+          const oldModule = oldState.graph.get(dep);
+          if (oldModule) {
+            newGraph.set(dep, oldModule);
+            visited.add(dep);
+          }
+        }
+      }
+    }
+
+    processing.delete(filePath);
+  }
+
+  // Process all affected modules
+  for (const affectedPath of affectedModules) {
+    if (existsSync(affectedPath)) {
+      await processModule(affectedPath);
+    }
+  }
+
+  // Remove deleted modules from graph
+  for (const changedFile of normalizedChangedFiles) {
+    if (!existsSync(changedFile)) {
+      newGraph.delete(changedFile);
+    }
+  }
 
   // Create new module ID factory (should be consistent with old one)
   const createModuleId = createModuleIdFactory();
 
   // Build module ID mappings
   const newModuleIdToPath = new Map<number | string, string>();
+  const newPathToModuleId = new Map<string, number | string>();
   for (const [path] of newGraph.entries()) {
     const moduleId = createModuleId(path);
     newModuleIdToPath.set(moduleId, path);
+    newPathToModuleId.set(path, moduleId);
   }
 
   // Calculate delta
@@ -1777,9 +2013,7 @@ async function incrementalBuild(
   const newState: PlatformBuildState = {
     graph: newGraph,
     moduleIdToPath: newModuleIdToPath,
-    pathToModuleId: new Map(
-      Array.from(newModuleIdToPath.entries()).map(([id, path]) => [path, id]),
-    ),
+    pathToModuleId: newPathToModuleId,
     revisionId,
     createModuleId,
   };
@@ -2450,10 +2684,8 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
     fileWatcher = createFileWatcher({
       root: config.root,
-      onFileChange: () => {
-        // Note: file-watcher doesn't provide changed file list, so we'll rebuild all
-        // TODO: Enhance file-watcher to track changed files
-        handleFileChange([]);
+      onFileChange: (changedFiles) => {
+        handleFileChange(changedFiles);
       },
       debounceMs: 300,
     });
