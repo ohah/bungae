@@ -8,10 +8,11 @@
 
 import { watch } from 'fs';
 import type { FSWatcher } from 'fs';
+import { resolve } from 'path';
 
 export interface FileWatcherOptions {
   root: string;
-  onFileChange: () => void;
+  onFileChange: (changedFiles: string[]) => void;
   debounceMs?: number;
 }
 
@@ -47,6 +48,7 @@ export function createFileWatcher(options: FileWatcherOptions): FileWatcher {
   const { root, onFileChange, debounceMs = 300 } = options;
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   let watcher: FSWatcher | null = null;
+  const changedFilesSet = new Set<string>();
 
   try {
     watcher = watch(root, { recursive: true }, (eventType, filename) => {
@@ -56,12 +58,18 @@ export function createFileWatcher(options: FileWatcherOptions): FileWatcher {
 
       // Only watch for change events (not rename which can be noisy)
       if (eventType === 'change') {
+        // Resolve full path
+        const fullPath = resolve(root, filename);
+        changedFilesSet.add(fullPath);
+
         // Debounce: wait after last change before calling callback
         if (debounceTimer) {
           clearTimeout(debounceTimer);
         }
         debounceTimer = setTimeout(() => {
-          onFileChange();
+          const changedFiles = Array.from(changedFilesSet);
+          changedFilesSet.clear();
+          onFileChange(changedFiles);
           debounceTimer = null;
         }, debounceMs);
       }

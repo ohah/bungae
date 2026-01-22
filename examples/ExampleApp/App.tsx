@@ -217,7 +217,7 @@ function AppContent() {
 
       {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
       <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
-        <Text style={styles.testButtonText}>🧪 Test Button (Event Handler Test)</Text>
+        <Text style={styles.testButtonText}>🧪 Test Button 111 (Event Handler Test)</Text>
       </TouchableOpacity>
     </View>
   );
