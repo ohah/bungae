@@ -382,23 +382,89 @@ async function transformWithBabel(
   process.env.BABEL_ENV = options.dev ? 'development' : process.env.BABEL_ENV || 'production';
 
   try {
+    // Load babel.config.js directly and resolve module: prefix presets
+    // This ensures presets are loaded correctly in Bun environment
+    let loadedPresets: any[] = [];
+    let loadedPlugins: any[] = [];
+
+    const babelConfigPath = join(options.root, 'babel.config.js');
+    if (existsSync(babelConfigPath)) {
+      try {
+        // Use createRequire for Bun compatibility
+        const { createRequire } = await import('module');
+        const projectRequire = createRequire(join(options.root, 'package.json'));
+
+        // Clear require cache to ensure fresh load (if using Node.js require)
+        try {
+          const cacheKey = projectRequire.resolve(babelConfigPath);
+          if (projectRequire.cache && projectRequire.cache[cacheKey]) {
+            delete projectRequire.cache[cacheKey];
+          }
+        } catch {
+          // Ignore cache clearing errors
+        }
+
+        // Load babel.config.js using projectRequire
+        const babelConfigModule = projectRequire(babelConfigPath);
+        const userConfig =
+          typeof babelConfigModule === 'function'
+            ? babelConfigModule(process.env)
+            : babelConfigModule.default || babelConfigModule;
+
+        // Resolve module: prefix presets to actual paths
+        if (userConfig.presets) {
+          loadedPresets = userConfig.presets.map((preset: any) => {
+            if (typeof preset === 'string') {
+              // Handle module: prefix (e.g., "module:@react-native/babel-preset")
+              if (preset.startsWith('module:')) {
+                const moduleName = preset.replace('module:', '');
+                try {
+                  // Resolve the actual preset path
+                  const presetPath = projectRequire.resolve(moduleName);
+                  return presetPath;
+                } catch (error) {
+                  console.warn(`[bungae] Failed to resolve preset ${preset}:`, error);
+                  return preset; // Fallback to original string
+                }
+              }
+              return preset;
+            } else if (Array.isArray(preset)) {
+              // Preset with options: [preset, options]
+              const [presetName, options] = preset;
+              if (typeof presetName === 'string' && presetName.startsWith('module:')) {
+                const moduleName = presetName.replace('module:', '');
+                try {
+                  const presetPath = projectRequire.resolve(moduleName);
+                  return [presetPath, options];
+                } catch (error) {
+                  console.warn(`[bungae] Failed to resolve preset ${presetName}:`, error);
+                  return preset; // Fallback to original
+                }
+              }
+              return preset;
+            }
+            return preset;
+          });
+        }
+
+        // Load plugins if any
+        if (userConfig.plugins) {
+          loadedPlugins = userConfig.plugins;
+        }
+      } catch (error) {
+        console.warn(`[bungae] Failed to load babel.config.js:`, error);
+      }
+    }
+
     // Metro-style babel config (matches reference/metro/packages/metro-babel-transformer/src/index.js)
     // Metro sets code: false to return AST only (serializer generates code)
-    // Metro behavior: Babel auto-discovers babel.config.js from cwd (projectRoot)
-    // Metro does NOT explicitly set configFile path - it relies on Babel's auto-discovery
-    // Metro behavior: enableBabelRCLookup controls babelrc/configFile
-    // When enableBabelRCLookup is true, Metro sets babelrc: true and configFile: true (default)
-    // When enableBabelRCLookup is false, Metro sets babelrc: false and configFile: false
-    // React Native projects typically have enableBabelRCLookup: true (default)
-    // So we should use babelrc: true and configFile: true to match Metro's default behavior
     const babelConfig: any = {
       ast: true,
-      // Metro default: enableBabelRCLookup is true, so babelrc: true and configFile: true
-      // This allows Babel to read babel.config.js from project root
-      babelrc: true, // Metro default: enableBabelRCLookup is true
-      configFile: true, // Metro default: Babel reads babel.config.js from cwd
-      // If babel.config.js doesn't exist, Babel will use no presets (code won't be transformed)
-      // This is expected - projects should have babel.config.js with @react-native/babel-preset
+      // Disable auto-discovery since we're loading config manually
+      babelrc: false,
+      configFile: false,
+      // Use presets and plugins from babel.config.js (manually loaded)
+      presets: loadedPresets.length > 0 ? loadedPresets : undefined,
       caller: {
         bundler: 'metro',
         name: 'metro',
@@ -411,14 +477,13 @@ async function transformWithBabel(
       },
       cloneInputAst: false, // Metro sets this to avoid cloning overhead
       code: false, // Metro-compatible: return AST only, serializer generates code
-      cwd: options.root, // Metro sets cwd to projectRoot - Babel auto-discovers babel.config.js from here
+      cwd: options.root, // Metro sets cwd to projectRoot
       filename: filePath,
       highlightCode: true,
       sourceType: 'module',
-      // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically
-      // We add our custom plugin for Platform.OS replacement
-      // Also override object-rest-spread plugin to use loose mode (Object.assign) for Metro compatibility
+      // Merge user plugins with our custom plugins
       plugins: [
+        ...(loadedPlugins || []),
         [
           require.resolve('babel-plugin-transform-define'),
           {
@@ -462,8 +527,7 @@ async function transformWithBabel(
           },
         });
 
-    // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
-    // Debug: Check if Babel loaded babel.config.js (in dev mode for important files)
+    // Debug: Check if presets were loaded (in dev mode for important files)
     // Check for: entry file, JSX/TSX files, or react-native files
     const isEntryFile = options.entryPath && filePath === options.entryPath;
     const isJSXFile = fileExt.endsWith('.jsx') || fileExt.endsWith('.tsx');
@@ -471,38 +535,37 @@ async function transformWithBabel(
     const shouldCheckPreset = options.dev && (isEntryFile || isJSXFile || isReactNativeFile);
 
     if (shouldCheckPreset) {
-      try {
-        // Use loadOptionsAsync to check if babel.config.js is loaded
-        // Pass only config-related options, not transform options
-        // Note: loadOptionsAsync exists in Babel 7 but may not be in type definitions
-        const loadedOptions = await (babel.default as any).loadOptionsAsync({
-          cwd: options.root,
-          filename: filePath,
-          caller: babelConfig.caller,
-          babelrc: true, // Metro default: enableBabelRCLookup is true
-          configFile: true, // Metro default: Babel reads babel.config.js
+      if (loadedPresets && loadedPresets.length > 0) {
+        const presetNames = loadedPresets.map((p: any) => {
+          if (Array.isArray(p)) {
+            const presetPath = typeof p[0] === 'string' ? p[0] : 'unknown';
+            // Show just the module name if it's a path
+            return presetPath.includes('node_modules')
+              ? presetPath.split('node_modules/').pop() || presetPath
+              : presetPath;
+          }
+          return typeof p === 'string'
+            ? p.includes('node_modules')
+              ? p.split('node_modules/').pop() || p
+              : p
+            : 'unknown';
         });
-        if (loadedOptions?.presets && loadedOptions.presets.length > 0) {
-          const presetNames = loadedOptions.presets.map((p: any) => {
-            if (Array.isArray(p)) return p[0];
-            return typeof p === 'string' ? p : 'unknown';
-          });
-          const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
-          console.log(
-            `[bungae] Babel loaded ${loadedOptions.presets.length} preset(s) for ${fileType} file ${filePath}: ${presetNames.join(', ')}`,
-          );
-        } else {
-          const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
-          console.warn(
-            `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
-          );
-          console.warn(`[bungae] cwd: ${options.root}, filename: ${filePath}`);
-          console.warn(
-            `[bungae] Please ensure babel.config.js exists and includes @react-native/babel-preset`,
-          );
-        }
-      } catch (error) {
-        console.warn(`[bungae] Failed to load Babel options for ${filePath}:`, error);
+        const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
+        console.log(
+          `[bungae] Babel loaded ${loadedPresets.length} preset(s) for ${fileType} file ${filePath}: ${presetNames.join(', ')}`,
+        );
+      } else {
+        const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
+        console.warn(
+          `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
+        );
+        console.warn(`[bungae] cwd: ${options.root}, filename: ${filePath}`);
+        console.warn(
+          `[bungae] babel.config.js path: ${babelConfigPath}, exists: ${existsSync(babelConfigPath)}`,
+        );
+        console.warn(
+          `[bungae] Please ensure babel.config.js exists and includes @react-native/babel-preset`,
+        );
       }
     }
 
@@ -1415,11 +1478,375 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
 }
 
 /**
+ * Calculate delta between old and new graphs for HMR
+ */
+async function calculateDelta(
+  oldGraph: Map<string, GraphModule>,
+  newGraph: Map<string, GraphModule>,
+  _oldModuleIdToPath: Map<number | string, string>,
+  _newModuleIdToPath: Map<number | string, string>,
+  _createModuleId: (path: string) => number,
+): Promise<DeltaResult> {
+  const added = new Map<string, GraphModule>();
+  const modified = new Map<string, GraphModule>();
+  const deleted = new Set<string>();
+
+  // Find added and modified modules
+  for (const [path, newModule] of newGraph.entries()) {
+    const oldModule = oldGraph.get(path);
+    if (!oldModule) {
+      // New module
+      added.set(path, newModule);
+    } else {
+      // Check if module was modified (compare code or dependencies)
+      const oldCode = oldModule.code;
+      const newCode = newModule.code;
+      const oldDeps = oldModule.dependencies.sort().join(',');
+      const newDeps = newModule.dependencies.sort().join(',');
+
+      if (oldCode !== newCode || oldDeps !== newDeps) {
+        modified.set(path, newModule);
+      }
+    }
+  }
+
+  // Find deleted modules
+  for (const [path] of oldGraph.entries()) {
+    if (!newGraph.has(path)) {
+      deleted.add(path);
+    }
+  }
+
+  return { added, modified, deleted };
+}
+
+/**
+ * Get inverse dependencies for a module (Metro-compatible)
+ * Based on reference/metro/packages/metro/src/DeltaBundler/Serializers/hmrJSBundle.js
+ * Inverse dependencies are modules that depend on this module
+ */
+function getInverseDependencies(
+  path: string,
+  graph: Map<string, GraphModule>,
+  inverseDependencies: Record<string, string[]> = {},
+): Record<string, string[]> {
+  // Dependency already traversed
+  if (path in inverseDependencies) {
+    return inverseDependencies;
+  }
+
+  const module = graph.get(path);
+  if (!module) {
+    return inverseDependencies;
+  }
+
+  // Initialize inverse dependencies array for this module
+  inverseDependencies[path] = [];
+
+  // Find all modules that depend on this module
+  for (const [otherPath, otherModule] of graph.entries()) {
+    if (otherPath === path) continue;
+
+    // Check if otherModule depends on this module
+    if (otherModule.dependencies.includes(path)) {
+      inverseDependencies[path].push(otherPath);
+      // Recursively get inverse dependencies
+      getInverseDependencies(otherPath, graph, inverseDependencies);
+    }
+  }
+
+  return inverseDependencies;
+}
+
+/**
+ * Create HMR update message from delta result (Metro protocol)
+ */
+async function createHMRUpdateMessage(
+  delta: DeltaResult,
+  platformConfig: ResolvedConfig,
+  createModuleId: (path: string) => number,
+  revisionId: string,
+  isInitialUpdate: boolean,
+  oldPathToModuleId: Map<string, number | string>,
+  fullGraph: Map<string, GraphModule>, // Full graph for inverse dependencies calculation
+): Promise<HMRUpdateMessage> {
+  const { root } = platformConfig;
+  const added: HMRUpdateMessage['body']['added'] = [];
+  const modified: HMRUpdateMessage['body']['modified'] = [];
+  const deleted: number[] = [];
+
+  // Import wrapModule and addParamsToDefineCall
+  const { wrapModule } = await import('../serializer/helpers/js');
+  const { addParamsToDefineCall } = await import('../serializer/helpers/addParamsToDefineCall');
+
+  // Process added modules
+  for (const [path, module] of delta.added.entries()) {
+    const moduleId = createModuleId(path);
+    const sourceURL = relative(root, path);
+
+    // Generate module code (same as in buildWithGraph)
+    const serializerModules = await graphToSerializerModules([module], platformConfig);
+    const serializerModule = serializerModules[0];
+    if (serializerModule) {
+      // Get all module paths for dependency validation
+      const allModulePaths = new Set<string>();
+      for (const [p] of delta.added.entries()) {
+        allModulePaths.add(p);
+      }
+      for (const [p] of delta.modified.entries()) {
+        allModulePaths.add(p);
+      }
+
+      // Wrap with __d() for Metro compatibility (Metro's prepareModule)
+      let wrappedCode = await wrapModule(serializerModule, {
+        createModuleId,
+        getRunModuleStatement,
+        dev: platformConfig.dev ?? true,
+        projectRoot: root,
+        serverRoot: root,
+        globalPrefix: '',
+        runModule: false,
+        includeAsyncPaths: false,
+        allModulePaths,
+      } as any);
+
+      // Get inverse dependencies (Metro-compatible)
+      const inverseDependencies = getInverseDependencies(path, fullGraph);
+      // Transform the inverse dependency paths to ids (Metro-compatible)
+      // Metro: Object.keys(inverseDependencies).forEach((path) => { ... })
+      const inverseDependenciesById: Record<number, number[]> = {};
+      for (const depPath of Object.keys(inverseDependencies)) {
+        const deps = inverseDependencies[depPath];
+        if (deps) {
+          inverseDependenciesById[createModuleId(depPath)] = deps.map(createModuleId);
+        }
+      }
+
+      // Add inverse dependencies to __d() call (Metro-compatible)
+      // Metro: addParamsToDefineCall(code, inverseDependenciesById)
+      // Our function signature: addParamsToDefineCall(code, globalPrefix, ...paramsToAdd)
+      wrappedCode = addParamsToDefineCall(wrappedCode, '', inverseDependenciesById);
+
+      // Generate sourceMappingURL and sourceURL (Metro-compatible)
+      // Metro uses jscSafeUrl.toJscSafeUrl for sourceURL, but we'll use relative path for now
+      // Metro adds these as comments at the end of the code
+      const sourceMappingURL = `${sourceURL}.map`;
+      const finalCode =
+        wrappedCode +
+        `\n//# sourceMappingURL=${sourceMappingURL}\n` +
+        `//# sourceURL=${sourceURL}\n`;
+
+      added.push({
+        module: [moduleId, finalCode],
+        sourceURL,
+        sourceMappingURL,
+      });
+    }
+  }
+
+  // Process modified modules
+  for (const [path, module] of delta.modified.entries()) {
+    const moduleId = createModuleId(path);
+    const sourceURL = relative(root, path);
+
+    // Generate module code
+    const serializerModules = await graphToSerializerModules([module], platformConfig);
+    const serializerModule = serializerModules[0];
+    if (serializerModule) {
+      // Get all module paths for dependency validation
+      const allModulePaths = new Set<string>();
+      for (const [p] of delta.added.entries()) {
+        allModulePaths.add(p);
+      }
+      for (const [p] of delta.modified.entries()) {
+        allModulePaths.add(p);
+      }
+
+      // Wrap with __d() for Metro compatibility (Metro's prepareModule)
+      let wrappedCode = await wrapModule(serializerModule, {
+        createModuleId,
+        getRunModuleStatement,
+        dev: platformConfig.dev ?? true,
+        projectRoot: root,
+        serverRoot: root,
+        globalPrefix: '',
+        runModule: false,
+        includeAsyncPaths: false,
+        allModulePaths,
+      } as any);
+
+      // Get inverse dependencies (Metro-compatible)
+      const inverseDependencies = getInverseDependencies(path, fullGraph);
+      // Transform the inverse dependency paths to ids (Metro-compatible)
+      // Metro: Object.keys(inverseDependencies).forEach((path) => { ... })
+      const inverseDependenciesById: Record<number, number[]> = {};
+      for (const depPath of Object.keys(inverseDependencies)) {
+        const deps = inverseDependencies[depPath];
+        if (deps) {
+          inverseDependenciesById[createModuleId(depPath)] = deps.map(createModuleId);
+        }
+      }
+
+      // Add inverse dependencies to __d() call (Metro-compatible)
+      // Metro: addParamsToDefineCall(code, inverseDependenciesById)
+      // Our function signature: addParamsToDefineCall(code, globalPrefix, ...paramsToAdd)
+      wrappedCode = addParamsToDefineCall(wrappedCode, '', inverseDependenciesById);
+
+      // Generate sourceMappingURL and sourceURL (Metro-compatible)
+      // Metro uses jscSafeUrl.toJscSafeUrl for sourceURL, but we'll use relative path for now
+      // Metro adds these as comments at the end of the code
+      const sourceMappingURL = `${sourceURL}.map`;
+      const finalCode =
+        wrappedCode +
+        `\n//# sourceMappingURL=${sourceMappingURL}\n` +
+        `//# sourceURL=${sourceURL}\n`;
+
+      modified.push({
+        module: [moduleId, finalCode],
+        sourceURL,
+        sourceMappingURL,
+      });
+    }
+  }
+
+  // Process deleted modules - use old module IDs
+  for (const path of delta.deleted) {
+    const oldModuleId = oldPathToModuleId.get(path);
+    if (oldModuleId !== undefined) {
+      // Ensure it's a number (Metro uses numbers)
+      const moduleId = typeof oldModuleId === 'number' ? oldModuleId : Number(oldModuleId);
+      if (!isNaN(moduleId)) {
+        deleted.push(moduleId);
+      }
+    }
+  }
+
+  return {
+    type: 'update',
+    body: {
+      revisionId,
+      isInitialUpdate,
+      added,
+      modified,
+      deleted,
+    },
+  };
+}
+
+/**
+ * Incremental build for HMR - rebuild only changed files
+ */
+async function incrementalBuild(
+  changedFiles: string[],
+  oldState: PlatformBuildState,
+  platformConfig: ResolvedConfig,
+): Promise<{ delta: DeltaResult; newState: PlatformBuildState } | null> {
+  const { entry, root } = platformConfig;
+  const entryPath = resolve(root, entry);
+
+  if (!existsSync(entryPath)) {
+    return null;
+  }
+
+  // Rebuild the entire graph (for now, we'll optimize later)
+  // TODO: Only rebuild affected modules
+  const newGraph = await buildGraph(entryPath, platformConfig);
+
+  // Create new module ID factory (should be consistent with old one)
+  const createModuleId = createModuleIdFactory();
+
+  // Build module ID mappings
+  const newModuleIdToPath = new Map<number | string, string>();
+  for (const [path] of newGraph.entries()) {
+    const moduleId = createModuleId(path);
+    newModuleIdToPath.set(moduleId, path);
+  }
+
+  // Calculate delta
+  const delta = await calculateDelta(
+    oldState.graph,
+    newGraph,
+    oldState.moduleIdToPath,
+    newModuleIdToPath,
+    createModuleId,
+  );
+
+  // Generate new revision ID
+  const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+  const newState: PlatformBuildState = {
+    graph: newGraph,
+    moduleIdToPath: newModuleIdToPath,
+    pathToModuleId: new Map(
+      Array.from(newModuleIdToPath.entries()).map(([id, path]) => [path, id]),
+    ),
+    revisionId,
+    createModuleId,
+  };
+
+  return { delta, newState };
+}
+
+/**
  * HMR WebSocket message types (Metro-compatible)
  */
 interface HmrMessage {
   type: string;
   body?: unknown;
+}
+
+/**
+ * HMR Update message (Metro protocol)
+ */
+interface HMRUpdateMessage {
+  type: 'update';
+  body: {
+    revisionId: string;
+    isInitialUpdate: boolean;
+    added: Array<{
+      module: [number, string]; // [moduleId, code]
+      sourceURL: string;
+      sourceMappingURL?: string;
+    }>;
+    modified: Array<{
+      module: [number, string]; // [moduleId, code]
+      sourceURL: string;
+      sourceMappingURL?: string;
+    }>;
+    deleted: number[];
+  };
+}
+
+/**
+ * HMR Error message (Metro protocol)
+ */
+interface HMRErrorMessage {
+  type: 'error';
+  body: {
+    type: string;
+    message: string;
+    stack?: string;
+  };
+}
+
+/**
+ * Delta result for incremental builds
+ */
+interface DeltaResult {
+  added: Map<string, GraphModule>;
+  modified: Map<string, GraphModule>;
+  deleted: Set<string>;
+}
+
+/**
+ * Platform build state for HMR
+ */
+interface PlatformBuildState {
+  graph: Map<string, GraphModule>;
+  moduleIdToPath: Map<number | string, string>;
+  pathToModuleId: Map<string, number | string>;
+  revisionId: string;
+  createModuleId: (path: string) => number;
 }
 
 /**
@@ -1442,6 +1869,9 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   // Track connected HMR clients and WebSocket connections
   const hmrClients = new Set<{ send: (msg: string) => void }>();
   const wsConnections = new Set<ServerWebSocket<HmrWsData>>();
+
+  // Track build state per platform for HMR
+  const platformBuildStates = new Map<string, PlatformBuildState>();
 
   type HmrWsData = { url: string };
   type HmrClient = { send: (msg: string) => void };
@@ -1521,6 +1951,36 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             const build = await buildPromise;
             cachedBuilds.set(requestPlatform, build);
             buildingPlatforms.delete(requestPlatform);
+
+            // Save build state for HMR (if dev mode)
+            if (config.dev) {
+              try {
+                // Rebuild graph to get current state (we need the graph for HMR)
+                const entryPath = resolve(config.root, config.entry);
+                const graph = await buildGraph(entryPath, platformConfig);
+                const createModuleId = createModuleIdFactory();
+
+                // Build module ID mappings
+                const moduleIdToPath = new Map<number | string, string>();
+                const pathToModuleId = new Map<string, number | string>();
+                for (const [path] of graph.entries()) {
+                  const moduleId = createModuleId(path);
+                  moduleIdToPath.set(moduleId, path);
+                  pathToModuleId.set(path, moduleId);
+                }
+
+                const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                platformBuildStates.set(requestPlatform, {
+                  graph,
+                  moduleIdToPath,
+                  pathToModuleId,
+                  revisionId,
+                  createModuleId,
+                });
+              } catch (error) {
+                console.warn(`[bungae] Failed to save build state for HMR:`, error);
+              }
+            }
 
             const bundleWithMapRef = build.map
               ? `${build.code}\n//# sourceMappingURL=${url.pathname}.map`
@@ -1840,16 +2300,161 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   // File watcher for auto-rebuild on file changes (dev mode only)
   let fileWatcher: FileWatcher | null = null;
   if (config.dev) {
-    const invalidateCache = () => {
-      // Clear cached builds to force rebuild on next request
-      cachedBuilds.clear();
-      buildingPlatforms.clear();
-      console.log('[bungae] File changed, cache invalidated. Next bundle request will rebuild.');
+    const handleFileChange = async (changedFiles: string[] = []) => {
+      console.log('[bungae] File changed, triggering HMR update...');
+
+      // Check if we have any build states
+      if (platformBuildStates.size === 0) {
+        console.log('[bungae] No build states available yet. Waiting for initial build...');
+        return;
+      }
+
+      // Check if we have any connected clients
+      if (hmrClients.size === 0) {
+        console.log('[bungae] No HMR clients connected. Skipping HMR update.');
+        return;
+      }
+
+      // Track changed files for each platform
+      const changedFilesSet = new Set(changedFiles);
+
+      console.log(
+        `[bungae] Processing HMR update for ${platformBuildStates.size} platform(s), ${hmrClients.size} client(s) connected`,
+      );
+
+      // Process each platform that has been built
+      for (const [platform, oldState] of platformBuildStates.entries()) {
+        try {
+          // Create platform-specific config
+          const platformConfig: ResolvedConfig = {
+            ...config,
+            platform: platform as 'ios' | 'android' | 'web',
+          };
+
+          // Perform incremental build
+          const result = await incrementalBuild(
+            Array.from(changedFilesSet),
+            oldState,
+            platformConfig,
+          );
+
+          if (!result) {
+            console.warn(
+              `[bungae] Incremental build failed for ${platform}, falling back to full rebuild`,
+            );
+            // Fallback: invalidate cache
+            cachedBuilds.delete(platform);
+            buildingPlatforms.delete(platform);
+            continue;
+          }
+
+          const { delta, newState } = result;
+
+          // Check if there are any changes
+          if (delta.added.size === 0 && delta.modified.size === 0 && delta.deleted.size === 0) {
+            console.log(`[bungae] No changes detected for ${platform}`);
+            continue;
+          }
+
+          // Update build state
+          platformBuildStates.set(platform, newState);
+
+          // Create HMR update message
+          const hmrMessage = await createHMRUpdateMessage(
+            delta,
+            platformConfig,
+            newState.createModuleId,
+            newState.revisionId,
+            false, // isInitialUpdate
+            oldState.pathToModuleId,
+            newState.graph, // Full graph for inverse dependencies
+          );
+
+          // Send HMR update to all connected clients (Metro protocol)
+          // Metro sends: update-start → update → update-done
+          const sendToClients = (msg: object, msgType: string) => {
+            if (hmrClients.size === 0) {
+              console.warn(`[bungae] No HMR clients connected, cannot send ${msgType}`);
+              return;
+            }
+            const messageStr = JSON.stringify(msg);
+            let sentCount = 0;
+            for (const client of hmrClients) {
+              try {
+                client.send(messageStr);
+                sentCount++;
+              } catch (error) {
+                console.error(`[bungae] Error sending ${msgType}:`, error);
+              }
+            }
+            console.log(`[bungae] Sent ${msgType} to ${sentCount} client(s)`);
+          };
+
+          // Send update-start (Metro-compatible)
+          sendToClients(
+            {
+              type: 'update-start',
+              body: {
+                revisionId: newState.revisionId,
+              },
+            },
+            'update-start',
+          );
+
+          // Send update message
+          sendToClients(hmrMessage, 'update');
+
+          // Send update-done (Metro-compatible)
+          sendToClients(
+            {
+              type: 'update-done',
+            },
+            'update-done',
+          );
+
+          console.log(
+            `[bungae] HMR update sent for ${platform}: ${delta.added.size} added, ` +
+              `${delta.modified.size} modified, ${delta.deleted.size} deleted`,
+          );
+
+          // Invalidate cache to force full rebuild on next request (if needed)
+          cachedBuilds.delete(platform);
+        } catch (error) {
+          console.error(`[bungae] Error processing HMR update for ${platform}:`, error);
+
+          // Send error message to clients
+          const errorMessage: HMRErrorMessage = {
+            type: 'error',
+            body: {
+              type: 'BuildError',
+              message: error instanceof Error ? error.message : String(error),
+              stack: error instanceof Error ? error.stack : undefined,
+            },
+          };
+
+          const errorStr = JSON.stringify(errorMessage);
+          for (const client of hmrClients) {
+            try {
+              client.send(errorStr);
+            } catch (sendError) {
+              console.error('[bungae] Error sending HMR error:', sendError);
+            }
+          }
+
+          // Fallback: invalidate cache
+          cachedBuilds.delete(platform);
+          buildingPlatforms.delete(platform);
+        }
+      }
     };
 
     fileWatcher = createFileWatcher({
       root: config.root,
-      onFileChange: invalidateCache,
+      onFileChange: () => {
+        // Note: file-watcher doesn't provide changed file list, so we'll rebuild all
+        // TODO: Enhance file-watcher to track changed files
+        handleFileChange([]);
+      },
       debounceMs: 300,
     });
   }
