@@ -25,6 +25,7 @@ const __dirname = dirname(__filename);
 import type { ServerWebSocket } from 'bun';
 
 import type { ResolvedConfig } from '../config/types';
+import { VERSION } from '../index';
 import {
   baseJSBundle,
   getPrependedModules,
@@ -34,6 +35,22 @@ import {
 import type { Module } from '../serializer/types';
 import { extractDependenciesFromAst } from '../transformer/extract-dependencies-from-ast';
 import { createFileWatcher, type FileWatcher } from './file-watcher';
+
+/**
+ * Print Bungae ASCII art banner with version
+ */
+function printBanner(version: string): void {
+  const banner = `
+    ╔═══════════════════════════════════════════════════════════╗
+    ║                                                           ║
+    ║        ⚡  BUNGAE - Lightning Fast Bundler  ⚡           ║
+    ║                                                           ║
+    ║                    Version ${version.padEnd(10)}                    ║
+    ║                                                           ║
+    ╚═══════════════════════════════════════════════════════════╝
+`;
+  console.log(banner);
+}
 
 /**
  * Get image dimensions from a PNG file (basic implementation)
@@ -428,7 +445,7 @@ async function transformWithBabel(
                   const presetPath = projectRequire.resolve(moduleName);
                   return presetPath;
                 } catch (error) {
-                  console.warn(`[bungae] Failed to resolve preset ${preset}:`, error);
+                  console.warn(`Failed to resolve preset ${preset}:`, error);
                   return preset; // Fallback to original string
                 }
               }
@@ -442,7 +459,7 @@ async function transformWithBabel(
                   const presetPath = projectRequire.resolve(moduleName);
                   return [presetPath, options];
                 } catch (error) {
-                  console.warn(`[bungae] Failed to resolve preset ${presetName}:`, error);
+                  console.warn(`Failed to resolve preset ${presetName}:`, error);
                   return preset; // Fallback to original
                 }
               }
@@ -457,7 +474,7 @@ async function transformWithBabel(
           loadedPlugins = userConfig.plugins;
         }
       } catch (error) {
-        console.warn(`[bungae] Failed to load babel.config.js:`, error);
+        console.warn(`Failed to load babel.config.js:`, error);
       }
     }
 
@@ -543,7 +560,7 @@ async function transformWithBabel(
     if (shouldCheckPreset && (!loadedPresets || loadedPresets.length === 0)) {
       const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
       console.warn(
-        `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
+        `WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
       );
     }
 
@@ -636,7 +653,7 @@ async function buildGraph(
         });
       } catch {
         // AssetRegistry not found, skip asset processing
-        console.warn(`[bungae] AssetRegistry not found, skipping asset: ${filePath}`);
+        console.warn(`AssetRegistry not found, skipping asset: ${filePath}`);
         visited.add(filePath);
         processing.delete(filePath);
         return;
@@ -726,7 +743,7 @@ async function buildGraph(
         resolvedDependencies.push(resolved);
         originalDependencies.push(dep);
       } else if (config.dev) {
-        console.warn(`[bungae] Failed to resolve "${dep}" from ${filePath}`);
+        console.warn(`Failed to resolve "${dep}" from ${filePath}`);
       }
     }
 
@@ -871,7 +888,7 @@ async function graphToSerializerModules(
           m.path.includes('Core/Devtools');
         if (isDevTool) {
           console.log(
-            `[bungae] Excluding dev-only module from production build: ${m.path} (Metro-compatible)`,
+            `Excluding dev-only module from production build: ${m.path} (Metro-compatible)`,
           );
           return false;
         }
@@ -913,7 +930,10 @@ async function graphToSerializerModules(
 /**
  * Build bundle using Graph + Metro module system
  */
-export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResult> {
+export async function buildWithGraph(
+  config: ResolvedConfig,
+  onProgress?: (transformedFileCount: number, totalFileCount: number) => void,
+): Promise<BuildResult> {
   const { entry, dev, root } = config;
 
   const entryPath = resolve(root, entry);
@@ -921,7 +941,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     throw new Error(`Entry file not found: ${entryPath}`);
   }
 
-  console.log(`[bungae] Building dependency graph (Babel + Metro-compatible)...`);
+  console.log(`Building dependency graph (Babel + Metro-compatible)...`);
 
   // Get modules to run before main module (Metro-compatible)
   // This needs to be done before building graph to ensure these modules are included
@@ -934,23 +954,33 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
         nodeModulesPaths: config.resolver.nodeModulesPaths,
       });
       if (dev && runBeforeMainModule.length > 0) {
-        console.log(`[bungae] Modules to run before main: ${runBeforeMainModule.join(', ')}`);
+        console.log(`Modules to run before main: ${runBeforeMainModule.join(', ')}`);
       }
     } catch (error) {
       if (dev) {
-        console.warn(`[bungae] Error calling getModulesRunBeforeMainModule: ${error}`);
+        console.warn(`Error calling getModulesRunBeforeMainModule: ${error}`);
       }
     }
   }
 
   // Build dependency graph
   const startTime = Date.now();
+  let lastProgress = -1;
   const graph = await buildGraph(entryPath, config, (processed, total) => {
     if (processed % 100 === 0 || processed === total) {
-      process.stdout.write(`\r[bungae] Processing modules: ${processed}/${total}`);
+      process.stdout.write(`\rProcessing modules: ${processed}/${total}`);
+    }
+    // Call onProgress callback if provided (Metro-compatible)
+    if (onProgress) {
+      const currentProgress = parseInt((processed / total) * 100, 10);
+      // Throttle progress updates (Metro behavior: only send meaningful updates)
+      if (currentProgress > lastProgress || total < 10) {
+        onProgress(processed, total);
+        lastProgress = currentProgress;
+      }
     }
   });
-  console.log(`\n[bungae] Graph built: ${graph.size} modules in ${Date.now() - startTime}ms`);
+  console.log(`\nGraph built: ${graph.size} modules in ${Date.now() - startTime}ms`);
 
   // Metro behavior: Metro assumes runBeforeMainModule modules are already in the dependency graph.
   // Check if InitializeCore is in the graph and log debug info if not found.
@@ -962,14 +992,12 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
         const matchingModules = Array.from(graph.keys()).filter((path) =>
           path.includes('InitializeCore'),
         );
-        console.warn(
-          `[bungae] InitializeCore not found in dependency graph. Expected: ${modulePath}`,
-        );
+        console.warn(`InitializeCore not found in dependency graph. Expected: ${modulePath}`);
         if (matchingModules.length > 0) {
-          console.warn(`[bungae] Found similar modules in graph: ${matchingModules.join(', ')}`);
+          console.warn(`Found similar modules in graph: ${matchingModules.join(', ')}`);
         } else {
           console.warn(
-            `[bungae] No InitializeCore-related modules found in dependency graph. Graph size: ${graph.size}`,
+            `No InitializeCore-related modules found in dependency graph. Graph size: ${graph.size}`,
           );
           // Debug: Check if react-native is in the graph
           const reactNativeModules = Array.from(graph.keys()).filter((path) =>
@@ -977,10 +1005,10 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
           );
           if (reactNativeModules.length > 0) {
             console.warn(
-              `[bungae] Found react-native modules in graph (${reactNativeModules.length}): ${reactNativeModules.slice(0, 5).join(', ')}...`,
+              `Found react-native modules in graph (${reactNativeModules.length}): ${reactNativeModules.slice(0, 5).join(', ')}...`,
             );
           } else {
-            console.warn(`[bungae] No react-native modules found in dependency graph!`);
+            console.warn(`No react-native modules found in dependency graph!`);
           }
         }
       }
@@ -991,9 +1019,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
   // This ensures module ID assignment matches Metro's behavior
   const orderedGraphModules = reorderGraph(graph, entryPath);
   if (dev) {
-    console.log(
-      `[bungae] Reordered ${orderedGraphModules.length} modules in DFS order (Metro-compatible)`,
-    );
+    console.log(`Reordered ${orderedGraphModules.length} modules in DFS order (Metro-compatible)`);
   }
 
   // Convert to serializer modules (now using ordered array)
@@ -1170,10 +1196,8 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
 
   // Log debug info
   if (requiredModuleIds.size === 0) {
-    console.error(
-      `[bungae] ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`,
-    );
-    console.error(`[bungae] ERROR: This means NO assets should be copied (Metro behavior)`);
+    console.error(`ERROR: No modules found in __r() calls! Bundle code analysis may have failed.`);
+    console.error(`ERROR: This means NO assets should be copied (Metro behavior)`);
   }
 
   // Only include assets that are actually used
@@ -1357,7 +1381,7 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
 
                       if (isInDevBlock) {
                         console.log(
-                          `[bungae] Excluding require(dependencyMap[${depIndex}]) in module ${currentModuleId} - inside __DEV__ conditional (release build)`,
+                          `Excluding require(dependencyMap[${depIndex}]) in module ${currentModuleId} - inside __DEV__ conditional (release build)`,
                         );
                         continue;
                       }
@@ -1660,7 +1684,8 @@ async function createHMRUpdateMessage(
       const inverseDependenciesById: Record<number, number[]> = {};
       for (const [depPath, parentPaths] of Object.entries(inverseDepsMap)) {
         const depModuleIdRaw = createModuleId(depPath);
-        const depModuleId = typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
+        const depModuleId =
+          typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
         inverseDependenciesById[depModuleId] = parentPaths.map((p) => {
           const idRaw = createModuleId(p);
           return typeof idRaw === 'number' ? idRaw : Number(idRaw);
@@ -1733,7 +1758,8 @@ async function createHMRUpdateMessage(
       const inverseDependenciesById: Record<number, number[]> = {};
       for (const [depPath, parentPaths] of Object.entries(inverseDepsMap)) {
         const depModuleIdRaw = createModuleId(depPath);
-        const depModuleId = typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
+        const depModuleId =
+          typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
         inverseDependenciesById[depModuleId] = parentPaths.map((p) => {
           const idRaw = createModuleId(p);
           return typeof idRaw === 'number' ? idRaw : Number(idRaw);
@@ -1741,7 +1767,7 @@ async function createHMRUpdateMessage(
       }
 
       // Debug: Log inverse dependencies for HMR
-      console.log(`[bungae] HMR inverseDependencies for ${sourceURL}:`, {
+      console.log(`HMR inverseDependencies for ${sourceURL}:`, {
         moduleId,
         inverseDepsMapKeys: Object.keys(inverseDepsMap),
         inverseDependenciesById,
@@ -1750,7 +1776,7 @@ async function createHMRUpdateMessage(
       // Debug: Log the __d() call structure before adding inverseDependencies
       const defineMatch = wrappedCode.match(/__d\(function[^)]*\)/);
       const endOfCode = wrappedCode.slice(-200);
-      console.log(`[bungae] HMR __d() structure before inverseDeps:`, {
+      console.log(`HMR __d() structure before inverseDeps:`, {
         startsWithDefine: wrappedCode.trim().startsWith('__d('),
         defineMatch: defineMatch ? defineMatch[0].slice(0, 50) + '...' : 'not found',
         endOfCode: endOfCode,
@@ -1763,7 +1789,7 @@ async function createHMRUpdateMessage(
 
       // Debug: Log the __d() call structure AFTER adding inverseDependencies
       const endOfCodeAfter = wrappedCode.slice(-300);
-      console.log(`[bungae] HMR __d() AFTER inverseDeps (last 300 chars):`, endOfCodeAfter);
+      console.log(`HMR __d() AFTER inverseDeps (last 300 chars):`, endOfCodeAfter);
 
       // Generate sourceMappingURL and sourceURL (Metro-compatible)
       // Metro uses jscSafeUrl.toJscSafeUrl for sourceURL, but we'll use relative path for now
@@ -1851,7 +1877,7 @@ async function createHMRUpdateMessage(
 
   // Debug: Log HMR message structure (only in dev mode)
   if (platformConfig.dev) {
-    console.log('[bungae] HMR message structure:', {
+    console.log('HMR message structure:', {
       type: result.type,
       body: {
         revisionId: result.body.revisionId,
@@ -1877,10 +1903,10 @@ async function createHMRUpdateMessage(
         item.module.length !== 2 ||
         typeof item.sourceURL !== 'string'
       ) {
-        console.error(`[bungae] Invalid added[${i}]:`, item);
-        console.error(`[bungae]   - item:`, item);
-        console.error(`[bungae]   - item.module:`, item?.module);
-        console.error(`[bungae]   - item.sourceURL:`, item?.sourceURL);
+        console.error(`Invalid added[${i}]:`, item);
+        console.error(`  - item:`, item);
+        console.error(`  - item.module:`, item?.module);
+        console.error(`  - item.sourceURL:`, item?.sourceURL);
       }
     }
     for (let i = 0; i < result.body.modified.length; i++) {
@@ -1892,17 +1918,17 @@ async function createHMRUpdateMessage(
         item.module.length !== 2 ||
         typeof item.sourceURL !== 'string'
       ) {
-        console.error(`[bungae] Invalid modified[${i}]:`, item);
-        console.error(`[bungae]   - item:`, item);
-        console.error(`[bungae]   - item.module:`, item?.module);
-        console.error(`[bungae]   - item.sourceURL:`, item?.sourceURL);
+        console.error(`Invalid modified[${i}]:`, item);
+        console.error(`  - item:`, item);
+        console.error(`  - item.module:`, item?.module);
+        console.error(`  - item.sourceURL:`, item?.sourceURL);
       }
     }
     // Validate arrays are actually arrays (critical for Metro)
     // Metro's injectUpdate and mergeUpdates expect arrays, not undefined
     if (!Array.isArray(result.body.added)) {
       console.error(
-        '[bungae] CRITICAL: result.body.added is not an array!',
+        'CRITICAL: result.body.added is not an array!',
         typeof result.body.added,
         result.body.added,
       );
@@ -1910,7 +1936,7 @@ async function createHMRUpdateMessage(
     }
     if (!Array.isArray(result.body.modified)) {
       console.error(
-        '[bungae] CRITICAL: result.body.modified is not an array!',
+        'CRITICAL: result.body.modified is not an array!',
         typeof result.body.modified,
         result.body.modified,
       );
@@ -1918,7 +1944,7 @@ async function createHMRUpdateMessage(
     }
     if (!Array.isArray(result.body.deleted)) {
       console.error(
-        '[bungae] CRITICAL: result.body.deleted is not an array!',
+        'CRITICAL: result.body.deleted is not an array!',
         typeof result.body.deleted,
         result.body.deleted,
       );
@@ -2026,9 +2052,7 @@ async function incrementalBuild(
   // Get affected modules (changed files + their inverse dependencies)
   const affectedModules = getAffectedModules(changedFiles, oldState.graph, root);
 
-  console.log(
-    `[bungae] Incremental build: ${normalizedChangedFiles.length} changed file(s) to rebuild`,
-  );
+  console.log(`Incremental build: ${normalizedChangedFiles.length} changed file(s) to rebuild`);
 
   // Start with a copy of the old graph
   const newGraph = new Map(oldState.graph);
@@ -2066,7 +2090,7 @@ async function incrementalBuild(
           paths: [platformConfig.root, ...platformConfig.resolver.nodeModulesPaths],
         });
       } catch {
-        console.warn(`[bungae] AssetRegistry not found, skipping asset: ${filePath}`);
+        console.warn(`AssetRegistry not found, skipping asset: ${filePath}`);
         visited.add(filePath);
         processing.delete(filePath);
         return;
@@ -2150,7 +2174,7 @@ async function incrementalBuild(
         resolvedDependencies.push(resolved);
         originalDependencies.push(dep);
       } else if (platformConfig.dev) {
-        console.warn(`[bungae] Failed to resolve "${dep}" from ${filePath}`);
+        console.warn(`Failed to resolve "${dep}" from ${filePath}`);
       }
     }
 
@@ -2309,9 +2333,9 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   // Use 0.0.0.0 to allow connections from Android emulator (10.0.2.2) and other devices
   const hostname = '0.0.0.0';
 
-  console.log(
-    `Starting Bungae dev server (Babel mode, Metro-compatible) on http://${hostname}:${port}`,
-  );
+  // Print ASCII art banner
+  printBanner(VERSION);
+  console.log(`Starting dev server on http://${hostname}:${port}`);
 
   // Platform-aware cache: key is platform name
   const cachedBuilds = new Map<string, BuildResult>();
@@ -2429,7 +2453,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                   createModuleId,
                 });
               } catch (error) {
-                console.warn(`[bungae] Failed to save build state for HMR:`, error);
+                console.warn(`Failed to save build state for HMR:`, error);
               }
             }
 
@@ -2500,7 +2524,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               // Don't wait for the process to complete
               proc.unref();
 
-              console.log(`[bungae] Opening URL in browser: ${targetUrl}`);
+              console.log(`Opening URL in browser: ${targetUrl}`);
               return new Response(JSON.stringify({ success: true }), {
                 headers: { 'Content-Type': 'application/json' },
               });
@@ -2511,7 +2535,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               });
             }
           } catch (error) {
-            console.error('[bungae] Error opening URL:', error);
+            console.error('Error opening URL:', error);
             return new Response(JSON.stringify({ error: 'Failed to open URL' }), {
               status: 500,
               headers: { 'Content-Type': 'application/json' },
@@ -2625,15 +2649,13 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           }
 
           if (!isAllowed) {
-            console.warn(`[bungae] Asset path outside allowed directories: ${normalizedAssetPath}`);
+            console.warn(`Asset path outside allowed directories: ${normalizedAssetPath}`);
             return new Response('Forbidden', { status: 403 });
           }
 
           // Check if file exists
           if (!existsSync(normalizedAssetPath)) {
-            console.warn(
-              `[bungae] Asset not found: ${normalizedAssetPath} (requested: ${url.pathname})`,
-            );
+            console.warn(`Asset not found: ${normalizedAssetPath} (requested: ${url.pathname})`);
             return new Response('Not Found', { status: 404 });
           }
 
@@ -2663,7 +2685,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             },
           });
         } catch (error) {
-          console.error(`[bungae] Error serving asset ${url.pathname}:`, error);
+          console.error(`Error serving asset ${url.pathname}:`, error);
           return new Response('Internal Server Error', { status: 500 });
         }
       }
@@ -2759,26 +2781,24 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   let fileWatcher: FileWatcher | null = null;
   if (config.dev) {
     const handleFileChange = async (changedFiles: string[] = []) => {
-      console.log('[bungae] File changed, invalidating cache and triggering HMR update...');
+      console.log('File changed, invalidating cache and triggering HMR update...');
 
       // Always invalidate cache when files change (Metro-compatible)
       // This ensures next bundle request will use latest code
       for (const platform of cachedBuilds.keys()) {
         cachedBuilds.delete(platform);
-        console.log(`[bungae] Invalidated cache for ${platform}`);
+        console.log(`Invalidated cache for ${platform}`);
       }
 
       // Check if we have any build states
       if (platformBuildStates.size === 0) {
-        console.log('[bungae] No build states available yet. Waiting for initial build...');
+        console.log('No build states available yet. Waiting for initial build...');
         return;
       }
 
       // Check if we have any connected clients
       if (hmrClients.size === 0) {
-        console.log(
-          '[bungae] No HMR clients connected. Cache invalidated, will rebuild on next request.',
-        );
+        console.log('No HMR clients connected. Cache invalidated, will rebuild on next request.');
         return;
       }
 
@@ -2786,7 +2806,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
       const changedFilesSet = new Set(changedFiles);
 
       console.log(
-        `[bungae] Processing HMR update for ${platformBuildStates.size} platform(s), ${hmrClients.size} client(s) connected`,
+        `Processing HMR update for ${platformBuildStates.size} platform(s), ${hmrClients.size} client(s) connected`,
       );
 
       // Process each platform that has been built
@@ -2806,9 +2826,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           );
 
           if (!result) {
-            console.warn(
-              `[bungae] Incremental build failed for ${platform}, falling back to full rebuild`,
-            );
+            console.warn(`Incremental build failed for ${platform}, falling back to full rebuild`);
             // Fallback: invalidate cache
             cachedBuilds.delete(platform);
             buildingPlatforms.delete(platform);
@@ -2819,7 +2837,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
           // Check if there are any changes
           if (delta.added.size === 0 && delta.modified.size === 0 && delta.deleted.size === 0) {
-            console.log(`[bungae] No changes detected for ${platform}`);
+            console.log(`No changes detected for ${platform}`);
             continue;
           }
 
@@ -2841,7 +2859,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           // Metro sends: update-start → update → update-done
           const sendToClients = (msg: object, msgType: string) => {
             if (hmrClients.size === 0) {
-              console.warn(`[bungae] No HMR clients connected, cannot send ${msgType}`);
+              console.warn(`No HMR clients connected, cannot send ${msgType}`);
               return;
             }
             const messageStr = JSON.stringify(msg);
@@ -2851,10 +2869,10 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                 client.send(messageStr);
                 sentCount++;
               } catch (error) {
-                console.error(`[bungae] Error sending ${msgType}:`, error);
+                console.error(`Error sending ${msgType}:`, error);
               }
             }
-            console.log(`[bungae] Sent ${msgType} to ${sentCount} client(s)`);
+            console.log(`Sent ${msgType} to ${sentCount} client(s)`);
           };
 
           // Send update-start (Metro-compatible)
@@ -2874,13 +2892,13 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           if (config.dev) {
             // Validate the message structure before sending
             if (!hmrMessage.body) {
-              console.error('[bungae] CRITICAL: hmrMessage.body is missing!', hmrMessage);
+              console.error('CRITICAL: hmrMessage.body is missing!', hmrMessage);
             } else {
               // Ensure arrays are always present (Metro's mergeUpdates requires them)
               // Metro client receives data.body directly as update, so body must have these arrays
               if (!Array.isArray(hmrMessage.body.added)) {
                 console.error(
-                  '[bungae] CRITICAL: hmrMessage.body.added is not an array!',
+                  'CRITICAL: hmrMessage.body.added is not an array!',
                   typeof hmrMessage.body.added,
                   hmrMessage.body.added,
                 );
@@ -2889,7 +2907,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               }
               if (!Array.isArray(hmrMessage.body.modified)) {
                 console.error(
-                  '[bungae] CRITICAL: hmrMessage.body.modified is not an array!',
+                  'CRITICAL: hmrMessage.body.modified is not an array!',
                   typeof hmrMessage.body.modified,
                   hmrMessage.body.modified,
                 );
@@ -2898,7 +2916,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               }
               if (!Array.isArray(hmrMessage.body.deleted)) {
                 console.error(
-                  '[bungae] CRITICAL: hmrMessage.body.deleted is not an array!',
+                  'CRITICAL: hmrMessage.body.deleted is not an array!',
                   typeof hmrMessage.body.deleted,
                   hmrMessage.body.deleted,
                 );
@@ -2920,7 +2938,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                   );
                 } else if (typeof item.sourceURL !== 'string') {
                   console.error(
-                    `[bungae] CRITICAL: modified[${i}].sourceURL is not a string!`,
+                    `CRITICAL: modified[${i}].sourceURL is not a string!`,
                     typeof item.sourceURL,
                     item,
                   );
@@ -2941,7 +2959,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                   );
                 } else if (typeof item.sourceURL !== 'string') {
                   console.error(
-                    `[bungae] CRITICAL: added[${i}].sourceURL is not a string!`,
+                    `CRITICAL: added[${i}].sourceURL is not a string!`,
                     typeof item.sourceURL,
                     item,
                   );
@@ -2955,7 +2973,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               jsonStr.substring(0, 1000),
             );
             // Also log the structure in a readable format
-            console.log('[bungae] HMR message to send:', {
+            console.log('HMR message to send:', {
               type: hmrMessage.type,
               bodyKeys: Object.keys(hmrMessage.body || {}),
               addedType: Array.isArray(hmrMessage.body?.added)
@@ -2973,7 +2991,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             });
             // Log the actual body structure that will be sent to client
             // Metro client receives data.body directly as update
-            console.log('[bungae] Body structure (what client receives as update):', {
+            console.log('Body structure (what client receives as update):', {
               revisionId: typeof hmrMessage.body.revisionId,
               isInitialUpdate: typeof hmrMessage.body.isInitialUpdate,
               added: {
@@ -3021,7 +3039,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           // Metro's mergeUpdates expects: update.added, update.modified, update.deleted to be arrays
           // Metro client receives data.body directly as update, so body must have these arrays
           if (!hmrMessage.body) {
-            console.error('[bungae] CRITICAL: Cannot send HMR update - body is missing!');
+            console.error('CRITICAL: Cannot send HMR update - body is missing!');
             return;
           }
           // Double-check arrays (defensive programming)
@@ -3034,14 +3052,14 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           }
           if (!Array.isArray(hmrMessage.body.modified)) {
             console.error(
-              '[bungae] CRITICAL: Final check failed - modified is not an array!',
+              'CRITICAL: Final check failed - modified is not an array!',
               typeof hmrMessage.body.modified,
             );
             hmrMessage.body.modified = [];
           }
           if (!Array.isArray(hmrMessage.body.deleted)) {
             console.error(
-              '[bungae] CRITICAL: Final check failed - deleted is not an array!',
+              'CRITICAL: Final check failed - deleted is not an array!',
               typeof hmrMessage.body.deleted,
             );
             hmrMessage.body.deleted = [];
@@ -3050,10 +3068,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           // Log the exact JSON that will be sent (for debugging)
           if (config.dev) {
             const finalJson = JSON.stringify(hmrMessage);
-            console.log(
-              '[bungae] Final JSON to send (first 2000 chars):',
-              finalJson.substring(0, 2000),
-            );
+            console.log('Final JSON to send (first 2000 chars):', finalJson.substring(0, 2000));
             // Parse it back to verify structure
             try {
               const parsed = JSON.parse(finalJson);
@@ -3073,7 +3088,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                 });
               }
             } catch (e) {
-              console.error('[bungae] ❌ Failed to parse JSON for validation:', e);
+              console.error('❌ Failed to parse JSON for validation:', e);
             }
           }
 
@@ -3088,14 +3103,14 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           );
 
           console.log(
-            `[bungae] HMR update sent for ${platform}: ${delta.added.size} added, ` +
+            `HMR update sent for ${platform}: ${delta.added.size} added, ` +
               `${delta.modified.size} modified, ${delta.deleted.size} deleted`,
           );
 
           // Invalidate cache to force full rebuild on next request (if needed)
           cachedBuilds.delete(platform);
         } catch (error) {
-          console.error(`[bungae] Error processing HMR update for ${platform}:`, error);
+          console.error(`Error processing HMR update for ${platform}:`, error);
 
           // Send error message to clients
           const errorMessage: HMRErrorMessage = {
@@ -3112,7 +3127,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             try {
               client.send(errorStr);
             } catch (sendError) {
-              console.error('[bungae] Error sending HMR error:', sendError);
+              console.error('Error sending HMR error:', sendError);
             }
           }
 
@@ -3141,7 +3156,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
     }
     isShuttingDown = true;
 
-    console.log(`\n[bungae] ${signal} received, shutting down dev server...`);
+    console.log(`\n${signal} received, shutting down dev server...`);
 
     try {
       // Close file watcher (if it was created)
@@ -3166,7 +3181,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
       process.exit(0);
     } catch (error) {
-      console.error('[bungae] Error during shutdown:', error);
+      console.error('Error during shutdown:', error);
       process.exit(1);
     }
   };
