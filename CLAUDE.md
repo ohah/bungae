@@ -142,11 +142,48 @@ Bun.hash(); // 캐시 키 생성
    - Source map URL 지원
    - Metro 스타일 테스트 코드 (15개 테스트 케이스 모두 통과)
 
-#### 🔄 진행 중
-
-- Phase 2: 개발 환경 (증분 빌드, 개발 서버, HMR)
-
 ### Phase 2: 개발 환경
+
+#### ✅ 완료된 기능
+
+1. **증분 빌드 시스템** (Phase 2-1)
+   - `incrementalBuild()` 함수 구현
+   - 파일 변경 시 영향받은 모듈만 재빌드
+   - 이전 그래프와 새 그래프 간 델타 계산 (`calculateDelta()`)
+   - 역의존성 그래프를 통한 영향받은 모듈 추적 (`getAffectedModules()`)
+   - 모듈 ID 일관성 유지 (동일한 `createModuleId` 팩토리 재사용)
+   - 플랫폼별 빌드 상태 관리 (다중 플랫폼 HMR 지원)
+   - 구현 위치: `graph-bundler.ts`의 `incrementalBuild()` 함수
+
+2. **개발 서버** (Phase 2-2)
+   - `serveWithGraph()` 함수 구현
+   - Bun.serve() 기반 HTTP 서버
+   - 번들 요청 처리 (`/index.bundle?platform=ios&dev=true`)
+   - WebSocket 지원 (HMR용)
+   - 플랫폼별 번들 캐싱
+   - 구현 위치: `graph-bundler.ts`의 `serveWithGraph()` 함수
+
+3. **HMR (Hot Module Replacement)** (Phase 2-3)
+   - **Metro 호환 HMR 프로토콜**: React Native의 내장 HMRClient와 호환
+   - `buildWithGraph()` 함수가 HMR 상태 관리를 위해 graph와 `createModuleId` 반환
+   - Metro HMR 메시지 형식 구현:
+     - `update-start` / `update-done`: 업데이트 생명주기
+     - `update`: 추가/수정/삭제된 모듈 정보
+     - `error`: 빌드 실패 시 에러 전송
+   - `createHMRUpdateMessage()`: Metro 호환 HMR 업데이트 메시지 생성
+   - 모듈 ID 일관성: 빌드 간 동일한 `createModuleId` 팩토리 재사용
+   - 역의존성 그래프: React Refresh 경계를 위한 Metro의 상향 순회 패턴 지원
+   - 다중 플랫폼 HMR: iOS/Android 각각 독립적인 HMR 업데이트
+   - 구현 위치: `graph-bundler.ts`의 HMR 관련 함수들
+   - 테스트 코드 작성 완료 (15개 이상의 테스트 케이스 모두 통과)
+
+4. **파일 감시** (Phase 2-4)
+   - `file-watcher.ts` 모듈 구현
+   - 파일 변경 감지 및 HMR 트리거
+   - 원자적 쓰기 처리 (VSCode 등 에디터의 rename 이벤트)
+   - JS/TS/JSON 소스 파일만 처리하도록 필터링
+   - 디바운싱 지원 (기본 300ms)
+   - 구현 위치: `file-watcher.ts`의 `createFileWatcher()` 함수
 
 #### HMR (Hot Module Replacement) 구현 전략
 
@@ -175,9 +212,11 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 {
   type: 'update',
   body: {
-    added: [[moduleId, code, sourceURL], ...],
-    modified: [[moduleId, code, sourceURL], ...],
-    deleted: [moduleId, ...]
+    revisionId: string,
+    isInitialUpdate: boolean,
+    added: Array<{ module: [number, string], sourceURL: string, sourceMappingURL?: string }>,
+    modified: Array<{ module: [number, string], sourceURL: string, sourceMappingURL?: string }>,
+    deleted: number[]
   }
 }
 ```
