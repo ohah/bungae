@@ -128,7 +128,7 @@ export async function buildWithGraph(
   // Read Bungae version from package.json
   let bungaeVersion = '0.0.1';
   try {
-    const packageJsonPath = resolve(__dirname, '../../../package.json');
+    const packageJsonPath = resolve(__dirname, '../../../../package.json');
     if (existsSync(packageJsonPath)) {
       const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf-8'));
       bungaeVersion = packageJson.version || '0.0.1';
