@@ -172,339 +172,374 @@ describe('HMR Integration Tests', () => {
   }
 
   describe('WebSocket message sequence', () => {
-    test('should send update-start → update → update-done sequence', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should send update-start → update → update-done sequence',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      // Connect WebSocket
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
-
-      // Register entrypoints (Metro protocol)
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
-
-      // Wait for initial messages and ensure build state is ready
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      // Modify file to trigger HMR update
-      writeFileSync(entryFile, "console.log('modified');", 'utf-8');
-
-      // Wait for file watcher to detect change and HMR update to be sent
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      ws.close();
-
-      // Check message sequence
-      const parsedMessages = messages.map((msg) => JSON.parse(msg));
-
-      // Should have bundle-registered message
-      const bundleRegistered = parsedMessages.find((m) => m.type === 'bundle-registered');
-      expect(bundleRegistered).toBeDefined();
-
-      // Should have update-start, update, update-done sequence (if HMR update was sent)
-      const updateStartIndex = parsedMessages.findIndex((m) => m.type === 'update-start');
-      const updateIndex = parsedMessages.findIndex((m) => m.type === 'update');
-      const updateDoneIndex = parsedMessages.findIndex((m) => m.type === 'update-done');
-
-      // If update messages exist, they should be in correct order
-      if (updateStartIndex !== -1 && updateIndex !== -1 && updateDoneIndex !== -1) {
-        expect(updateStartIndex).toBeLessThan(updateIndex);
-        expect(updateIndex).toBeLessThan(updateDoneIndex);
-      } else {
-        // If no update messages, it might be because file change wasn't detected yet
-        // This is acceptable for integration tests - the important thing is the server works
-        console.log(
-          'Note: No HMR update messages received (file change might not have been detected yet)',
+        // Connect WebSocket
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
         );
-      }
-    });
 
-    test('should send error message when build fails', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('valid');", 'utf-8');
+        // Register entrypoints (Metro protocol)
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
 
-      await startTestServer(entryFile);
+        // Wait for initial messages and ensure build state is ready
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
+        // Modify file to trigger HMR update
+        writeFileSync(entryFile, "console.log('modified');", 'utf-8');
 
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
+        // Wait for file watcher to detect change and HMR update to be sent
+        await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        ws.close();
 
-      // Write invalid syntax to trigger error
-      writeFileSync(entryFile, 'const x = {; // syntax error', 'utf-8');
+        // Check message sequence
+        const parsedMessages = messages.map((msg) => JSON.parse(msg));
 
-      // Wait for error message
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Should have bundle-registered message
+        const bundleRegistered = parsedMessages.find((m) => m.type === 'bundle-registered');
+        expect(bundleRegistered).toBeDefined();
 
-      ws.close();
+        // Should have update-start, update, update-done sequence (if HMR update was sent)
+        const updateStartIndex = parsedMessages.findIndex((m) => m.type === 'update-start');
+        const updateIndex = parsedMessages.findIndex((m) => m.type === 'update');
+        const updateDoneIndex = parsedMessages.findIndex((m) => m.type === 'update-done');
 
-      // Give server time to process close
-      await new Promise((resolve) => setTimeout(resolve, 500));
+        // If update messages exist, they should be in correct order
+        if (updateStartIndex !== -1 && updateIndex !== -1 && updateDoneIndex !== -1) {
+          expect(updateStartIndex).toBeLessThan(updateIndex);
+          expect(updateIndex).toBeLessThan(updateDoneIndex);
+        } else {
+          // If no update messages, it might be because file change wasn't detected yet
+          // This is acceptable for integration tests - the important thing is the server works
+          console.log(
+            'Note: No HMR update messages received (file change might not have been detected yet)',
+          );
+        }
+      },
+    );
 
-      const parsedMessages = messages.map((msg) => JSON.parse(msg));
-      const errorMessage = parsedMessages.find((m) => m.type === 'error');
+    test(
+      'should send error message when build fails',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('valid');", 'utf-8');
 
-      // Error message should have correct format
-      if (errorMessage) {
-        expect(errorMessage).toHaveProperty('type', 'error');
-        expect(errorMessage).toHaveProperty('body');
-        expect(errorMessage.body).toHaveProperty('type');
-        expect(errorMessage.body).toHaveProperty('message');
-      }
-    });
+        await startTestServer(entryFile);
+
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
+        );
+
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
+
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // Write invalid syntax to trigger error
+        writeFileSync(entryFile, 'const x = {; // syntax error', 'utf-8');
+
+        // Wait for error message
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        ws.close();
+
+        // Give server time to process close
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const parsedMessages = messages.map((msg) => JSON.parse(msg));
+        const errorMessage = parsedMessages.find((m) => m.type === 'error');
+
+        // Error message should have correct format
+        if (errorMessage) {
+          expect(errorMessage).toHaveProperty('type', 'error');
+          expect(errorMessage).toHaveProperty('body');
+          expect(errorMessage.body).toHaveProperty('type');
+          expect(errorMessage.body).toHaveProperty('message');
+        }
+      },
+    );
   });
 
   describe('Multiple clients', () => {
-    test('should send same update to all connected clients', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should send same update to all connected clients',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      // Connect two clients
-      const client1 = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
-      const client2 = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
+        // Connect two clients
+        const client1 = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
+        );
+        const client2 = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
+        );
 
-      // Register both clients
-      client1.ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
-      client2.ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
+        // Register both clients
+        client1.ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
+        client2.ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Clear initial messages
-      client1.messages.length = 0;
-      client2.messages.length = 0;
+        // Clear initial messages
+        client1.messages.length = 0;
+        client2.messages.length = 0;
 
-      // Modify file
-      writeFileSync(entryFile, "console.log('modified');", 'utf-8');
+        // Modify file
+        writeFileSync(entryFile, "console.log('modified');", 'utf-8');
 
-      // Wait for HMR update
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Wait for HMR update
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      client1.ws.close();
-      client2.ws.close();
+        client1.ws.close();
+        client2.ws.close();
 
-      // Give server time to process closes
-      await new Promise((resolve) => setTimeout(resolve, 500));
+        // Give server time to process closes
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Both clients should receive update messages
-      const client1Messages = client1.messages.map((msg) => JSON.parse(msg));
-      const client2Messages = client2.messages.map((msg) => JSON.parse(msg));
+        // Both clients should receive update messages
+        const client1Messages = client1.messages.map((msg) => JSON.parse(msg));
+        const client2Messages = client2.messages.map((msg) => JSON.parse(msg));
 
-      // Both should have update messages
-      const client1Update = client1Messages.find((m) => m.type === 'update');
-      const client2Update = client2Messages.find((m) => m.type === 'update');
+        // Both should have update messages
+        const client1Update = client1Messages.find((m) => m.type === 'update');
+        const client2Update = client2Messages.find((m) => m.type === 'update');
 
-      if (client1Update && client2Update) {
-        // Both should have same revisionId
-        expect(client1Update.body.revisionId).toBe(client2Update.body.revisionId);
-        // Both should have same number of modified modules
-        expect(client1Update.body.modified.length).toBe(client2Update.body.modified.length);
-      }
-    });
+        if (client1Update && client2Update) {
+          // Both should have same revisionId
+          expect(client1Update.body.revisionId).toBe(client2Update.body.revisionId);
+          // Both should have same number of modified modules
+          expect(client1Update.body.modified.length).toBe(client2Update.body.modified.length);
+        }
+      },
+    );
   });
 
   describe('URL parameter handling', () => {
-    test('should handle extra query parameters in WebSocket URL', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should handle extra query parameters in WebSocket URL',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      // Connect with extra parameters
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios&unusedExtraParam=42`,
-      );
+        // Connect with extra parameters
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios&unusedExtraParam=42`,
+        );
 
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [
-            `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios&unusedExtraParam=42`,
-          ],
-        }),
-      );
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [
+              `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios&unusedExtraParam=42`,
+            ],
+          }),
+        );
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      ws.close();
+        ws.close();
 
-      // Give server time to process close
-      await new Promise((resolve) => setTimeout(resolve, 500));
+        // Give server time to process close
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-      // Should successfully connect and receive messages
-      expect(messages.length).toBeGreaterThan(0);
-    });
+        // Should successfully connect and receive messages
+        expect(messages.length).toBeGreaterThan(0);
+      },
+    );
   });
 
   describe('Initial update on connection', () => {
-    test('should send initial update when client connects', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should send initial update when client connects',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      // Wait a bit for initial build
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Wait a bit for initial build
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
-
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
-
-      // Wait for initial update
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      ws.close();
-
-      const parsedMessages = messages.map((msg) => JSON.parse(msg));
-
-      // Should receive update-start, update, update-done
-      const hasUpdateStart = parsedMessages.some((m) => m.type === 'update-start');
-      const hasUpdate = parsedMessages.some((m) => m.type === 'update');
-      const hasUpdateDone = parsedMessages.some((m) => m.type === 'update-done');
-
-      // At least one update sequence should be present (if initial build completed)
-      // Note: Initial update might not be sent if build state isn't ready yet
-      // This is acceptable - the important thing is the server works
-      if (!hasUpdateStart && !hasUpdate && !hasUpdateDone) {
-        console.log(
-          'Note: No initial update messages received (build state might not be ready yet)',
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
         );
-      }
-      // Don't fail the test - server connectivity is what matters for integration tests
-    });
+
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
+
+        // Wait for initial update
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        ws.close();
+
+        const parsedMessages = messages.map((msg) => JSON.parse(msg));
+
+        // Should receive update-start, update, update-done
+        const hasUpdateStart = parsedMessages.some((m) => m.type === 'update-start');
+        const hasUpdate = parsedMessages.some((m) => m.type === 'update');
+        const hasUpdateDone = parsedMessages.some((m) => m.type === 'update-done');
+
+        // At least one update sequence should be present (if initial build completed)
+        // Note: Initial update might not be sent if build state isn't ready yet
+        // This is acceptable - the important thing is the server works
+        if (!hasUpdateStart && !hasUpdate && !hasUpdateDone) {
+          console.log(
+            'Note: No initial update messages received (build state might not be ready yet)',
+          );
+        }
+        // Don't fail the test - server connectivity is what matters for integration tests
+      },
+    );
   });
 
   describe('bundle-registered message', () => {
-    test('should send bundle-registered after register-entrypoints', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should send bundle-registered after register-entrypoints',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
+        );
 
-      // Register entrypoints
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
+        // Register entrypoints
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
 
-      // Wait for bundle-registered message
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Wait for bundle-registered message
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      ws.close();
+        ws.close();
 
-      // Give server time to process close
-      await new Promise((resolve) => setTimeout(resolve, 500));
+        // Give server time to process close
+        await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const parsedMessages = messages.map((msg) => JSON.parse(msg));
-      const bundleRegistered = parsedMessages.find((m) => m.type === 'bundle-registered');
+        const parsedMessages = messages.map((msg) => JSON.parse(msg));
+        const bundleRegistered = parsedMessages.find((m) => m.type === 'bundle-registered');
 
-      expect(bundleRegistered).toBeDefined();
-      expect(bundleRegistered).toEqual({ type: 'bundle-registered' });
-    });
+        expect(bundleRegistered).toBeDefined();
+        expect(bundleRegistered).toEqual({ type: 'bundle-registered' });
+      },
+    );
   });
 
   describe('HMR message format', () => {
-    test('should send correctly formatted HMR update messages', async () => {
-      const entryFile = join(testDir, 'index.js');
-      writeFileSync(entryFile, "console.log('hello');", 'utf-8');
+    test(
+      'should send correctly formatted HMR update messages',
+      // @ts-expect-error - Bun supports timeout option but TypeScript types may not be updated
+      { timeout: 30000 },
+      async () => {
+        const entryFile = join(testDir, 'index.js');
+        writeFileSync(entryFile, "console.log('hello');", 'utf-8');
 
-      await startTestServer(entryFile);
+        await startTestServer(entryFile);
 
-      const { ws, messages } = await createWebSocketConnection(
-        `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
-      );
+        const { ws, messages } = await createWebSocketConnection(
+          `ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`,
+        );
 
-      ws.send(
-        JSON.stringify({
-          type: 'register-entrypoints',
-          entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
-        }),
-      );
+        ws.send(
+          JSON.stringify({
+            type: 'register-entrypoints',
+            entryPoints: [`ws://localhost:${serverPort}/hot?bundleEntry=index.js&platform=ios`],
+          }),
+        );
 
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+        await new Promise((resolve) => setTimeout(resolve, 1000));
 
-      // Modify file
-      writeFileSync(entryFile, "console.log('modified');", 'utf-8');
+        // Modify file
+        writeFileSync(entryFile, "console.log('modified');", 'utf-8');
 
-      // Wait for HMR update
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+        // Wait for HMR update
+        await new Promise((resolve) => setTimeout(resolve, 2000));
 
-      ws.close();
+        ws.close();
 
-      const parsedMessages = messages.map((msg) => JSON.parse(msg));
-      const updateMessage = parsedMessages.find((m) => m.type === 'update');
+        const parsedMessages = messages.map((msg) => JSON.parse(msg));
+        const updateMessage = parsedMessages.find((m) => m.type === 'update');
 
-      if (updateMessage) {
-        // Validate Metro protocol format
-        expect(updateMessage).toHaveProperty('type', 'update');
-        expect(updateMessage).toHaveProperty('body');
-        expect(updateMessage.body).toHaveProperty('revisionId');
-        expect(updateMessage.body).toHaveProperty('isInitialUpdate');
-        expect(updateMessage.body).toHaveProperty('added');
-        expect(updateMessage.body).toHaveProperty('modified');
-        expect(updateMessage.body).toHaveProperty('deleted');
+        if (updateMessage) {
+          // Validate Metro protocol format
+          expect(updateMessage).toHaveProperty('type', 'update');
+          expect(updateMessage).toHaveProperty('body');
+          expect(updateMessage.body).toHaveProperty('revisionId');
+          expect(updateMessage.body).toHaveProperty('isInitialUpdate');
+          expect(updateMessage.body).toHaveProperty('added');
+          expect(updateMessage.body).toHaveProperty('modified');
+          expect(updateMessage.body).toHaveProperty('deleted');
 
-        // Arrays should be arrays
-        expect(Array.isArray(updateMessage.body.added)).toBe(true);
-        expect(Array.isArray(updateMessage.body.modified)).toBe(true);
-        expect(Array.isArray(updateMessage.body.deleted)).toBe(true);
+          // Arrays should be arrays
+          expect(Array.isArray(updateMessage.body.added)).toBe(true);
+          expect(Array.isArray(updateMessage.body.modified)).toBe(true);
+          expect(Array.isArray(updateMessage.body.deleted)).toBe(true);
 
-        // Validate module format if modified array has items
-        if (updateMessage.body.modified.length > 0) {
-          const mod = updateMessage.body.modified[0];
-          expect(mod).toHaveProperty('module');
-          expect(Array.isArray(mod.module)).toBe(true);
-          expect(mod.module.length).toBe(2);
-          expect(typeof mod.module[0]).toBe('number');
-          expect(typeof mod.module[1]).toBe('string');
-          expect(mod).toHaveProperty('sourceURL');
-          expect(typeof mod.sourceURL).toBe('string');
+          // Validate module format if modified array has items
+          if (updateMessage.body.modified.length > 0) {
+            const mod = updateMessage.body.modified[0];
+            expect(mod).toHaveProperty('module');
+            expect(Array.isArray(mod.module)).toBe(true);
+            expect(mod.module.length).toBe(2);
+            expect(typeof mod.module[0]).toBe('number');
+            expect(typeof mod.module[1]).toBe('string');
+            expect(mod).toHaveProperty('sourceURL');
+            expect(typeof mod.sourceURL).toBe('string');
+          }
         }
-      }
-    });
+      },
+    );
   });
 });
