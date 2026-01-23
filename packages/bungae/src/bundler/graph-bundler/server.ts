@@ -397,6 +397,175 @@ export async function serveWithGraph(
         }
       }
 
+      // Handle /symbolicate endpoint (Metro-compatible)
+      // React Native LogBox calls this endpoint to symbolicate stack traces
+      if (url.pathname === '/symbolicate') {
+        if (req.method !== 'POST') {
+          return new Response('Method Not Allowed', { status: 405 });
+        }
+
+        try {
+          // Parse request body
+          const body = (await req.json()) as {
+            stack?: Array<{
+              file?: string;
+              lineNumber?: number;
+              column?: number;
+              methodName?: string;
+            }>;
+            extraData?: any;
+          };
+          const stack: Array<{
+            file?: string;
+            lineNumber?: number;
+            column?: number;
+            methodName?: string;
+          }> = body.stack || [];
+          // extraData is available for future use (Metro-compatible)
+          const _extraData = body.extraData || {};
+
+          // Get source map from cached build
+          // Extract bundle URL from stack frames to determine platform
+          const bundleUrl = stack.find((frame) => frame.file?.includes('.bundle'))?.file;
+          let mapPlatform = platform;
+          if (bundleUrl) {
+            try {
+              const urlObj = new URL(bundleUrl);
+              const platformParam = urlObj.searchParams.get('platform');
+              if (platformParam) {
+                mapPlatform = platformParam as 'ios' | 'android' | 'web';
+              }
+            } catch {
+              // Invalid URL, use default platform
+            }
+          }
+
+          const cachedBuild = cachedBuilds.get(mapPlatform);
+          if (!cachedBuild?.map) {
+            // No source map available, return stack as-is
+            return new Response(
+              JSON.stringify({
+                stack: stack.map((frame) => ({
+                  ...frame,
+                })),
+                codeFrame: null,
+              }),
+              {
+                headers: { 'Content-Type': 'application/json' },
+              },
+            );
+          }
+
+          // Load source map and symbolicate
+          const metroSourceMap = await import('metro-source-map');
+          const { Consumer } = metroSourceMap;
+          const sourceMap = JSON.parse(cachedBuild.map);
+          const consumer = new Consumer(sourceMap);
+
+          // Symbolicate each frame
+          const symbolicatedStack = stack.map((frame) => {
+            if (!frame.file || frame.lineNumber == null) {
+              return { ...frame };
+            }
+
+            // Extract bundle URL from frame.file (e.g., "http://localhost:8081/index.bundle?platform=ios&dev=true")
+            // We need to match this to our source map
+            try {
+              const originalPos = consumer.originalPositionFor({
+                line: frame.lineNumber as any, // metro-source-map uses ob1 types internally
+                column: (frame.column ?? 0) as any,
+              });
+
+              if (originalPos.source == null || originalPos.line == null) {
+                // No mapping found, return frame as-is
+                return { ...frame };
+              }
+
+              // Resolve source path relative to project root
+              const sourcePath = originalPos.source.startsWith('/')
+                ? originalPos.source
+                : resolve(config.root, originalPos.source);
+
+              // Convert ob1 types to numbers
+              const originalLine =
+                typeof originalPos.line === 'number' ? originalPos.line : Number(originalPos.line);
+              const originalColumn =
+                typeof originalPos.column === 'number'
+                  ? originalPos.column
+                  : Number(originalPos.column ?? 0);
+
+              return {
+                ...frame,
+                file: sourcePath,
+                lineNumber: originalLine,
+                column: originalColumn,
+                methodName: originalPos.name ?? frame.methodName,
+              };
+            } catch {
+              // Symbolication failed, return frame as-is
+              return { ...frame };
+            }
+          });
+
+          // Generate code frame for first frame with valid source
+          let codeFrame: {
+            content: string;
+            location: { row: number; column: number };
+            fileName: string;
+          } | null = null;
+          const { readFileSync } = await import('fs');
+          for (const frame of symbolicatedStack) {
+            if (frame.file && frame.lineNumber != null && !frame.file.includes('.bundle')) {
+              try {
+                const sourceCode = readFileSync(frame.file, 'utf-8');
+                const lines = sourceCode.split('\n');
+                const targetLine = (frame.lineNumber ?? 1) - 1;
+                if (targetLine >= 0 && targetLine < lines.length) {
+                  const column = frame.column ?? 0;
+                  // Simple code frame (Metro uses @babel/code-frame for better formatting)
+                  const startLine = Math.max(0, targetLine - 2);
+                  const endLine = Math.min(lines.length - 1, targetLine + 2);
+                  const context = lines.slice(startLine, endLine + 1);
+                  const pointer = ' '.repeat(Math.max(0, column)) + '^';
+                  codeFrame = {
+                    content: context.join('\n') + '\n' + pointer,
+                    location: {
+                      row: frame.lineNumber ?? 1,
+                      column: frame.column ?? 0,
+                    },
+                    fileName: frame.file,
+                  };
+                  break;
+                }
+              } catch {
+                // Failed to read file, continue to next frame
+              }
+            }
+          }
+
+          return new Response(
+            JSON.stringify({
+              stack: symbolicatedStack,
+              codeFrame,
+            }),
+            {
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        } catch (error) {
+          console.error('Symbolication failed:', error);
+          return new Response(
+            JSON.stringify({
+              error: error instanceof Error ? error.message : String(error),
+            }),
+            {
+              status: 500,
+              headers: { 'Content-Type': 'application/json' },
+            },
+          );
+        }
+      }
+
       if (url.pathname.endsWith('.map')) {
         // Get platform from URL query parameter for sourcemap
         const mapPlatform = url.searchParams.get('platform') || platform;
