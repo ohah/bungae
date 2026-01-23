@@ -106,10 +106,10 @@ export function getAppendScripts(
       } else if (options.dev) {
         // In dev mode, warn if runBeforeMainModule module is not found
         console.warn(
-          `[bungae] Warning: Module "${modulePath}" specified in runBeforeMainModule was not found in the dependency graph.`,
+          `Warning: Module "${modulePath}" specified in runBeforeMainModule was not found in the dependency graph.`,
         );
         if (modulePath.includes('InitializeCore')) {
-          console.error(`[bungae] CRITICAL: InitializeCore not found! Touch events will not work.`);
+          console.error(`CRITICAL: InitializeCore not found! Touch events will not work.`);
         }
       }
     }
