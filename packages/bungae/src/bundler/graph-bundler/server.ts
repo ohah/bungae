@@ -12,6 +12,7 @@ import { VERSION } from '../../index';
 import { createFileWatcher, type FileWatcher } from '../file-watcher';
 import { buildWithGraph } from './build';
 import { createHMRUpdateMessage, incrementalBuild } from './hmr';
+import { setupTerminalActions } from './terminal-actions';
 import type { BuildResult, HMRErrorMessage, PlatformBuildState } from './types';
 import { printBanner } from './utils';
 
@@ -34,6 +35,8 @@ export async function serveWithGraph(
   // Platform-aware cache: key is platform name
   const cachedBuilds = new Map<string, BuildResult>();
   const buildingPlatforms = new Map<string, Promise<BuildResult>>();
+  // Cache source map Consumers per platform for symbolication performance
+  const sourceMapConsumers = new Map<string, any>();
 
   // Track connected HMR clients and WebSocket connections
   const hmrClients = new Set<{ send: (msg: string) => void }>();
@@ -406,6 +409,9 @@ export async function serveWithGraph(
 
         try {
           // Parse request body
+          // Metro-compatible: Metro wraps all failures (including malformed JSON) into 500 response
+          // This differs from /open-url which returns 400 for invalid input, but Metro's /symbolicate
+          // returns 500 for all errors including JSON parse errors
           const body = (await req.json()) as {
             stack?: Array<{
               file?: string;
@@ -456,11 +462,17 @@ export async function serveWithGraph(
             );
           }
 
-          // Load source map and symbolicate
-          const metroSourceMap = await import('metro-source-map');
-          const { Consumer } = metroSourceMap;
-          const sourceMap = JSON.parse(cachedBuild.map);
-          const consumer = new Consumer(sourceMap);
+          // Reuse cached Consumer if available, otherwise create new one
+          // This improves performance for frequent symbolication requests from LogBox
+          // Consumer is invalidated when cachedBuilds is invalidated, so it's always in sync
+          let consumer = sourceMapConsumers.get(mapPlatform);
+          if (!consumer) {
+            const metroSourceMap = await import('metro-source-map');
+            const { Consumer } = metroSourceMap;
+            const sourceMap = JSON.parse(cachedBuild.map);
+            consumer = new Consumer(sourceMap);
+            sourceMapConsumers.set(mapPlatform, consumer);
+          }
 
           // Symbolicate each frame
           const symbolicatedStack = stack.map((frame) => {
@@ -890,6 +902,37 @@ export async function serveWithGraph(
   console.log(`\n✅ Dev server running at http://${hostname}:${port}`);
   console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
 
+  // Setup terminal keyboard shortcuts (Metro-compatible)
+  const useGlobalHotkey = server?.useGlobalHotkey ?? true;
+  let terminalActionsCleanup: (() => void) | null = null;
+  if (useGlobalHotkey && config.dev) {
+    terminalActionsCleanup = setupTerminalActions({
+      enabled: true,
+      hmrClients,
+      onClearCache: () => {
+        // Clear all cached builds
+        for (const platformKey of cachedBuilds.keys()) {
+          cachedBuilds.delete(platformKey);
+        }
+        // Clear source map Consumer cache
+        sourceMapConsumers.clear();
+        // Clear build states
+        platformBuildStates.clear();
+        // Clear building promises
+        buildingPlatforms.clear();
+      },
+      projectRoot: config.root,
+      port,
+    });
+    console.log('\n📱 Terminal shortcuts enabled:');
+    console.log('   r - Reload app');
+    console.log('   d - Open Dev Menu');
+    console.log('   i - Open iOS Simulator');
+    console.log('   a - Open Android Emulator');
+    console.log('   j - Open Chrome DevTools');
+    console.log('   c - Clear cache');
+  }
+
   // File watcher for auto-rebuild on file changes (dev mode only)
   let fileWatcher: FileWatcher | null = null;
   if (config.dev) {
@@ -900,6 +943,8 @@ export async function serveWithGraph(
       // This ensures next bundle request will use latest code
       for (const platformKey of cachedBuilds.keys()) {
         cachedBuilds.delete(platformKey);
+        // Also invalidate source map Consumer cache when build cache is invalidated
+        sourceMapConsumers.delete(platformKey);
         console.log(`Invalidated cache for ${platformKey}`);
       }
 
@@ -944,6 +989,8 @@ export async function serveWithGraph(
             );
             // Fallback: invalidate cache
             cachedBuilds.delete(platformKey);
+            // Also invalidate source map Consumer cache when build cache is invalidated
+            sourceMapConsumers.delete(platformKey);
             buildingPlatforms.delete(platformKey);
             continue;
           }
@@ -1076,6 +1123,8 @@ export async function serveWithGraph(
 
           // Invalidate cache to force full rebuild on next request (if needed)
           cachedBuilds.delete(platformKey);
+          // Also invalidate source map Consumer cache when build cache is invalidated
+          sourceMapConsumers.delete(platformKey);
         } catch (error) {
           console.error(`Error processing HMR update for ${platformKey}:`, error);
 
@@ -1100,6 +1149,8 @@ export async function serveWithGraph(
 
           // Fallback: invalidate cache
           cachedBuilds.delete(platformKey);
+          // Also invalidate source map Consumer cache when build cache is invalidated
+          sourceMapConsumers.delete(platformKey);
           buildingPlatforms.delete(platformKey);
         }
       }
@@ -1129,6 +1180,12 @@ export async function serveWithGraph(
     }
 
     try {
+      // Cleanup terminal actions
+      if (terminalActionsCleanup) {
+        terminalActionsCleanup();
+        terminalActionsCleanup = null;
+      }
+
       // Close file watcher (if it was created)
       if (fileWatcher) {
         fileWatcher.close();
@@ -1183,6 +1240,12 @@ export async function serveWithGraph(
   // Return server instance for testing purposes
   return {
     stop: async () => {
+      // Cleanup terminal actions
+      if (terminalActionsCleanup) {
+        terminalActionsCleanup();
+        terminalActionsCleanup = null;
+      }
+
       // Close file watcher first
       if (fileWatcher) {
         fileWatcher.close();

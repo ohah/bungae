@@ -186,6 +186,13 @@ export async function buildWithGraph(
     moduleIdToPath.set(moduleId, module.path);
   }
 
+  // Build a lookup map from module path to graph module to avoid repeated linear scans
+  // This optimizes O(n²) to O(n) when processing bundle.modules
+  const graphModuleByPath = new Map<string, (typeof graphModules)[number]>();
+  for (const m of graphModules) {
+    graphModuleByPath.set(m.path, m);
+  }
+
   // Generate source map (dev mode only) - Metro-compatible using metro-source-map
   let map: string | undefined;
   if (dev) {
@@ -219,7 +226,7 @@ export async function buildWithGraph(
         if (!modulePath) continue;
 
         // Find the module in graphModules to get its source map and AST
-        const graphModule = graphModules.find((m) => m.path === modulePath);
+        const graphModule = graphModuleByPath.get(modulePath);
         const relativeModulePath = relative(root, modulePath);
 
         // Read original source code
@@ -410,15 +417,15 @@ export async function buildWithGraph(
         sources: Array.from(graph.keys()).map((p) => relative(root, p)),
         names: [],
         mappings: '',
-        sourcesContent: Array.from(graph.keys())
-          .map((p) => {
-            try {
-              return readFileSync(p, 'utf-8');
-            } catch {
-              return null;
-            }
-          })
-          .filter((content): content is string => content !== null),
+        sourcesContent: Array.from(graph.keys()).map((p) => {
+          try {
+            return readFileSync(p, 'utf-8');
+          } catch {
+            // Keep placeholder (null) to preserve 1:1 alignment with `sources`
+            // Source map spec requires sourcesContent to have same length/order as sources
+            return null;
+          }
+        }),
       };
       map = JSON.stringify(fallbackMap);
     }
