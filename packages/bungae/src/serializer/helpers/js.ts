@@ -69,7 +69,7 @@ async function transformScriptCode(
     return result?.code || code;
   } catch (error) {
     // If transformation fails, return code as-is
-    console.warn(`[bungae] Failed to transform script ${filePath}:`, error);
+    console.warn(`Failed to transform script ${filePath}:`, error);
     return code;
   }
 }
@@ -178,7 +178,7 @@ export async function getModuleParams(
       // This is a warning, not an error, as the module might be resolved differently
       // (e.g., platform-specific files)
       console.warn(
-        `[bungae] Warning: Dependency "${dep}" of module "${module.path}" ` +
+        `Warning: Dependency "${dep}" of module "${module.path}" ` +
           `is not in the bundle. This may cause "unknown module" errors. ` +
           `Module ID assigned: ${depId}`,
       );
