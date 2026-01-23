@@ -55,6 +55,13 @@ export interface SerializerConfig {
   getPolyfills?: (options: { platform: string | null }) => string[];
   /** Inline source map in bundle (base64 encoded) */
   inlineSourceMap?: boolean;
+  /** Should add module to ignore list (for x_google_ignoreList) */
+  shouldAddToIgnoreList?: (module: {
+    path: string;
+    code: string;
+    dependencies: string[];
+    type?: string;
+  }) => boolean;
 }
 
 /**
@@ -109,6 +116,7 @@ export interface ResolvedConfig extends Required<
 > {
   resolver: Required<ResolverConfig>;
   transformer: Required<TransformerConfig>;
-  serializer: Required<SerializerConfig>;
+  serializer: Required<Omit<SerializerConfig, 'shouldAddToIgnoreList'>> &
+    Pick<SerializerConfig, 'shouldAddToIgnoreList'>;
   server: Required<ServerConfig>;
 }

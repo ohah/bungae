@@ -36,7 +36,9 @@ export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
  * React Native's @react-native/metro-config getDefaultConfig includes InitializeCore
  * This matches React Native's default behavior
  */
-export const DEFAULT_SERIALIZER: Required<SerializerConfig> = {
+export const DEFAULT_SERIALIZER: Required<Omit<SerializerConfig, 'shouldAddToIgnoreList'>> & {
+  shouldAddToIgnoreList?: SerializerConfig['shouldAddToIgnoreList'];
+} = {
   polyfills: [],
   prelude: [],
   bundleType: 'plain',

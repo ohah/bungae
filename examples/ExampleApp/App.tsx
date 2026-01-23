@@ -192,6 +192,62 @@ function AppContent() {
     ]);
   };
 
+  // 소스맵 테스트용 에러 발생 핸들러
+  const handleSourceMapTest = () => {
+    console.log('🔍 Source Map Test: About to throw an error...');
+    console.log('📝 Check the stack trace - it should show App.tsx:XXX (original source)');
+    console.log(
+      '📝 If source map is working, you should see the correct file path and line number',
+    );
+
+    // 의도적으로 에러를 발생시켜서 소스맵이 제대로 작동하는지 확인
+    // 이 에러는 App.tsx의 특정 라인에서 발생하므로 소스맵이 작동하면
+    // 원본 파일 경로와 라인 번호가 스택 트레이스에 표시됩니다
+    try {
+      // 중첩된 함수에서 에러 발생 (소스맵 테스트용)
+      const throwError = () => {
+        const causeError = () => {
+          // 이 라인에서 에러 발생 - 소스맵이 작동하면 App.tsx의 라인 번호가 표시됨
+          throw new Error(
+            '🧪 Source Map Test Error: This error is intentional for testing source maps!\n' +
+              'If source maps are working correctly, you should see:\n' +
+              '- Original file path: App.tsx\n' +
+              '- Correct line number in the stack trace\n' +
+              '- Readable source code in debugger',
+          );
+        };
+        causeError();
+      };
+      throwError();
+    } catch (error) {
+      console.error('❌ Error caught (this is expected for source map testing):', error);
+      console.error('Stack trace:', error instanceof Error ? error.stack : String(error));
+
+      // Alert로도 에러 정보 표시
+      Alert.alert(
+        'Source Map Test Error',
+        `Error thrown for source map testing.\n\n` +
+          `Check the console for stack trace.\n` +
+          `If source maps work, you should see:\n` +
+          `- App.tsx with correct line number\n` +
+          `- Original source code in debugger`,
+        [
+          {
+            text: 'View Stack Trace',
+            onPress: () => {
+              console.log('\n=== Full Stack Trace ===');
+              if (error instanceof Error) {
+                console.log(error.stack);
+              }
+              console.log('=== End Stack Trace ===\n');
+            },
+          },
+          { text: 'OK' },
+        ],
+      );
+    }
+  };
+
   return (
     <View style={styles.container}>
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
@@ -218,6 +274,15 @@ function AppContent() {
       {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
       <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
         <Text style={styles.testButtonText}>🧪 Test Button (Event Handler Test)</Text>
+      </TouchableOpacity>
+
+      {/* 소스맵 테스트 버튼 - 에러 발생으로 소스맵 검증 */}
+      <TouchableOpacity
+        onPress={handleSourceMapTest}
+        style={styles.sourceMapTestButton}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.sourceMapTestButtonText}>🗺️ Source Map Test (Error Test)</Text>
       </TouchableOpacity>
     </View>
   );
@@ -250,7 +315,7 @@ const styles = StyleSheet.create({
   },
   testButton: {
     position: 'absolute',
-    bottom: 100,
+    bottom: 160,
     left: 20,
     right: 20,
     backgroundColor: '#007AFF',
@@ -268,6 +333,30 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   testButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sourceMapTestButton: {
+    position: 'absolute',
+    bottom: 100,
+    left: 20,
+    right: 20,
+    backgroundColor: '#FF3B30',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  sourceMapTestButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',

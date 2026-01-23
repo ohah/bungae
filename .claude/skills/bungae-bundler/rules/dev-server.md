@@ -186,6 +186,111 @@ watcher: {
 
 ---
 
+---
+
+## 터미널 단축키 (Terminal Keyboard Shortcuts)
+
+Metro 호환 터미널 단축키 기능. 개발 서버 실행 중 터미널에서 특정 키를 누르면 액션을 수행합니다.
+
+### 지원할 단축키
+
+| 단축키 | 기능             | 설명                    |
+| ------ | ---------------- | ----------------------- |
+| `r`    | Reload           | 앱 리로드 (전체 재시작) |
+| `d`    | Dev Menu         | 개발 메뉴 열기          |
+| `i`    | iOS Simulator    | iOS 시뮬레이터 열기     |
+| `a`    | Android Emulator | Android 에뮬레이터 열기 |
+| `j`    | Chrome DevTools  | Chrome DevTools 열기    |
+| `c`    | Clear Cache      | 캐시 클리어             |
+
+### 구현 방법
+
+```typescript
+import { stdin } from 'process';
+import readline from 'readline';
+
+// 터미널 입력 모드 설정 (raw mode)
+if (config.server?.useGlobalHotkey !== false) {
+  // stdin을 raw mode로 설정하여 키 입력을 즉시 받을 수 있도록 함
+  if (stdin.isTTY) {
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+
+    stdin.on('data', (key: string) => {
+      // Ctrl+C는 종료
+      if (key === '\u0003') {
+        shutdown('SIGINT');
+        return;
+      }
+
+      switch (key.toLowerCase()) {
+        case 'r':
+          // Reload: 모든 클라이언트에 reload 메시지 전송
+          console.log('Reloading...');
+          for (const client of hmrClients) {
+            client.send(JSON.stringify({ type: 'reload' }));
+          }
+          break;
+
+        case 'd':
+          // Dev Menu: 개발 메뉴 열기 요청
+          console.log('Opening Dev Menu...');
+          for (const client of hmrClients) {
+            client.send(JSON.stringify({ type: 'dev-menu' }));
+          }
+          break;
+
+        case 'i':
+          // iOS Simulator 열기
+          console.log('Opening iOS Simulator...');
+          // Bun.spawn으로 'open -a Simulator' 실행 (macOS)
+          break;
+
+        case 'a':
+          // Android Emulator 열기
+          console.log('Opening Android Emulator...');
+          // Bun.spawn으로 'emulator' 실행
+          break;
+
+        case 'j':
+          // Chrome DevTools 열기
+          console.log('Opening Chrome DevTools...');
+          // Bun.spawn으로 Chrome 실행
+          break;
+
+        case 'c':
+          // Cache clear
+          console.log('Clearing cache...');
+          cachedBuilds.clear();
+          platformBuildStates.clear();
+          console.log('Cache cleared');
+          break;
+      }
+    });
+  }
+}
+```
+
+### 설정
+
+```typescript
+// bungae.config.ts
+export default {
+  server: {
+    useGlobalHotkey: true, // 기본값: true
+  },
+};
+```
+
+### 주의사항
+
+- `useGlobalHotkey: false`로 설정하면 단축키 기능이 비활성화됩니다
+- 터미널이 TTY가 아닌 경우 (파이프, 리다이렉션 등) 단축키가 작동하지 않습니다
+- Windows에서는 `stdin.setRawMode()`가 제대로 작동하지 않을 수 있으므로 플랫폼별 처리 필요
+
+---
+
 ## 참고 코드
 
 - Metro Server: `reference/metro/packages/metro/src/Server.js`

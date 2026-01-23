@@ -186,109 +186,224 @@ export async function buildWithGraph(
     moduleIdToPath.set(moduleId, module.path);
   }
 
-  // Generate source map (dev mode only)
+  // Generate source map (dev mode only) - Metro-compatible using metro-source-map
   let map: string | undefined;
   if (dev) {
     try {
-      // Use source-map library (from metro-source-map dependencies) to merge source maps
-      const { SourceMapGenerator } = await import('source-map');
+      // Use metro-source-map API (Metro-compatible)
+      const metroSourceMap = await import('metro-source-map');
+      const { toBabelSegments, toSegmentTuple, fromRawMappings, generateFunctionMap } =
+        metroSourceMap;
 
-      // Create a source map generator
-      const generator = new SourceMapGenerator({
-        file: basename(entryPath),
-      });
-
-      // Track line offsets for each bundle part
-      let lineOffset = 0;
-
-      // Add prelude source map (if any)
-      // Prelude modules typically don't have source maps, but we track the line offset
+      // Calculate prelude line offset
       const preLines = bundle.pre.split('\n').length;
-      lineOffset += preLines;
 
-      // Collect all source files and their content
-      const sourceFiles = new Map<string, string>();
-      for (const modulePath of graph.keys()) {
-        try {
-          const sourceContent = readFileSync(modulePath, 'utf-8');
-          const relativePath = relative(root, modulePath);
-          sourceFiles.set(relativePath, sourceContent);
-          generator.setSourceContent(relativePath, sourceContent);
-        } catch {
-          // Skip files that can't be read
-        }
-      }
+      // Prepare modules for fromRawMappings (Metro-compatible format)
+      const metroModules: Array<{
+        map: Array<
+          | [number, number]
+          | [number, number, number, number]
+          | [number, number, number, number, string]
+        > | null;
+        functionMap: any;
+        path: string;
+        source: string;
+        code: string;
+        isIgnored: boolean;
+        lineCount?: number;
+      }> = [];
 
-      // Add source maps for each module in the bundle
+      // Process each module in the bundle
       for (const [moduleId, moduleCode] of bundle.modules) {
         const modulePath = moduleIdToPath.get(moduleId);
         if (!modulePath) continue;
 
-        // Find the module in graphModules to get its source map
+        // Find the module in graphModules to get its source map and AST
         const graphModule = graphModules.find((m) => m.path === modulePath);
         const relativeModulePath = relative(root, modulePath);
 
+        // Read original source code
+        let sourceCode: string;
+        try {
+          sourceCode = readFileSync(modulePath, 'utf-8');
+        } catch {
+          sourceCode = graphModule?.code || '';
+        }
+
+        // Convert Babel source map to raw mappings (Metro format)
+        let rawMappings: Array<
+          | [number, number]
+          | [number, number, number, number]
+          | [number, number, number, number, string]
+        > | null = null;
+        let functionMap: any = null;
+
         if (graphModule?.map) {
           try {
-            const moduleSourceMap = JSON.parse(graphModule.map);
+            const babelSourceMap = JSON.parse(graphModule.map);
+            // Convert Babel source map to raw mappings using toBabelSegments and toSegmentTuple
+            // Babel source map's sources array may contain absolute or relative paths
+            // Metro's fromRawMappings uses module.path for the sources array, so we need to ensure
+            // the path matches what Babel expects. However, toBabelSegments/toSegmentTuple
+            // only extract mappings, not source paths - Metro uses module.path for that.
+            const babelSegments = toBabelSegments(babelSourceMap);
+            rawMappings = babelSegments.map(toSegmentTuple);
 
-            // If the module has a source map, we need to merge it with the bundle source map
-            // This is complex because we need to adjust line offsets
-            // For now, we'll create a basic mapping: each line in the bundle maps to the corresponding line in the source
-            if (moduleSourceMap.sources && moduleSourceMap.mappings) {
-              // Parse the module's source map and add mappings with line offset adjustment
-              // This is a simplified version - full implementation would parse VLQ mappings
-              const moduleLines = moduleCode.split('\n').length;
-
-              // For each line in the module code, add a mapping
-              // In a full implementation, we would parse the module's source map mappings
-              // and adjust them by the line offset
-              for (let i = 0; i < moduleLines; i++) {
-                generator.addMapping({
-                  generated: { line: lineOffset + i + 1, column: 0 },
-                  original: { line: i + 1, column: 0 },
-                  source: relativeModulePath,
-                });
+            // Debug: Log source map conversion details
+            if (config.dev) {
+              const babelSources = babelSourceMap.sources || [];
+              const babelMappingsCount = babelSourceMap.mappings
+                ? babelSourceMap.mappings.split(';').length
+                : 0;
+              if (rawMappings.length === 0) {
+                console.warn(
+                  `⚠️ Empty source map mappings for ${relativeModulePath}. Babel had ${babelSources.length} sources, ${babelMappingsCount} mapping lines.`,
+                );
+              } else if (rawMappings.length < babelMappingsCount / 2) {
+                // If we have significantly fewer mappings than Babel had, something might be wrong
+                console.warn(
+                  `⚠️ Fewer mappings than expected for ${relativeModulePath}: ${rawMappings.length} vs ${babelMappingsCount} Babel mapping lines.`,
+                );
               }
             }
-          } catch {
-            // If parsing fails, create basic line-by-line mappings
+          } catch (error) {
+            // If conversion fails, create basic line-by-line mappings
+            // Metro includes modules even without source maps
             const moduleLines = moduleCode.split('\n').length;
+            rawMappings = [];
             for (let i = 0; i < moduleLines; i++) {
-              generator.addMapping({
-                generated: { line: lineOffset + i + 1, column: 0 },
-                original: { line: i + 1, column: 0 },
-                source: relativeModulePath,
-              });
+              // [generatedLine, generatedColumn, sourceLine, sourceColumn]
+              rawMappings.push([i + 1, 0, i + 1, 0]);
+            }
+            if (config.dev) {
+              console.warn(
+                `Failed to convert source map for ${modulePath}, using basic mappings:`,
+                error,
+              );
             }
           }
         } else {
-          // No source map for this module - create basic line-by-line mappings
+          // No source map - create basic line-by-line mappings (Metro-compatible)
+          // Metro includes all modules in source map even without mappings
           const moduleLines = moduleCode.split('\n').length;
+          rawMappings = [];
           for (let i = 0; i < moduleLines; i++) {
-            generator.addMapping({
-              generated: { line: lineOffset + i + 1, column: 0 },
-              original: { line: i + 1, column: 0 },
-              source: relativeModulePath,
-            });
+            // [generatedLine, generatedColumn, sourceLine, sourceColumn]
+            rawMappings.push([i + 1, 0, i + 1, 0]);
           }
         }
 
-        // Track line offset for this module
-        const moduleLines = moduleCode.split('\n').length;
-        lineOffset += moduleLines;
+        // Generate function map from AST (Metro-compatible)
+        // Find the GraphModule to get transformedAst
+        const graphModuleForAst = graph.get(modulePath);
+        if (graphModuleForAst?.transformedAst) {
+          try {
+            // Ensure AST is in File node format (Metro-compatible)
+            // Babel 7+ returns File node, but we need to ensure it has the correct structure
+            let astForFunctionMap = graphModuleForAst.transformedAst;
+
+            // If AST is not a File node, wrap it in a File node
+            if (!astForFunctionMap || astForFunctionMap.type !== 'File') {
+              // If it's a Program node, wrap it
+              if (astForFunctionMap?.type === 'Program') {
+                astForFunctionMap = {
+                  type: 'File',
+                  program: astForFunctionMap,
+                  comments: astForFunctionMap.comments || [],
+                  tokens: astForFunctionMap.tokens || [],
+                };
+              } else {
+                // Invalid AST structure, skip function map generation
+                astForFunctionMap = null;
+              }
+            }
+
+            // Ensure File node has program property
+            if (
+              astForFunctionMap &&
+              (!astForFunctionMap.program || astForFunctionMap.program.type !== 'Program')
+            ) {
+              astForFunctionMap = null;
+            }
+
+            if (astForFunctionMap) {
+              // Metro-compatible: generateFunctionMap may throw or produce warnings
+              // Metro handles errors silently (function maps are optional)
+              // Warnings from @babel/traverse are informational and don't prevent function map generation
+              try {
+                functionMap = generateFunctionMap(astForFunctionMap, {
+                  filename: modulePath,
+                });
+              } catch {
+                // Function map generation failed - continue without it (Metro-compatible)
+                // Metro silently ignores function map generation errors
+                functionMap = null;
+              }
+            }
+          } catch {
+            // Function map generation is optional, continue without it
+            // Errors are silently ignored as function maps are not critical for bundling
+          }
+        }
+
+        // Check if module should be added to ignore list
+        const isIgnored = config.serializer?.shouldAddToIgnoreList
+          ? config.serializer.shouldAddToIgnoreList({
+              path: modulePath,
+              code: moduleCode,
+              dependencies: graphModule?.dependencies || [],
+              type: 'js/module' as const,
+            })
+          : false;
+
+        metroModules.push({
+          map: rawMappings,
+          functionMap,
+          path: relativeModulePath,
+          source: sourceCode,
+          code: moduleCode,
+          isIgnored,
+          lineCount: moduleCode.split('\n').length,
+        });
       }
 
-      // Add post code line offset
-      const postLines = bundle.post.split('\n').length;
-      lineOffset += postLines;
+      // Generate source map using Metro's fromRawMappings API
+      const generator = fromRawMappings(metroModules, preLines);
 
-      // Generate the final source map
-      const sourceMap = generator.toJSON();
+      // Convert Generator to source map JSON
+      const sourceMap = generator.toMap(basename(entryPath), {
+        excludeSource: false,
+      });
+
+      // Debug: Log source map info in dev mode
+      if (config.dev) {
+        const sourceCount = sourceMap.sources?.length || 0;
+        const mappingsLength = sourceMap.mappings?.length || 0;
+        const hasSourcesContent =
+          Array.isArray(sourceMap.sourcesContent) && sourceMap.sourcesContent.length > 0;
+        const mappingsLineCount = sourceMap.mappings ? sourceMap.mappings.split(';').length : 0;
+        console.log(
+          `✅ Generated source map: ${sourceCount} sources, ${mappingsLength} chars mappings (${mappingsLineCount} lines), sourcesContent: ${hasSourcesContent}`,
+        );
+        if (sourceCount > 0 && sourceCount <= 10) {
+          console.log(`  Sources: ${sourceMap.sources.slice(0, 10).join(', ')}`);
+        } else if (sourceCount > 10) {
+          console.log(
+            `  Sources (first 10): ${sourceMap.sources.slice(0, 10).join(', ')}... (${sourceCount} total)`,
+          );
+        }
+        // Check if mappings are empty (indicates problem)
+        if (mappingsLength === 0 || mappingsLineCount === 0) {
+          console.warn(
+            `⚠️ WARNING: Source map has empty mappings! This will prevent symbolication.`,
+          );
+        }
+      }
+
       map = JSON.stringify(sourceMap);
     } catch (error) {
-      // Fallback to basic source map if source-map is not available or fails
-      console.warn('Failed to generate source map, using fallback:', error);
+      // Fallback to basic source map if metro-source-map fails
+      console.warn('Failed to generate source map with metro-source-map, using fallback:', error);
       const fallbackMap = {
         version: 3,
         file: basename(entryPath),
@@ -310,6 +425,8 @@ export async function buildWithGraph(
   }
 
   // Handle inlineSourceMap option
+  // Note: For non-inline source maps, server.ts will add the sourceMappingURL with full URL
+  // We only add sourceMappingURL here for inline source maps
   const inlineSourceMap = config.serializer?.inlineSourceMap ?? false;
   let finalCode = code;
   let finalMap = map;
@@ -321,6 +438,7 @@ export async function buildWithGraph(
     finalCode = code + inlineSourceMapComment;
     finalMap = undefined; // Don't return separate map file when inline
   }
+  // For non-inline source maps, server.ts will add sourceMappingURL with full URL
 
   // Extract asset files from bundle modules (only assets actually included in bundle)
   // Metro only copies assets that are actually required/imported in the bundle

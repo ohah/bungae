@@ -8,7 +8,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, relative } from 'path';
 import { fileURLToPath } from 'url';
 
 import { resolveConfig, getDefaultConfig } from '../../config';
@@ -475,6 +475,17 @@ console.log(config.name);
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.version).toBe(3);
       expect(sourceMap.sources).toBeDefined();
+      expect(Array.isArray(sourceMap.sources)).toBe(true);
+      expect(sourceMap.sources.length).toBeGreaterThan(0);
+      // Source map should include sourcesContent
+      expect(sourceMap.sourcesContent).toBeDefined();
+      expect(Array.isArray(sourceMap.sourcesContent)).toBe(true);
+      // Mappings should be defined (can be empty string for basic implementation)
+      expect(sourceMap.mappings).toBeDefined();
+      expect(typeof sourceMap.mappings).toBe('string');
+      // Names should be defined
+      expect(sourceMap.names).toBeDefined();
+      expect(Array.isArray(sourceMap.names)).toBe(true);
     });
 
     test('should NOT generate source map in production mode', async () => {
@@ -494,6 +505,181 @@ console.log(config.name);
       const result = await buildWithGraph(config);
 
       expect(result.map).toBeUndefined();
+    });
+
+    test('should include source map URL comment in bundle code', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('sourcemap url test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      // Bundle code should contain sourceMappingURL comment
+      expect(result.code).toContain('//# sourceMappingURL');
+    });
+
+    test('should generate source map with multiple modules', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const fooFile = join(testDir, 'foo.js');
+      const barFile = join(testDir, 'bar.js');
+
+      writeFileSync(entryFile, "require('./foo');", 'utf-8');
+      writeFileSync(fooFile, "require('./bar');\nconsole.log('foo');", 'utf-8');
+      writeFileSync(barFile, "console.log('bar');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.version).toBe(3);
+      // Should include all source files
+      expect(sourceMap.sources.length).toBeGreaterThanOrEqual(3);
+      // Should include sourcesContent for all sources
+      expect(sourceMap.sourcesContent.length).toBe(sourceMap.sources.length);
+      // Each source should have corresponding content
+      for (let i = 0; i < sourceMap.sources.length; i++) {
+        expect(typeof sourceMap.sourcesContent[i]).toBe('string');
+      }
+    });
+
+    test('should support inlineSourceMap option', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('inline sourcemap test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            inlineSourceMap: true,
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // When inlineSourceMap is true, map should be undefined (included in code)
+      expect(result.map).toBeUndefined();
+      // Bundle code should contain inline source map (base64 encoded)
+      expect(result.code).toContain(
+        '//# sourceMappingURL=data:application/json;charset=utf-8;base64,',
+      );
+
+      // Extract and verify inline source map
+      const base64Index = result.code.indexOf('base64,');
+      if (base64Index !== -1) {
+        const base64Data = result.code.slice(base64Index + 7).split('\n')[0];
+        if (base64Data) {
+          const sourceMapJson = JSON.parse(Buffer.from(base64Data, 'base64').toString());
+          expect(sourceMapJson.version).toBe(3);
+          expect(sourceMapJson.sources).toBeDefined();
+          expect(Array.isArray(sourceMapJson.sources)).toBe(true);
+        }
+      }
+    });
+
+    test('should generate source map with correct file paths', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('path test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.sources).toBeDefined();
+
+      // Sources should be relative paths from project root
+      const entryRelativePath = relative(testDir, entryFile);
+      expect(sourceMap.sources).toContain(entryRelativePath);
+    });
+
+    test('should generate x_google_ignoreList when shouldAddToIgnoreList returns true', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('ignore list test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            shouldAddToIgnoreList: () => true, // All modules should be ignored
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.x_google_ignoreList).toBeDefined();
+      expect(Array.isArray(sourceMap.x_google_ignoreList)).toBe(true);
+      // All modules should be in ignore list (index.js is the only module)
+      expect(sourceMap.x_google_ignoreList.length).toBeGreaterThan(0);
+      // Check that all source indices are in ignore list
+      expect(sourceMap.x_google_ignoreList).toEqual(
+        expect.arrayContaining([0]), // First module (index.js) should be at index 0
+      );
+    });
+
+    test('should NOT generate x_google_ignoreList when shouldAddToIgnoreList returns false', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('no ignore list test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            shouldAddToIgnoreList: () => false, // No modules should be ignored
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      // x_google_ignoreList should not be present when empty
+      expect(sourceMap.x_google_ignoreList).toBeUndefined();
     });
   });
 
