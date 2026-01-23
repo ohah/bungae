@@ -6,7 +6,7 @@
  * on the next bundle request.
  */
 
-import { watch } from 'fs';
+import { existsSync, watch } from 'fs';
 import type { FSWatcher } from 'fs';
 import { resolve } from 'path';
 
@@ -63,13 +63,18 @@ export function createFileWatcher(options: FileWatcherOptions): FileWatcher {
       // 3. Rename temp file to original name
       // We need to handle 'rename' to catch these atomic writes
       if (eventType === 'change' || eventType === 'rename') {
-        // For rename events, only process if file exists (not deletion)
         const fullPath = resolve(root, filename);
 
         // Check if it's a JS/TS/JSON file we care about
         const ext = filename.split('.').pop()?.toLowerCase();
         const isSourceFile = ['js', 'jsx', 'ts', 'tsx', 'json'].includes(ext || '');
         if (!isSourceFile) {
+          return;
+        }
+
+        // For rename events, only process if file exists (not deletion)
+        // This prevents false triggers during server startup or file deletions
+        if (!existsSync(fullPath)) {
           return;
         }
 
@@ -88,10 +93,10 @@ export function createFileWatcher(options: FileWatcherOptions): FileWatcher {
       }
     });
 
-    console.log(`[bungae] Watching for file changes in ${root}`);
+    // File watcher started (silent)
   } catch (error) {
-    console.warn('[bungae] Failed to start file watcher:', error);
-    console.warn('[bungae] File changes will not trigger automatic rebuilds');
+    console.warn('Failed to start file watcher:', error);
+    console.warn('File changes will not trigger automatic rebuilds');
   }
 
   return {
