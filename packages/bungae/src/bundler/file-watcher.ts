@@ -56,10 +56,23 @@ export function createFileWatcher(options: FileWatcherOptions): FileWatcher {
         return;
       }
 
-      // Only watch for change events (not rename which can be noisy)
-      if (eventType === 'change') {
-        // Resolve full path
+      // Handle both 'change' and 'rename' events
+      // Many editors (VSCode, etc.) use atomic writes which trigger 'rename' events:
+      // 1. Write to temp file
+      // 2. Delete original file
+      // 3. Rename temp file to original name
+      // We need to handle 'rename' to catch these atomic writes
+      if (eventType === 'change' || eventType === 'rename') {
+        // For rename events, only process if file exists (not deletion)
         const fullPath = resolve(root, filename);
+
+        // Check if it's a JS/TS/JSON file we care about
+        const ext = filename.split('.').pop()?.toLowerCase();
+        const isSourceFile = ['js', 'jsx', 'ts', 'tsx', 'json'].includes(ext || '');
+        if (!isSourceFile) {
+          return;
+        }
+
         changedFilesSet.add(fullPath);
 
         // Debounce: wait after last change before calling callback
