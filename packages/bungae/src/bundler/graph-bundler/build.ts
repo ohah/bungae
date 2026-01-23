@@ -425,8 +425,8 @@ export async function buildWithGraph(
   }
 
   // Handle inlineSourceMap option
-  // Note: For non-inline source maps, server.ts will add the sourceMappingURL with full URL
-  // We only add sourceMappingURL here for inline source maps
+  // For inline source maps: add base64-encoded source map inline
+  // For non-inline source maps: add relative path sourceMappingURL (server.ts will add full URL when serving)
   const inlineSourceMap = config.serializer?.inlineSourceMap ?? false;
   let finalCode = code;
   let finalMap = map;
@@ -437,8 +437,15 @@ export async function buildWithGraph(
     const inlineSourceMapComment = `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${base64Map}`;
     finalCode = code + inlineSourceMapComment;
     finalMap = undefined; // Don't return separate map file when inline
+  } else if (map) {
+    // For non-inline source maps, add relative path sourceMappingURL
+    // server.ts will replace this with full URL when serving via HTTP
+    // For file-based builds (build command), relative path is sufficient
+    const entryBaseName = basename(entryPath).replace(/\.(js|ts|jsx|tsx)$/, '') || 'index';
+    const mapFileName = `${entryBaseName}.bundle.map`;
+    const sourceMappingURLComment = `\n//# sourceMappingURL=${mapFileName}`;
+    finalCode = code + sourceMappingURLComment;
   }
-  // For non-inline source maps, server.ts will add sourceMappingURL with full URL
 
   // Extract asset files from bundle modules (only assets actually included in bundle)
   // Metro only copies assets that are actually required/imported in the bundle
