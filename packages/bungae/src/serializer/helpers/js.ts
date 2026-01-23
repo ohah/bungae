@@ -96,20 +96,24 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
 
     // All script modules need to be wrapped in IIFE with global parameter
     // Metro wraps all polyfills: (function (global) { ... })(globalThis || global || window || this)
+    // This is critical for HMR to work - without IIFE, 'global' is undefined
     const globalThisFallback =
       "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
 
-    // Metro runtime polyfill is already wrapped in IIFE: (function (global) { ... })
-    // We just need to call it with the global object
-    if (module.path.includes('metro-runtime/src/polyfills/')) {
-      const trimmedCode = transformedCode.trim();
-      if (trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function')) {
-        const codeWithoutSemicolon = trimmedCode.replace(/;?\s*$/, '');
-        return `${codeWithoutSemicolon}(${globalThisFallback});`;
-      }
+    // Check if already wrapped in IIFE
+    const trimmedCode = transformedCode.trim();
+    const isAlreadyIIFE =
+      trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function');
+
+    if (isAlreadyIIFE) {
+      // Already IIFE, just call it with global object
+      const codeWithoutSemicolon = trimmedCode.replace(/;?\s*$/, '');
+      return `${codeWithoutSemicolon}(${globalThisFallback});`;
     }
 
-    // Wrap other polyfills (console.js, error-guard.js) in IIFE
+    // Wrap all polyfills (metro-runtime/require.js, console.js, error-guard.js) in IIFE
+    // Metro uses JsFileWrapping.wrapPolyfill() which wraps code in:
+    // (function(global) { ... })(globalThis || global || window || this)
     return `(function (global) {\n${transformedCode}\n})(${globalThisFallback});`;
   }
 

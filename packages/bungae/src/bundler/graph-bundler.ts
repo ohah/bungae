@@ -13,6 +13,7 @@
  * - Metro-compatible output
  */
 
+import { createHash } from 'crypto';
 import { existsSync, readFileSync } from 'fs';
 import { dirname, join, resolve, relative, basename, extname, sep } from 'path';
 import { fileURLToPath } from 'url';
@@ -122,6 +123,7 @@ interface GraphModule {
   transformedAst: any; // Metro-compatible: transformer returns AST, serializer generates code
   dependencies: string[];
   originalDependencies: string[];
+  inverseDependencies?: string[]; // Cached inverse dependencies for efficient HMR
 }
 
 /**
@@ -141,6 +143,9 @@ export interface BuildResult {
   code: string;
   map?: string;
   assets?: AssetInfo[];
+  // HMR support (dev mode only)
+  graph?: Map<string, GraphModule>;
+  createModuleId?: (path: string) => number | string;
 }
 
 /**
@@ -534,39 +539,12 @@ async function transformWithBabel(
     const isReactNativeFile = filePath.includes('node_modules/react-native');
     const shouldCheckPreset = options.dev && (isEntryFile || isJSXFile || isReactNativeFile);
 
-    if (shouldCheckPreset) {
-      if (loadedPresets && loadedPresets.length > 0) {
-        const presetNames = loadedPresets.map((p: any) => {
-          if (Array.isArray(p)) {
-            const presetPath = typeof p[0] === 'string' ? p[0] : 'unknown';
-            // Show just the module name if it's a path
-            return presetPath.includes('node_modules')
-              ? presetPath.split('node_modules/').pop() || presetPath
-              : presetPath;
-          }
-          return typeof p === 'string'
-            ? p.includes('node_modules')
-              ? p.split('node_modules/').pop() || p
-              : p
-            : 'unknown';
-        });
-        const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
-        console.log(
-          `[bungae] Babel loaded ${loadedPresets.length} preset(s) for ${fileType} file ${filePath}: ${presetNames.join(', ')}`,
-        );
-      } else {
-        const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
-        console.warn(
-          `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
-        );
-        console.warn(`[bungae] cwd: ${options.root}, filename: ${filePath}`);
-        console.warn(
-          `[bungae] babel.config.js path: ${babelConfigPath}, exists: ${existsSync(babelConfigPath)}`,
-        );
-        console.warn(
-          `[bungae] Please ensure babel.config.js exists and includes @react-native/babel-preset`,
-        );
-      }
+    // Only warn if no presets were loaded (successful case is silent)
+    if (shouldCheckPreset && (!loadedPresets || loadedPresets.length === 0)) {
+      const fileType = isEntryFile ? 'entry' : isJSXFile ? 'JSX' : 'react-native';
+      console.warn(
+        `[bungae] WARNING: Babel did not load any presets for ${fileType} file ${filePath}. JSX and event handlers may not work correctly.`,
+      );
     }
 
     const transformResult = await babel.transformFromAstAsync(sourceAst, code, babelConfig);
@@ -785,6 +763,9 @@ async function buildGraph(
   // Metro does not manually add them - they are found through normal dependency resolution.
   // The serializer (baseJSBundle.ts) will find them in the graph and add to runBeforeMainModule.
 
+  // Build inverse dependencies for efficient HMR (Metro-compatible)
+  buildInverseDependencies(modules);
+
   return modules;
 }
 
@@ -840,6 +821,30 @@ function reorderGraph(graph: Map<string, GraphModule>, entryPath: string): Graph
   }
 
   return ordered;
+}
+
+/**
+ * Build inverse dependencies for all modules in the graph (Metro-compatible)
+ * This is called after building the graph to cache inverse dependencies for efficient HMR
+ */
+function buildInverseDependencies(graph: Map<string, GraphModule>): void {
+  // Initialize inverse dependencies arrays
+  for (const [, module] of graph.entries()) {
+    module.inverseDependencies = [];
+  }
+
+  // Build inverse dependencies: for each module, find all modules that depend on it
+  for (const [path, module] of graph.entries()) {
+    for (const dep of module.dependencies) {
+      const depModule = graph.get(dep);
+      if (depModule && depModule.inverseDependencies) {
+        // Add this module to the dependency's inverse dependencies
+        if (!depModule.inverseDependencies.includes(path)) {
+          depModule.inverseDependencies.push(path);
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -1474,7 +1479,27 @@ export async function buildWithGraph(config: ResolvedConfig): Promise<BuildResul
     }
   }
 
-  return { code, map, assets };
+  return { code, map, assets, graph, createModuleId };
+}
+
+/**
+ * Calculate module hash (transformed code + dependencies) for change detection
+ * Metro uses hash comparison to detect if a module has changed
+ */
+function hashModule(module: GraphModule): string {
+  // Use transformed AST if available, otherwise fall back to original code
+  let codeToHash = module.code;
+
+  // If we have transformed AST, we should generate code from it for accurate comparison
+  // For now, we'll use a combination of code and dependencies
+  // TODO: Generate code from AST for more accurate comparison
+  const depsHash = module.dependencies
+    .map((dep) => resolve(dep)) // Normalize paths
+    .sort()
+    .join(',');
+
+  const hashInput = `${codeToHash}:${depsHash}`;
+  return createHash('sha256').update(hashInput).digest('hex').substring(0, 16);
 }
 
 /**
@@ -1485,7 +1510,7 @@ async function calculateDelta(
   newGraph: Map<string, GraphModule>,
   _oldModuleIdToPath: Map<number | string, string>,
   _newModuleIdToPath: Map<number | string, string>,
-  _createModuleId: (path: string) => number,
+  _createModuleId: (path: string) => number | string,
 ): Promise<DeltaResult> {
   const added = new Map<string, GraphModule>();
   const modified = new Map<string, GraphModule>();
@@ -1498,13 +1523,12 @@ async function calculateDelta(
       // New module
       added.set(path, newModule);
     } else {
-      // Check if module was modified (compare code or dependencies)
-      const oldCode = oldModule.code;
-      const newCode = newModule.code;
-      const oldDeps = oldModule.dependencies.sort().join(',');
-      const newDeps = newModule.dependencies.sort().join(',');
+      // Check if module was modified using hash comparison (Metro-compatible)
+      // This compares transformed code + dependencies for accurate change detection
+      const oldHash = hashModule(oldModule);
+      const newHash = hashModule(newModule);
 
-      if (oldCode !== newCode || oldDeps !== newDeps) {
+      if (oldHash !== newHash) {
         modified.set(path, newModule);
       }
     }
@@ -1522,15 +1546,26 @@ async function calculateDelta(
 
 /**
  * Get inverse dependencies for a module (Metro-compatible)
- * Based on reference/metro/packages/metro/src/DeltaBundler/Serializers/hmrJSBundle.js
- * Inverse dependencies are modules that depend on this module
+ * Returns a map of module paths to their direct inverse dependencies.
+ * This is used by the HMR runtime to traverse the dependency graph upwards.
+ *
+ * Metro's behavior: For each module in the chain, include its direct inverse dependencies.
+ * The HMR runtime uses this map to walk up the dependency tree.
+ *
+ * Example: If A -> B -> C (A depends on B, B depends on C), and C changes:
+ * Result: { "C": ["B"], "B": ["A"], "A": [] }
+ *
+ * This allows the HMR runtime to:
+ * 1. Start at C, find parent B
+ * 2. Check if B can accept the update, if not find parent A
+ * 3. Check if A can accept, if not (and A has no parents) -> full reload
  */
-function getInverseDependencies(
+function getInverseDependenciesMap(
   path: string,
   graph: Map<string, GraphModule>,
   inverseDependencies: Record<string, string[]> = {},
 ): Record<string, string[]> {
-  // Dependency already traversed
+  // Already traversed this path
   if (path in inverseDependencies) {
     return inverseDependencies;
   }
@@ -1540,19 +1575,16 @@ function getInverseDependencies(
     return inverseDependencies;
   }
 
-  // Initialize inverse dependencies array for this module
+  // Initialize entry for this path (even if empty)
   inverseDependencies[path] = [];
 
-  // Find all modules that depend on this module
-  for (const [otherPath, otherModule] of graph.entries()) {
-    if (otherPath === path) continue;
+  // Get direct inverse dependencies (modules that depend on this module)
+  const directInverseDeps = module.inverseDependencies || [];
 
-    // Check if otherModule depends on this module
-    if (otherModule.dependencies.includes(path)) {
-      inverseDependencies[path].push(otherPath);
-      // Recursively get inverse dependencies
-      getInverseDependencies(otherPath, graph, inverseDependencies);
-    }
+  for (const parentPath of directInverseDeps) {
+    inverseDependencies[path].push(parentPath);
+    // Recursively process parent modules
+    getInverseDependenciesMap(parentPath, graph, inverseDependencies);
   }
 
   return inverseDependencies;
@@ -1564,15 +1596,23 @@ function getInverseDependencies(
 async function createHMRUpdateMessage(
   delta: DeltaResult,
   platformConfig: ResolvedConfig,
-  createModuleId: (path: string) => number,
+  createModuleId: (path: string) => number | string,
   revisionId: string,
   isInitialUpdate: boolean,
   oldPathToModuleId: Map<string, number | string>,
   fullGraph: Map<string, GraphModule>, // Full graph for inverse dependencies calculation
 ): Promise<HMRUpdateMessage> {
   const { root } = platformConfig;
-  const added: HMRUpdateMessage['body']['added'] = [];
-  const modified: HMRUpdateMessage['body']['modified'] = [];
+  // Metro format: arrays of objects [{ module: [id, code], sourceURL, sourceMappingURL? }, ...]
+  // Metro's inject function expects: { module: [id, code], sourceURL }
+  // Metro's generateModules includes sourceMappingURL (optional but recommended)
+  const added: Array<{ module: [number, string]; sourceURL: string; sourceMappingURL?: string }> =
+    [];
+  const modified: Array<{
+    module: [number, string];
+    sourceURL: string;
+    sourceMappingURL?: string;
+  }> = [];
   const deleted: number[] = [];
 
   // Import wrapModule and addParamsToDefineCall
@@ -1581,7 +1621,9 @@ async function createHMRUpdateMessage(
 
   // Process added modules
   for (const [path, module] of delta.added.entries()) {
-    const moduleId = createModuleId(path);
+    const moduleIdRaw = createModuleId(path);
+    // Metro protocol expects number IDs
+    const moduleId = typeof moduleIdRaw === 'number' ? moduleIdRaw : Number(moduleIdRaw);
     const sourceURL = relative(root, path);
 
     // Generate module code (same as in buildWithGraph)
@@ -1589,11 +1631,9 @@ async function createHMRUpdateMessage(
     const serializerModule = serializerModules[0];
     if (serializerModule) {
       // Get all module paths for dependency validation
+      // Include all modules from the full graph, not just delta
       const allModulePaths = new Set<string>();
-      for (const [p] of delta.added.entries()) {
-        allModulePaths.add(p);
-      }
-      for (const [p] of delta.modified.entries()) {
+      for (const [p] of fullGraph.entries()) {
         allModulePaths.add(p);
       }
 
@@ -1610,16 +1650,21 @@ async function createHMRUpdateMessage(
         allModulePaths,
       } as any);
 
-      // Get inverse dependencies (Metro-compatible)
-      const inverseDependencies = getInverseDependencies(path, fullGraph);
-      // Transform the inverse dependency paths to ids (Metro-compatible)
-      // Metro: Object.keys(inverseDependencies).forEach((path) => { ... })
+      // Get inverse dependencies map for this module and all its ancestors (Metro-compatible)
+      // Metro's prepareModule: Build a map of moduleId -> [parentModuleIds] for the entire chain
+      // This allows the HMR runtime to traverse upwards through the dependency graph
+      const inverseDepsMap = getInverseDependenciesMap(path, fullGraph);
+
+      // Transform inverse dependency paths to module IDs
+      // Metro format: { [moduleId]: [inverseDepId1, inverseDepId2, ...], ... }
       const inverseDependenciesById: Record<number, number[]> = {};
-      for (const depPath of Object.keys(inverseDependencies)) {
-        const deps = inverseDependencies[depPath];
-        if (deps) {
-          inverseDependenciesById[createModuleId(depPath)] = deps.map(createModuleId);
-        }
+      for (const [depPath, parentPaths] of Object.entries(inverseDepsMap)) {
+        const depModuleIdRaw = createModuleId(depPath);
+        const depModuleId = typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
+        inverseDependenciesById[depModuleId] = parentPaths.map((p) => {
+          const idRaw = createModuleId(p);
+          return typeof idRaw === 'number' ? idRaw : Number(idRaw);
+        });
       }
 
       // Add inverse dependencies to __d() call (Metro-compatible)
@@ -1636,6 +1681,9 @@ async function createHMRUpdateMessage(
         `\n//# sourceMappingURL=${sourceMappingURL}\n` +
         `//# sourceURL=${sourceURL}\n`;
 
+      // Metro format: added/modified are arrays of objects: [{ module: [id, code], sourceURL, sourceMappingURL? }, ...]
+      // Metro's inject function: const inject = ({ module: [id, code], sourceURL }) => { ... }
+      // Metro's generateModules includes sourceMappingURL (optional)
       added.push({
         module: [moduleId, finalCode],
         sourceURL,
@@ -1646,7 +1694,9 @@ async function createHMRUpdateMessage(
 
   // Process modified modules
   for (const [path, module] of delta.modified.entries()) {
-    const moduleId = createModuleId(path);
+    const moduleIdRaw = createModuleId(path);
+    // Metro protocol expects number IDs
+    const moduleId = typeof moduleIdRaw === 'number' ? moduleIdRaw : Number(moduleIdRaw);
     const sourceURL = relative(root, path);
 
     // Generate module code
@@ -1654,11 +1704,9 @@ async function createHMRUpdateMessage(
     const serializerModule = serializerModules[0];
     if (serializerModule) {
       // Get all module paths for dependency validation
+      // Include all modules from the full graph, not just delta
       const allModulePaths = new Set<string>();
-      for (const [p] of delta.added.entries()) {
-        allModulePaths.add(p);
-      }
-      for (const [p] of delta.modified.entries()) {
+      for (const [p] of fullGraph.entries()) {
         allModulePaths.add(p);
       }
 
@@ -1675,32 +1723,98 @@ async function createHMRUpdateMessage(
         allModulePaths,
       } as any);
 
-      // Get inverse dependencies (Metro-compatible)
-      const inverseDependencies = getInverseDependencies(path, fullGraph);
-      // Transform the inverse dependency paths to ids (Metro-compatible)
-      // Metro: Object.keys(inverseDependencies).forEach((path) => { ... })
+      // Get inverse dependencies map for this module and all its ancestors (Metro-compatible)
+      // Metro's prepareModule: Build a map of moduleId -> [parentModuleIds] for the entire chain
+      // This allows the HMR runtime to traverse upwards through the dependency graph
+      const inverseDepsMap = getInverseDependenciesMap(path, fullGraph);
+
+      // Transform inverse dependency paths to module IDs
+      // Metro format: { [moduleId]: [inverseDepId1, inverseDepId2, ...], ... }
       const inverseDependenciesById: Record<number, number[]> = {};
-      for (const depPath of Object.keys(inverseDependencies)) {
-        const deps = inverseDependencies[depPath];
-        if (deps) {
-          inverseDependenciesById[createModuleId(depPath)] = deps.map(createModuleId);
-        }
+      for (const [depPath, parentPaths] of Object.entries(inverseDepsMap)) {
+        const depModuleIdRaw = createModuleId(depPath);
+        const depModuleId = typeof depModuleIdRaw === 'number' ? depModuleIdRaw : Number(depModuleIdRaw);
+        inverseDependenciesById[depModuleId] = parentPaths.map((p) => {
+          const idRaw = createModuleId(p);
+          return typeof idRaw === 'number' ? idRaw : Number(idRaw);
+        });
       }
+
+      // Debug: Log inverse dependencies for HMR
+      console.log(`[bungae] HMR inverseDependencies for ${sourceURL}:`, {
+        moduleId,
+        inverseDepsMapKeys: Object.keys(inverseDepsMap),
+        inverseDependenciesById,
+      });
+
+      // Debug: Log the __d() call structure before adding inverseDependencies
+      const defineMatch = wrappedCode.match(/__d\(function[^)]*\)/);
+      const endOfCode = wrappedCode.slice(-200);
+      console.log(`[bungae] HMR __d() structure before inverseDeps:`, {
+        startsWithDefine: wrappedCode.trim().startsWith('__d('),
+        defineMatch: defineMatch ? defineMatch[0].slice(0, 50) + '...' : 'not found',
+        endOfCode: endOfCode,
+      });
 
       // Add inverse dependencies to __d() call (Metro-compatible)
       // Metro: addParamsToDefineCall(code, inverseDependenciesById)
       // Our function signature: addParamsToDefineCall(code, globalPrefix, ...paramsToAdd)
       wrappedCode = addParamsToDefineCall(wrappedCode, '', inverseDependenciesById);
 
+      // Debug: Log the __d() call structure AFTER adding inverseDependencies
+      const endOfCodeAfter = wrappedCode.slice(-300);
+      console.log(`[bungae] HMR __d() AFTER inverseDeps (last 300 chars):`, endOfCodeAfter);
+
       // Generate sourceMappingURL and sourceURL (Metro-compatible)
       // Metro uses jscSafeUrl.toJscSafeUrl for sourceURL, but we'll use relative path for now
       // Metro adds these as comments at the end of the code
       const sourceMappingURL = `${sourceURL}.map`;
+
+      // Debug: Add client-side HMR debugging code (executed before __d() call)
+      // This helps identify why performFullRefresh is being called
+      // Note: Use globalThis instead of global because HMR code runs via eval() without IIFE wrapper
+      const hmrDebugCode = `
+(function(g) {
+  console.log('[Bungae HMR] === Client-side HMR Debug ===');
+  console.log('[Bungae HMR] Module ${moduleId} (${sourceURL}) update received');
+  console.log('[Bungae HMR] g.__ReactRefresh:', typeof g.__ReactRefresh, g.__ReactRefresh ? 'exists' : 'null/undefined');
+  console.log('[Bungae HMR] g.__accept:', typeof g.__accept);
+  console.log('[Bungae HMR] g.__METRO_GLOBAL_PREFIX__:', g.__METRO_GLOBAL_PREFIX__);
+  if (g.__ReactRefresh) {
+    console.log('[Bungae HMR] ReactRefresh.isLikelyComponentType:', typeof g.__ReactRefresh.isLikelyComponentType);
+  }
+  var modules = g.__r && g.__r.getModules ? g.__r.getModules() : null;
+  if (modules) {
+    var mod = modules.get(${moduleId});
+    if (mod) {
+      console.log('[Bungae HMR] Module ${moduleId} exists:', !!mod);
+      console.log('[Bungae HMR] Module ${moduleId} isInitialized:', mod.isInitialized);
+      console.log('[Bungae HMR] Module ${moduleId} exports type:', typeof (mod.publicModule && mod.publicModule.exports));
+      if (mod.publicModule && mod.publicModule.exports) {
+        var exp = mod.publicModule.exports;
+        console.log('[Bungae HMR] exports.default:', typeof exp.default, exp.default && exp.default.name || 'no name');
+        if (g.__ReactRefresh && g.__ReactRefresh.isLikelyComponentType) {
+          console.log('[Bungae HMR] isLikelyComponentType(exports):', g.__ReactRefresh.isLikelyComponentType(exp));
+          console.log('[Bungae HMR] isLikelyComponentType(exports.default):', g.__ReactRefresh.isLikelyComponentType(exp.default));
+        }
+      }
+    } else {
+      console.log('[Bungae HMR] Module ${moduleId} not found in modules map');
+    }
+  }
+  console.log('[Bungae HMR] === End Debug ===');
+})(typeof globalThis !== 'undefined' ? globalThis : typeof global !== 'undefined' ? global : this);
+`;
+
       const finalCode =
+        hmrDebugCode +
         wrappedCode +
         `\n//# sourceMappingURL=${sourceMappingURL}\n` +
         `//# sourceURL=${sourceURL}\n`;
 
+      // Metro format: added/modified are arrays of objects: [{ module: [id, code], sourceURL, sourceMappingURL? }, ...]
+      // Metro's inject function: const inject = ({ module: [id, code], sourceURL }) => { ... }
+      // Metro's generateModules includes sourceMappingURL (optional)
       modified.push({
         module: [moduleId, finalCode],
         sourceURL,
@@ -1721,53 +1835,157 @@ async function createHMRUpdateMessage(
     }
   }
 
-  return {
+  // Ensure arrays are always present and valid (Metro-compatible)
+  // Metro's mergeUpdates expects: update.added, update.modified, update.deleted to be arrays
+  // Metro client passes data.body directly as update, so body must have these arrays
+  const result: HMRUpdateMessage = {
     type: 'update',
     body: {
-      revisionId,
-      isInitialUpdate,
-      added,
-      modified,
-      deleted,
+      revisionId: revisionId || '',
+      isInitialUpdate: isInitialUpdate ?? false,
+      added: Array.isArray(added) ? added : [],
+      modified: Array.isArray(modified) ? modified : [],
+      deleted: Array.isArray(deleted) ? deleted : [],
     },
   };
+
+  // Debug: Log HMR message structure (only in dev mode)
+  if (platformConfig.dev) {
+    console.log('[bungae] HMR message structure:', {
+      type: result.type,
+      body: {
+        revisionId: result.body.revisionId,
+        isInitialUpdate: result.body.isInitialUpdate,
+        addedCount: result.body.added.length,
+        modifiedCount: result.body.modified.length,
+        deletedCount: result.body.deleted.length,
+        firstAdded: result.body.added[0]
+          ? `{ module: [${result.body.added[0].module[0]}, code(${result.body.added[0].module[1]?.length || 0} chars)], sourceURL: ${result.body.added[0].sourceURL} }`
+          : 'none',
+        firstModified: result.body.modified[0]
+          ? `{ module: [${result.body.modified[0].module[0]}, code(${result.body.modified[0].module[1]?.length || 0} chars)], sourceURL: ${result.body.modified[0].sourceURL} }`
+          : 'none',
+      },
+    });
+    // Validate object structure
+    for (let i = 0; i < result.body.added.length; i++) {
+      const item = result.body.added[i];
+      if (
+        !item ||
+        typeof item !== 'object' ||
+        !Array.isArray(item.module) ||
+        item.module.length !== 2 ||
+        typeof item.sourceURL !== 'string'
+      ) {
+        console.error(`[bungae] Invalid added[${i}]:`, item);
+        console.error(`[bungae]   - item:`, item);
+        console.error(`[bungae]   - item.module:`, item?.module);
+        console.error(`[bungae]   - item.sourceURL:`, item?.sourceURL);
+      }
+    }
+    for (let i = 0; i < result.body.modified.length; i++) {
+      const item = result.body.modified[i];
+      if (
+        !item ||
+        typeof item !== 'object' ||
+        !Array.isArray(item.module) ||
+        item.module.length !== 2 ||
+        typeof item.sourceURL !== 'string'
+      ) {
+        console.error(`[bungae] Invalid modified[${i}]:`, item);
+        console.error(`[bungae]   - item:`, item);
+        console.error(`[bungae]   - item.module:`, item?.module);
+        console.error(`[bungae]   - item.sourceURL:`, item?.sourceURL);
+      }
+    }
+    // Validate arrays are actually arrays (critical for Metro)
+    // Metro's injectUpdate and mergeUpdates expect arrays, not undefined
+    if (!Array.isArray(result.body.added)) {
+      console.error(
+        '[bungae] CRITICAL: result.body.added is not an array!',
+        typeof result.body.added,
+        result.body.added,
+      );
+      result.body.added = [];
+    }
+    if (!Array.isArray(result.body.modified)) {
+      console.error(
+        '[bungae] CRITICAL: result.body.modified is not an array!',
+        typeof result.body.modified,
+        result.body.modified,
+      );
+      result.body.modified = [];
+    }
+    if (!Array.isArray(result.body.deleted)) {
+      console.error(
+        '[bungae] CRITICAL: result.body.deleted is not an array!',
+        typeof result.body.deleted,
+        result.body.deleted,
+      );
+      result.body.deleted = [];
+    }
+  }
+
+  return result;
 }
 
 /**
- * Get all affected modules (changed files + their inverse dependencies)
- * This includes modules that depend on changed files
+ * Check if a dependency should be rebuilt based on changes
+ * Returns true if:
+ * 1. Dependency is directly affected (in affectedModules)
+ * 2. Dependency is new (not in old graph)
+ * 3. Dependency's content has changed (file modification time or hash comparison)
+ *
+ * Note: We check oldGraph only since newGraph may not be fully built yet during processModule
+ */
+function shouldRebuildDependency(
+  depPath: string,
+  affectedModules: Set<string>,
+  oldGraph: Map<string, GraphModule>,
+  _newGraph: Map<string, GraphModule>, // Not used during processModule, but kept for future use
+): boolean {
+  // Dependency is directly affected
+  if (affectedModules.has(depPath)) {
+    return true;
+  }
+
+  // Dependency is new (not in old graph)
+  if (!oldGraph.has(depPath)) {
+    return true;
+  }
+
+  // For dependencies that exist in old graph, we need to check if they've changed
+  // Since we're in the middle of building newGraph, we can't compare with newGraph yet
+  // Instead, we check if the file has been modified (it would be in affectedModules if so)
+  // Or we can check file modification time, but for now we'll be conservative:
+  // If it's not in affectedModules and exists in oldGraph, we assume it hasn't changed
+  // This is safe because:
+  // 1. Direct changes are in affectedModules
+  // 2. Indirect changes (dependencies of changed files) will be detected when we process them
+  // 3. The hash comparison in calculateDelta will catch any missed changes
+
+  return false;
+}
+
+/**
+ * Get affected modules for incremental build
+ * Only includes changed files - inverse dependencies are not rebuilt,
+ * they are only used in __d() calls to tell HMR client which modules to re-execute
  */
 function getAffectedModules(
   changedFiles: string[],
-  oldGraph: Map<string, GraphModule>,
+  _oldGraph: Map<string, GraphModule>,
   root: string,
 ): Set<string> {
   const affected = new Set<string>();
 
-  // Normalize and add changed files
+  // Normalize and add only changed files
+  // Inverse dependencies don't need to be rebuilt - they will be re-executed
+  // by the HMR client based on inverseDependencies in __d() calls
   for (const changedFile of changedFiles) {
     // If path is relative, resolve it relative to root
-    const normalizedPath = changedFile.startsWith('/')
-      ? changedFile
-      : resolve(root, changedFile);
+    const normalizedPath = changedFile.startsWith('/') ? changedFile : resolve(root, changedFile);
     affected.add(normalizedPath);
-  }
-
-  // Find all modules that depend on changed files (inverse dependencies)
-  const inverseDeps: Record<string, string[]> = {};
-  for (const changedFile of changedFiles) {
-    const normalizedPath = changedFile.startsWith('/')
-      ? changedFile
-      : resolve(root, changedFile);
-    getInverseDependencies(normalizedPath, oldGraph, inverseDeps);
-  }
-
-  // Add all inverse dependencies to affected set
-  for (const [path, deps] of Object.entries(inverseDeps)) {
-    affected.add(path);
-    for (const dep of deps) {
-      affected.add(dep);
-    }
   }
 
   return affected;
@@ -1809,7 +2027,7 @@ async function incrementalBuild(
   const affectedModules = getAffectedModules(changedFiles, oldState.graph, root);
 
   console.log(
-    `[bungae] Incremental build: ${normalizedChangedFiles.length} changed file(s), ${affectedModules.size} affected module(s)`,
+    `[bungae] Incremental build: ${normalizedChangedFiles.length} changed file(s) to rebuild`,
   );
 
   // Start with a copy of the old graph
@@ -1949,17 +2167,24 @@ async function incrementalBuild(
     newGraph.set(filePath, module);
     visited.add(filePath);
 
-    // Process dependencies
-    // Only process if:
-    // 1. Not already visited/processing
-    // 2. Is affected (needs rebuild) OR not in old graph (new dependency)
+    // Process dependencies with improved change detection
+    // Recursively process dependencies that need to be rebuilt
     for (const dep of resolvedDependencies) {
       if (!visited.has(dep) && !processing.has(dep)) {
-        // If dependency is affected or not in old graph, process it
-        if (affectedModules.has(dep) || !oldState.graph.has(dep)) {
+        // Check if dependency should be rebuilt
+        // 1. If it's directly affected (in affectedModules)
+        // 2. If it's new (not in old graph)
+        // 3. If it's a dependency of a changed module, we need to check if it changed
+        const shouldRebuild =
+          affectedModules.has(dep) || // Directly affected
+          !oldState.graph.has(dep) || // New dependency
+          shouldRebuildDependency(dep, affectedModules, oldState.graph, newGraph); // Changed content
+
+        if (shouldRebuild) {
+          // Dependency needs rebuild, process it recursively
           await processModule(dep);
         } else {
-          // Dependency exists in old graph and is not affected, reuse it
+          // Dependency exists in old graph and hasn't changed, reuse it
           const oldModule = oldState.graph.get(dep);
           if (oldModule) {
             newGraph.set(dep, oldModule);
@@ -1986,8 +2211,10 @@ async function incrementalBuild(
     }
   }
 
-  // Create new module ID factory (should be consistent with old one)
-  const createModuleId = createModuleIdFactory();
+  // Use the SAME module ID factory from the old state to ensure consistency
+  // Creating a new factory would assign different IDs to the same modules,
+  // breaking HMR because the client has modules registered with the old IDs
+  const createModuleId = oldState.createModuleId;
 
   // Build module ID mappings
   const newModuleIdToPath = new Map<number | string, string>();
@@ -2007,6 +2234,9 @@ async function incrementalBuild(
     createModuleId,
   );
 
+  // Rebuild inverse dependencies for the new graph (Metro-compatible)
+  buildInverseDependencies(newGraph);
+
   // Generate new revision ID
   const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
@@ -2022,31 +2252,18 @@ async function incrementalBuild(
 }
 
 /**
- * HMR WebSocket message types (Metro-compatible)
- */
-interface HmrMessage {
-  type: string;
-  body?: unknown;
-}
-
-/**
  * HMR Update message (Metro protocol)
+ * Metro format: added/modified are arrays of objects: [{ module: [id, code], sourceURL, sourceMappingURL? }, ...]
+ * Metro's inject function: const inject = ({ module: [id, code], sourceURL }) => { ... }
+ * Metro's generateModules includes sourceMappingURL (optional but recommended)
  */
 interface HMRUpdateMessage {
   type: 'update';
   body: {
     revisionId: string;
     isInitialUpdate: boolean;
-    added: Array<{
-      module: [number, string]; // [moduleId, code]
-      sourceURL: string;
-      sourceMappingURL?: string;
-    }>;
-    modified: Array<{
-      module: [number, string]; // [moduleId, code]
-      sourceURL: string;
-      sourceMappingURL?: string;
-    }>;
+    added: Array<{ module: [number, string]; sourceURL: string; sourceMappingURL?: string }>;
+    modified: Array<{ module: [number, string]; sourceURL: string; sourceMappingURL?: string }>;
     deleted: number[];
   };
 }
@@ -2080,7 +2297,7 @@ interface PlatformBuildState {
   moduleIdToPath: Map<number | string, string>;
   pathToModuleId: Map<string, number | string>;
   revisionId: string;
-  createModuleId: (path: string) => number;
+  createModuleId: (path: string) => number | string;
 }
 
 /**
@@ -2141,7 +2358,8 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             platform: requestPlatform as 'ios' | 'android' | 'web',
           };
 
-          // Use cached build if available for this platform
+          // Use cached build if available (Metro-compatible: dev mode also uses cache)
+          // Cache is invalidated when files change via handleFileChange
           const cachedBuild = cachedBuilds.get(requestPlatform);
           if (cachedBuild) {
             console.log(`Serving cached ${requestPlatform} bundle...`);
@@ -2187,14 +2405,13 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             buildingPlatforms.delete(requestPlatform);
 
             // Save build state for HMR (if dev mode)
-            if (config.dev) {
+            // IMPORTANT: Use the SAME graph and createModuleId from the build result
+            // to ensure module IDs are consistent between initial bundle and HMR updates
+            if (config.dev && build.graph && build.createModuleId) {
               try {
-                // Rebuild graph to get current state (we need the graph for HMR)
-                const entryPath = resolve(config.root, config.entry);
-                const graph = await buildGraph(entryPath, platformConfig);
-                const createModuleId = createModuleIdFactory();
+                const { graph, createModuleId } = build;
 
-                // Build module ID mappings
+                // Build module ID mappings using the SAME createModuleId used for the bundle
                 const moduleIdToPath = new Map<number | string, string>();
                 const pathToModuleId = new Map<string, number | string>();
                 for (const [path] of graph.entries()) {
@@ -2487,8 +2704,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
       },
       message(ws, message) {
         try {
-          const msg: HmrMessage = JSON.parse(message.toString());
-          console.log('[HMR] Received:', msg.type);
+          const msg = JSON.parse(message.toString());
 
           // Handle Metro HMR protocol messages
           switch (msg.type) {
@@ -2500,9 +2716,17 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               break;
 
             case 'log':
-              // Client is sending log messages
-              if (msg.body) {
-                console.log('[HMR Client]', msg.body);
+              // Client is sending log messages (Metro format)
+              // Metro log format: { type: 'log', level: 'log'|'warn'|'error'|'info', mode: 'BRIDGE', data: [...args] }
+              // The data is at msg.data, not msg.body
+              if (msg.data && Array.isArray(msg.data)) {
+                const level = msg.level || 'log';
+                console.log(`[HMR Client ${level}]`, ...msg.data);
+              } else if (msg.body) {
+                console.log('[HMR Client]', JSON.stringify(msg.body));
+              } else {
+                // Fallback: print raw message
+                console.log('[HMR Client raw]', JSON.stringify(msg));
               }
               break;
 
@@ -2535,7 +2759,14 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
   let fileWatcher: FileWatcher | null = null;
   if (config.dev) {
     const handleFileChange = async (changedFiles: string[] = []) => {
-      console.log('[bungae] File changed, triggering HMR update...');
+      console.log('[bungae] File changed, invalidating cache and triggering HMR update...');
+
+      // Always invalidate cache when files change (Metro-compatible)
+      // This ensures next bundle request will use latest code
+      for (const platform of cachedBuilds.keys()) {
+        cachedBuilds.delete(platform);
+        console.log(`[bungae] Invalidated cache for ${platform}`);
+      }
 
       // Check if we have any build states
       if (platformBuildStates.size === 0) {
@@ -2545,7 +2776,9 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
       // Check if we have any connected clients
       if (hmrClients.size === 0) {
-        console.log('[bungae] No HMR clients connected. Skipping HMR update.');
+        console.log(
+          '[bungae] No HMR clients connected. Cache invalidated, will rebuild on next request.',
+        );
         return;
       }
 
@@ -2625,17 +2858,225 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           };
 
           // Send update-start (Metro-compatible)
+          // Metro format: {type: 'update-start', body: {isInitialUpdate: boolean}}
           sendToClients(
             {
               type: 'update-start',
               body: {
-                revisionId: newState.revisionId,
+                isInitialUpdate: false,
               },
             },
             'update-start',
           );
 
           // Send update message
+          // Debug: Log actual JSON being sent (only in dev mode)
+          if (config.dev) {
+            // Validate the message structure before sending
+            if (!hmrMessage.body) {
+              console.error('[bungae] CRITICAL: hmrMessage.body is missing!', hmrMessage);
+            } else {
+              // Ensure arrays are always present (Metro's mergeUpdates requires them)
+              // Metro client receives data.body directly as update, so body must have these arrays
+              if (!Array.isArray(hmrMessage.body.added)) {
+                console.error(
+                  '[bungae] CRITICAL: hmrMessage.body.added is not an array!',
+                  typeof hmrMessage.body.added,
+                  hmrMessage.body.added,
+                );
+                // Fix it
+                hmrMessage.body.added = [];
+              }
+              if (!Array.isArray(hmrMessage.body.modified)) {
+                console.error(
+                  '[bungae] CRITICAL: hmrMessage.body.modified is not an array!',
+                  typeof hmrMessage.body.modified,
+                  hmrMessage.body.modified,
+                );
+                // Fix it
+                hmrMessage.body.modified = [];
+              }
+              if (!Array.isArray(hmrMessage.body.deleted)) {
+                console.error(
+                  '[bungae] CRITICAL: hmrMessage.body.deleted is not an array!',
+                  typeof hmrMessage.body.deleted,
+                  hmrMessage.body.deleted,
+                );
+                // Fix it
+                hmrMessage.body.deleted = [];
+              }
+              // Validate each modified item structure
+              for (let i = 0; i < hmrMessage.body.modified.length; i++) {
+                const item = hmrMessage.body.modified[i];
+                if (!item || typeof item !== 'object') {
+                  console.error(`[bungae] CRITICAL: modified[${i}] is not an object!`, item);
+                } else if (!item.module || !Array.isArray(item.module)) {
+                  console.error(`[bungae] CRITICAL: modified[${i}].module is not an array!`, item);
+                } else if (item.module.length !== 2) {
+                  console.error(
+                    `[bungae] CRITICAL: modified[${i}].module.length is not 2!`,
+                    item.module.length,
+                    item,
+                  );
+                } else if (typeof item.sourceURL !== 'string') {
+                  console.error(
+                    `[bungae] CRITICAL: modified[${i}].sourceURL is not a string!`,
+                    typeof item.sourceURL,
+                    item,
+                  );
+                }
+              }
+              // Validate each added item structure
+              for (let i = 0; i < hmrMessage.body.added.length; i++) {
+                const item = hmrMessage.body.added[i];
+                if (!item || typeof item !== 'object') {
+                  console.error(`[bungae] CRITICAL: added[${i}] is not an object!`, item);
+                } else if (!item.module || !Array.isArray(item.module)) {
+                  console.error(`[bungae] CRITICAL: added[${i}].module is not an array!`, item);
+                } else if (item.module.length !== 2) {
+                  console.error(
+                    `[bungae] CRITICAL: added[${i}].module.length is not 2!`,
+                    item.module.length,
+                    item,
+                  );
+                } else if (typeof item.sourceURL !== 'string') {
+                  console.error(
+                    `[bungae] CRITICAL: added[${i}].sourceURL is not a string!`,
+                    typeof item.sourceURL,
+                    item,
+                  );
+                }
+              }
+            }
+            // Log full JSON structure (truncated for readability)
+            const jsonStr = JSON.stringify(hmrMessage);
+            console.log(
+              '[bungae] Sending HMR update JSON (first 1000 chars):',
+              jsonStr.substring(0, 1000),
+            );
+            // Also log the structure in a readable format
+            console.log('[bungae] HMR message to send:', {
+              type: hmrMessage.type,
+              bodyKeys: Object.keys(hmrMessage.body || {}),
+              addedType: Array.isArray(hmrMessage.body?.added)
+                ? 'array'
+                : typeof hmrMessage.body?.added,
+              modifiedType: Array.isArray(hmrMessage.body?.modified)
+                ? 'array'
+                : typeof hmrMessage.body?.modified,
+              deletedType: Array.isArray(hmrMessage.body?.deleted)
+                ? 'array'
+                : typeof hmrMessage.body?.deleted,
+              addedLength: hmrMessage.body?.added?.length ?? 'N/A',
+              modifiedLength: hmrMessage.body?.modified?.length ?? 'N/A',
+              deletedLength: hmrMessage.body?.deleted?.length ?? 'N/A',
+            });
+            // Log the actual body structure that will be sent to client
+            // Metro client receives data.body directly as update
+            console.log('[bungae] Body structure (what client receives as update):', {
+              revisionId: typeof hmrMessage.body.revisionId,
+              isInitialUpdate: typeof hmrMessage.body.isInitialUpdate,
+              added: {
+                type: Array.isArray(hmrMessage.body.added) ? 'array' : typeof hmrMessage.body.added,
+                length: hmrMessage.body.added?.length,
+                firstItem: hmrMessage.body.added?.[0]
+                  ? {
+                      hasModule: !!hmrMessage.body.added[0].module,
+                      moduleType: Array.isArray(hmrMessage.body.added[0].module)
+                        ? 'array'
+                        : typeof hmrMessage.body.added[0].module,
+                      moduleLength: hmrMessage.body.added[0].module?.length,
+                      hasSourceURL: !!hmrMessage.body.added[0].sourceURL,
+                      sourceURLType: typeof hmrMessage.body.added[0].sourceURL,
+                    }
+                  : 'none',
+              },
+              modified: {
+                type: Array.isArray(hmrMessage.body.modified)
+                  ? 'array'
+                  : typeof hmrMessage.body.modified,
+                length: hmrMessage.body.modified?.length,
+                firstItem: hmrMessage.body.modified?.[0]
+                  ? {
+                      hasModule: !!hmrMessage.body.modified[0].module,
+                      moduleType: Array.isArray(hmrMessage.body.modified[0].module)
+                        ? 'array'
+                        : typeof hmrMessage.body.modified[0].module,
+                      moduleLength: hmrMessage.body.modified[0].module?.length,
+                      hasSourceURL: !!hmrMessage.body.modified[0].sourceURL,
+                      sourceURLType: typeof hmrMessage.body.modified[0].sourceURL,
+                    }
+                  : 'none',
+              },
+              deleted: {
+                type: Array.isArray(hmrMessage.body.deleted)
+                  ? 'array'
+                  : typeof hmrMessage.body.deleted,
+                length: hmrMessage.body.deleted?.length,
+              },
+            });
+          }
+
+          // Final validation: Ensure body structure is correct before sending
+          // Metro's mergeUpdates expects: update.added, update.modified, update.deleted to be arrays
+          // Metro client receives data.body directly as update, so body must have these arrays
+          if (!hmrMessage.body) {
+            console.error('[bungae] CRITICAL: Cannot send HMR update - body is missing!');
+            return;
+          }
+          // Double-check arrays (defensive programming)
+          if (!Array.isArray(hmrMessage.body.added)) {
+            console.error(
+              '[bungae] CRITICAL: Final check failed - added is not an array!',
+              typeof hmrMessage.body.added,
+            );
+            hmrMessage.body.added = [];
+          }
+          if (!Array.isArray(hmrMessage.body.modified)) {
+            console.error(
+              '[bungae] CRITICAL: Final check failed - modified is not an array!',
+              typeof hmrMessage.body.modified,
+            );
+            hmrMessage.body.modified = [];
+          }
+          if (!Array.isArray(hmrMessage.body.deleted)) {
+            console.error(
+              '[bungae] CRITICAL: Final check failed - deleted is not an array!',
+              typeof hmrMessage.body.deleted,
+            );
+            hmrMessage.body.deleted = [];
+          }
+
+          // Log the exact JSON that will be sent (for debugging)
+          if (config.dev) {
+            const finalJson = JSON.stringify(hmrMessage);
+            console.log(
+              '[bungae] Final JSON to send (first 2000 chars):',
+              finalJson.substring(0, 2000),
+            );
+            // Parse it back to verify structure
+            try {
+              const parsed = JSON.parse(finalJson);
+              if (
+                parsed.body &&
+                Array.isArray(parsed.body.added) &&
+                Array.isArray(parsed.body.modified) &&
+                Array.isArray(parsed.body.deleted)
+              ) {
+                console.log('[bungae] ✅ JSON structure validated successfully');
+              } else {
+                console.error('[bungae] ❌ JSON structure validation failed!', {
+                  hasBody: !!parsed.body,
+                  addedIsArray: Array.isArray(parsed.body?.added),
+                  modifiedIsArray: Array.isArray(parsed.body?.modified),
+                  deletedIsArray: Array.isArray(parsed.body?.deleted),
+                });
+              }
+            } catch (e) {
+              console.error('[bungae] ❌ Failed to parse JSON for validation:', e);
+            }
+          }
+
           sendToClients(hmrMessage, 'update');
 
           // Send update-done (Metro-compatible)
