@@ -40,6 +40,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@babel/traverse": "^7.25.3",
     "babel-plugin-syntax-hermes-parser": "^0.33.3",
     "babel-plugin-transform-flow-enums": "^0.0.2",
     "flow-parser": "^0.297.0",
