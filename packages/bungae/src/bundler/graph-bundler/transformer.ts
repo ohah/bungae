@@ -17,7 +17,7 @@ export async function transformFile(
   code: string,
   config: ResolvedConfig,
   entryPath?: string,
-): Promise<{ ast: any } | null> {
+): Promise<{ ast: any; sourceMap?: string } | null> {
   const { platform, dev } = config;
 
   // Skip Flow files and asset files
@@ -56,7 +56,7 @@ export async function transformWithBabel(
   code: string,
   filePath: string,
   options: { dev: boolean; platform: string; root: string; entryPath?: string },
-): Promise<{ ast: any }> {
+): Promise<{ ast: any; sourceMap?: string }> {
   const babel = await import('@babel/core');
   const hermesParser = await import('hermes-parser');
 
@@ -144,6 +144,7 @@ export async function transformWithBabel(
 
     // Metro-style babel config (matches reference/metro/packages/metro-babel-transformer/src/index.js)
     // Metro sets code: false to return AST only (serializer generates code)
+    // For source maps: generate source map in dev mode only
     const babelConfig: any = {
       ast: true,
       // Disable auto-discovery since we're loading config manually
@@ -163,6 +164,8 @@ export async function transformWithBabel(
       },
       cloneInputAst: false, // Metro sets this to avoid cloning overhead
       code: false, // Metro-compatible: return AST only, serializer generates code
+      // Generate source map in dev mode only (Metro-compatible)
+      sourceMaps: options.dev,
       cwd: options.root, // Metro sets cwd to projectRoot
       filename: filePath,
       highlightCode: true,
@@ -259,12 +262,16 @@ export async function transformWithBabel(
         comments: [],
         tokens: [],
       };
-      return { ast: emptyAst };
+      return { ast: emptyAst, sourceMap: undefined };
     }
 
     // Metro-compatible: return AST only (no code generation)
     // Dependencies will be extracted from AST directly
-    return { ast: transformResult.ast };
+    // Include source map if generated (dev mode only)
+    return {
+      ast: transformResult.ast,
+      sourceMap: transformResult.map ? JSON.stringify(transformResult.map) : undefined,
+    };
   } finally {
     if (OLD_BABEL_ENV) {
       process.env.BABEL_ENV = OLD_BABEL_ENV;

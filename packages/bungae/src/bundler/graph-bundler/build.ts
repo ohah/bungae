@@ -167,6 +167,7 @@ export async function buildWithGraph(
     globalPrefix: '',
     runModule: true,
     runBeforeMainModule,
+    inlineSourceMap: config.serializer?.inlineSourceMap ?? false,
   });
 
   // Combine bundle parts
@@ -177,27 +178,154 @@ export async function buildWithGraph(
     bundle.post,
   ].join('\n');
 
-  // TODO: Generate source map
-  const map = dev
-    ? JSON.stringify({
-        version: 3,
-        sources: Array.from(graph.keys()).map((p) => relative(root, p)),
-        names: [],
-        mappings: '',
-      })
-    : undefined;
-
-  // Extract asset files from bundle modules (only assets actually included in bundle)
-  // Metro only copies assets that are actually required/imported in the bundle
-  // CRITICAL: We need to analyze the actual bundle code to see which modules are actually required
-  // Metro does this by checking which modules are actually __r() called in the bundle code
-
   // Create reverse mapping: moduleId -> module path from graphModules
+  // This is needed for source map generation
   const moduleIdToPath = new Map<number | string, string>();
   for (const module of graphModules) {
     const moduleId = createModuleId(module.path);
     moduleIdToPath.set(moduleId, module.path);
   }
+
+  // Generate source map (dev mode only)
+  let map: string | undefined;
+  if (dev) {
+    try {
+      // Use source-map library (from metro-source-map dependencies) to merge source maps
+      const { SourceMapGenerator } = await import('source-map');
+
+      // Create a source map generator
+      const generator = new SourceMapGenerator({
+        file: basename(entryPath),
+      });
+
+      // Track line offsets for each bundle part
+      let lineOffset = 0;
+
+      // Add prelude source map (if any)
+      // Prelude modules typically don't have source maps, but we track the line offset
+      const preLines = bundle.pre.split('\n').length;
+      lineOffset += preLines;
+
+      // Collect all source files and their content
+      const sourceFiles = new Map<string, string>();
+      for (const modulePath of graph.keys()) {
+        try {
+          const sourceContent = readFileSync(modulePath, 'utf-8');
+          const relativePath = relative(root, modulePath);
+          sourceFiles.set(relativePath, sourceContent);
+          generator.setSourceContent(relativePath, sourceContent);
+        } catch {
+          // Skip files that can't be read
+        }
+      }
+
+      // Add source maps for each module in the bundle
+      for (const [moduleId, moduleCode] of bundle.modules) {
+        const modulePath = moduleIdToPath.get(moduleId);
+        if (!modulePath) continue;
+
+        // Find the module in graphModules to get its source map
+        const graphModule = graphModules.find((m) => m.path === modulePath);
+        const relativeModulePath = relative(root, modulePath);
+
+        if (graphModule?.map) {
+          try {
+            const moduleSourceMap = JSON.parse(graphModule.map);
+
+            // If the module has a source map, we need to merge it with the bundle source map
+            // This is complex because we need to adjust line offsets
+            // For now, we'll create a basic mapping: each line in the bundle maps to the corresponding line in the source
+            if (moduleSourceMap.sources && moduleSourceMap.mappings) {
+              // Parse the module's source map and add mappings with line offset adjustment
+              // This is a simplified version - full implementation would parse VLQ mappings
+              const moduleLines = moduleCode.split('\n').length;
+
+              // For each line in the module code, add a mapping
+              // In a full implementation, we would parse the module's source map mappings
+              // and adjust them by the line offset
+              for (let i = 0; i < moduleLines; i++) {
+                generator.addMapping({
+                  generated: { line: lineOffset + i + 1, column: 0 },
+                  original: { line: i + 1, column: 0 },
+                  source: relativeModulePath,
+                });
+              }
+            }
+          } catch {
+            // If parsing fails, create basic line-by-line mappings
+            const moduleLines = moduleCode.split('\n').length;
+            for (let i = 0; i < moduleLines; i++) {
+              generator.addMapping({
+                generated: { line: lineOffset + i + 1, column: 0 },
+                original: { line: i + 1, column: 0 },
+                source: relativeModulePath,
+              });
+            }
+          }
+        } else {
+          // No source map for this module - create basic line-by-line mappings
+          const moduleLines = moduleCode.split('\n').length;
+          for (let i = 0; i < moduleLines; i++) {
+            generator.addMapping({
+              generated: { line: lineOffset + i + 1, column: 0 },
+              original: { line: i + 1, column: 0 },
+              source: relativeModulePath,
+            });
+          }
+        }
+
+        // Track line offset for this module
+        const moduleLines = moduleCode.split('\n').length;
+        lineOffset += moduleLines;
+      }
+
+      // Add post code line offset
+      const postLines = bundle.post.split('\n').length;
+      lineOffset += postLines;
+
+      // Generate the final source map
+      const sourceMap = generator.toJSON();
+      map = JSON.stringify(sourceMap);
+    } catch (error) {
+      // Fallback to basic source map if source-map is not available or fails
+      console.warn('Failed to generate source map, using fallback:', error);
+      const fallbackMap = {
+        version: 3,
+        file: basename(entryPath),
+        sources: Array.from(graph.keys()).map((p) => relative(root, p)),
+        names: [],
+        mappings: '',
+        sourcesContent: Array.from(graph.keys())
+          .map((p) => {
+            try {
+              return readFileSync(p, 'utf-8');
+            } catch {
+              return null;
+            }
+          })
+          .filter((content): content is string => content !== null),
+      };
+      map = JSON.stringify(fallbackMap);
+    }
+  }
+
+  // Handle inlineSourceMap option
+  const inlineSourceMap = config.serializer?.inlineSourceMap ?? false;
+  let finalCode = code;
+  let finalMap = map;
+
+  if (inlineSourceMap && map) {
+    // Encode source map as base64 and add inline source map comment
+    const base64Map = Buffer.from(map).toString('base64');
+    const inlineSourceMapComment = `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${base64Map}`;
+    finalCode = code + inlineSourceMapComment;
+    finalMap = undefined; // Don't return separate map file when inline
+  }
+
+  // Extract asset files from bundle modules (only assets actually included in bundle)
+  // Metro only copies assets that are actually required/imported in the bundle
+  // CRITICAL: We need to analyze the actual bundle code to see which modules are actually required
+  // Metro does this by checking which modules are actually __r() called in the bundle code
 
   // Analyze bundle code to find which modules are actually required
   // Metro includes modules in bundle.modules, but we need to check if they're actually used
@@ -602,5 +730,5 @@ export async function buildWithGraph(
     }
   }
 
-  return { code, map, assets, graph, createModuleId };
+  return { code: finalCode, map: finalMap, assets, graph, createModuleId };
 }

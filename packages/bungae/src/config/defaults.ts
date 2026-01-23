@@ -91,6 +91,7 @@ export const DEFAULT_SERIALIZER: Required<SerializerConfig> = {
     return modules;
   },
   getPolyfills: () => [],
+  inlineSourceMap: false,
 };
 
 /**
