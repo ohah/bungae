@@ -162,6 +162,7 @@ Bun.hash(); // 캐시 키 생성
    - WebSocket 지원 (HMR용)
    - 플랫폼별 번들 캐싱
    - 구현 위치: `graph-bundler.ts`의 `serveWithGraph()` 함수
+   - ❌ **터미널 단축키 미구현** (Phase 2-5에서 구현 예정)
 
 3. **HMR (Hot Module Replacement)** (Phase 2-3)
    - **Metro 호환 HMR 프로토콜**: React Native의 내장 HMRClient와 호환
@@ -177,13 +178,28 @@ Bun.hash(); // 캐시 키 생성
    - 구현 위치: `graph-bundler.ts`의 HMR 관련 함수들
    - 테스트 코드 작성 완료 (15개 이상의 테스트 케이스 모두 통과)
 
-4. **파일 감시** (Phase 2-4)
+4. **React Refresh (Fast Refresh)** (Phase 2-3)
+   - 완전 지원 (의존성 그래프를 통해 자동 포함)
+   - Metro와 동일한 동작 방식
+
+5. **파일 감시** (Phase 2-4)
    - `file-watcher.ts` 모듈 구현
    - 파일 변경 감지 및 HMR 트리거
    - 원자적 쓰기 처리 (VSCode 등 에디터의 rename 이벤트)
    - JS/TS/JSON 소스 파일만 처리하도록 필터링
    - 디바운싱 지원 (기본 300ms)
    - 구현 위치: `file-watcher.ts`의 `createFileWatcher()` 함수
+
+6. **터미널 단축키** (Phase 2-5) ❌
+   - Metro 호환 터미널 단축키 지원
+   - `r` - Reload (앱 리로드)
+   - `d` - Open Dev Menu (개발 메뉴 열기)
+   - `i` - Open iOS Simulator
+   - `a` - Open Android Emulator
+   - `j` - Open Chrome DevTools
+   - `c` - Clear cache
+   - `useGlobalHotkey` 설정 옵션 지원 (기본값: true)
+   - 구현 위치: `server.ts` 또는 별도 모듈
 
 #### HMR (Hot Module Replacement) 구현 전략
 
@@ -246,6 +262,10 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 - Metro 프로토콜의 한계가 느껴지면 자체 HMR 클라이언트 검토
 - 더 효율적인 업데이트 전송이 필요한 경우
 - Metro에 없는 HMR 기능이 필요한 경우
+
+#### React Refresh (Fast Refresh) 지원
+
+**완전 지원**: 의존성 그래프를 통해 `setUpReactRefresh` 모듈이 자동 포함되며, Metro와 동일하게 컴포넌트 상태를 유지하면서 코드 변경을 반영합니다.
 
 #### 📋 Phase 1-3에서 구현하지 않은 기능 (Phase 2 또는 Phase 3에서 구현 예정)
 
