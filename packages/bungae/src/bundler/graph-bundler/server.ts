@@ -349,15 +349,14 @@ export async function serveWithGraph(
             if (targetUrl && typeof targetUrl === 'string') {
               // Open URL in default browser
               // Use Bun's built-in spawn for cross-platform support
-              const osPlatform = process.platform;
               let command: string;
               let args: string[];
 
-              if (osPlatform === 'win32') {
+              if (process.platform === 'win32') {
                 // Windows: use start command
                 command = 'cmd';
                 args = ['/c', 'start', '', targetUrl];
-              } else if (osPlatform === 'darwin') {
+              } else if (process.platform === 'darwin') {
                 // macOS: use open command
                 command = 'open';
                 args = [targetUrl];
