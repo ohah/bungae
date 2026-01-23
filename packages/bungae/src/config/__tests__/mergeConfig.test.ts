@@ -39,6 +39,7 @@ describe('mergeConfig', () => {
           extraVars: {},
           getModulesRunBeforeMainModule: () => [],
           getPolyfills: () => [],
+          inlineSourceMap: false,
         },
         server: {
           port: 8081,

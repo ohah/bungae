@@ -53,6 +53,8 @@ export interface SerializerConfig {
   ) => string[];
   /** Get polyfills (Metro-compatible) */
   getPolyfills?: (options: { platform: string | null }) => string[];
+  /** Inline source map in bundle (base64 encoded) */
+  inlineSourceMap?: boolean;
 }
 
 /**

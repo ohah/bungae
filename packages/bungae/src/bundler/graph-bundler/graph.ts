@@ -110,6 +110,7 @@ export async function buildGraph(
         transformedAst: transformResult?.ast || null,
         dependencies: [],
         originalDependencies: [],
+        sourceMap: transformResult?.sourceMap,
       };
       modules.set(filePath, module);
       visited.add(filePath);
@@ -158,6 +159,7 @@ export async function buildGraph(
       transformedAst: transformResult.ast,
       dependencies: resolvedDependencies,
       originalDependencies,
+      sourceMap: transformResult.sourceMap,
     };
 
     modules.set(filePath, module);
@@ -326,6 +328,7 @@ export async function graphToSerializerModules(
         dependencies: m.dependencies,
         originalDependencies: m.originalDependencies,
         type: 'js/module' as const,
+        map: m.sourceMap, // Include source map if available
       };
     }),
   );

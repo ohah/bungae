@@ -12,6 +12,7 @@ export interface GraphModule {
   dependencies: string[];
   originalDependencies: string[];
   inverseDependencies?: string[]; // Cached inverse dependencies for efficient HMR
+  sourceMap?: string; // Source map for this module (dev mode only)
 }
 
 /**
