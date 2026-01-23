@@ -43,9 +43,12 @@ function printBanner(version: string): void {
   const banner = `
     ╔═══════════════════════════════════════════════════════════╗
     ║                                                           ║
-    ║        ⚡  BUNGAE - Lightning Fast Bundler  ⚡           ║
     ║                                                           ║
-    ║                    Version ${version.padEnd(10)}                    ║
+    ║              ⚡  BUNGAE  ⚡                              ║
+    ║                                                           ║
+    ║         Lightning Fast React Native Bundler              ║
+    ║                                                           ║
+    ║                    v${version.padEnd(10)}                    ║
     ║                                                           ║
     ╚═══════════════════════════════════════════════════════════╝
 `;
@@ -965,22 +968,27 @@ export async function buildWithGraph(
 
   // Build dependency graph
   const startTime = Date.now();
-  let lastProgress = -1;
+  let lastTerminalProgress = -1;
   const graph = await buildGraph(entryPath, config, (processed, total) => {
-    if (processed % 100 === 0 || processed === total) {
-      process.stdout.write(`\rProcessing modules: ${processed}/${total}`);
+    // Metro-style terminal output: "Transforming (45.2%)"
+    const percentage = total > 0 ? (processed / total) * 100 : 0;
+    const roundedPercentage = Math.floor(percentage);
+
+    // Update terminal every 1% or when complete
+    if (roundedPercentage > lastTerminalProgress || processed === total) {
+      process.stdout.write(
+        `\r\x1b[K info Transforming (${percentage.toFixed(1)}%) (${processed}/${total} files)`,
+      );
+      lastTerminalProgress = roundedPercentage;
     }
-    // Call onProgress callback if provided (Metro-compatible)
-    if (onProgress) {
-      const currentProgress = parseInt((processed / total) * 100, 10);
-      // Throttle progress updates (Metro behavior: only send meaningful updates)
-      if (currentProgress > lastProgress || total < 10) {
-        onProgress(processed, total);
-        lastProgress = currentProgress;
-      }
-    }
+
+    // Call onProgress callback for multipart streaming (every call, no throttle here)
+    // Throttling is done in the server's multipart handler
+    onProgress?.(processed, total);
   });
-  console.log(`\nGraph built: ${graph.size} modules in ${Date.now() - startTime}ms`);
+  console.log(
+    `\r\x1b[K info Transforming done in ${Date.now() - startTime}ms (${graph.size} modules)`,
+  );
 
   // Metro behavior: Metro assumes runBeforeMainModule modules are already in the dependency graph.
   // Check if InitializeCore is in the graph and log debug info if not found.
@@ -1617,7 +1625,7 @@ function getInverseDependenciesMap(
 /**
  * Create HMR update message from delta result (Metro protocol)
  */
-async function createHMRUpdateMessage(
+export async function createHMRUpdateMessage(
   delta: DeltaResult,
   platformConfig: ResolvedConfig,
   createModuleId: (path: string) => number | string,
@@ -2020,7 +2028,7 @@ function getAffectedModules(
 /**
  * Incremental build for HMR - rebuild only changed files and affected modules
  */
-async function incrementalBuild(
+export async function incrementalBuild(
   changedFiles: string[],
   oldState: PlatformBuildState,
   platformConfig: ResolvedConfig,
@@ -2281,7 +2289,7 @@ async function incrementalBuild(
  * Metro's inject function: const inject = ({ module: [id, code], sourceURL }) => { ... }
  * Metro's generateModules includes sourceMappingURL (optional but recommended)
  */
-interface HMRUpdateMessage {
+export interface HMRUpdateMessage {
   type: 'update';
   body: {
     revisionId: string;
@@ -2307,7 +2315,7 @@ interface HMRErrorMessage {
 /**
  * Delta result for incremental builds
  */
-interface DeltaResult {
+export interface DeltaResult {
   added: Map<string, GraphModule>;
   modified: Map<string, GraphModule>;
   deleted: Set<string>;
@@ -2316,7 +2324,7 @@ interface DeltaResult {
 /**
  * Platform build state for HMR
  */
-interface PlatformBuildState {
+export interface PlatformBuildState {
   graph: Map<string, GraphModule>;
   moduleIdToPath: Map<number | string, string>;
   pathToModuleId: Map<string, number | string>;
@@ -2326,8 +2334,11 @@ interface PlatformBuildState {
 
 /**
  * Serve bundle using Graph bundler
+ * Returns server instance for testing purposes
  */
-export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
+export async function serveWithGraph(
+  config: ResolvedConfig,
+): Promise<{ stop: () => Promise<void> }> {
   const { platform, server } = config;
   const port = server?.port ?? 8081;
   // Use 0.0.0.0 to allow connections from Android emulator (10.0.2.2) and other devices
@@ -2382,16 +2393,62 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             platform: requestPlatform as 'ios' | 'android' | 'web',
           };
 
+          // Check if client supports multipart/mixed (Metro-compatible)
+          const acceptHeader = req.headers.get('Accept') || '';
+          const supportsMultipart = acceptHeader === 'multipart/mixed';
+
+          // Helper to create multipart response for cached/waiting builds
+          const createMultipartResponse = (bundleCode: string, _moduleCount: number) => {
+            const BOUNDARY = '3beqjf3apnqeu3h5jqorms4i';
+            const CRLF = '\r\n';
+            const bundleBytes = Buffer.byteLength(bundleCode);
+            const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+            // Multipart response: initial message + bundle (no separate progress for cached)
+            // Metro format: preamble + bundle chunk with headers
+            // X-Metro-Files-Changed-Count is 0 for cached builds (no files changed)
+            const response =
+              'If you are seeing this, your client does not support multipart response' +
+              `${CRLF}--${BOUNDARY}${CRLF}` +
+              `X-Metro-Files-Changed-Count: 0${CRLF}` +
+              `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
+              `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
+              `Content-Length: ${bundleBytes}${CRLF}` +
+              `Last-Modified: ${new Date().toUTCString()}${CRLF}${CRLF}` +
+              bundleCode +
+              `${CRLF}--${BOUNDARY}--${CRLF}`;
+
+            return new Response(response, {
+              headers: {
+                'Content-Type': `multipart/mixed; boundary="${BOUNDARY}"`,
+                'Cache-Control': 'no-cache',
+              },
+            });
+          };
+
+          // Construct full URLs for sourceMappingURL and sourceURL (Metro-compatible)
+          // Metro uses full HTTP URLs in bundle comments:
+          // - //# sourceMappingURL=http://localhost:8081/index.map?platform=ios&dev=true
+          // - //# sourceURL=http://localhost:8081/index.bundle?platform=ios&dev=true
+          const bundleUrl = url.origin + url.pathname + url.search;
+          const mapUrl = url.origin + url.pathname.replace(/\.bundle$/, '.map') + url.search;
+
           // Use cached build if available (Metro-compatible: dev mode also uses cache)
           // Cache is invalidated when files change via handleFileChange
           const cachedBuild = cachedBuilds.get(requestPlatform);
           if (cachedBuild) {
-            console.log(`Serving cached ${requestPlatform} bundle...`);
-            const bundleWithMapRef = cachedBuild.map
-              ? `${cachedBuild.code}\n//# sourceMappingURL=${url.pathname}.map`
-              : cachedBuild.code;
+            let bundleWithRefs = cachedBuild.code;
+            if (cachedBuild.map) {
+              bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
+              bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
+            }
 
-            return new Response(bundleWithMapRef, {
+            if (supportsMultipart) {
+              const moduleCount = cachedBuild.graph?.size || 0;
+              return createMultipartResponse(bundleWithRefs, moduleCount);
+            }
+
+            return new Response(bundleWithRefs, {
               headers: {
                 'Content-Type': 'application/javascript',
                 'Cache-Control': 'no-cache',
@@ -2402,15 +2459,21 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           // If already building for this platform, wait for it
           const existingBuildPromise = buildingPlatforms.get(requestPlatform);
           if (existingBuildPromise) {
-            console.log(`Waiting for ongoing ${requestPlatform} build...`);
             const build = await existingBuildPromise;
             cachedBuilds.set(requestPlatform, build);
 
-            const bundleWithMapRef = build.map
-              ? `${build.code}\n//# sourceMappingURL=${url.pathname}.map`
-              : build.code;
+            let bundleWithRefs2 = build.code;
+            if (build.map) {
+              bundleWithRefs2 += `\n//# sourceMappingURL=${mapUrl}`;
+              bundleWithRefs2 += `\n//# sourceURL=${bundleUrl}`;
+            }
 
-            return new Response(bundleWithMapRef, {
+            if (supportsMultipart) {
+              const moduleCount = build.graph?.size || 0;
+              return createMultipartResponse(bundleWithRefs2, moduleCount);
+            }
+
+            return new Response(bundleWithRefs2, {
               headers: {
                 'Content-Type': 'application/javascript',
                 'Cache-Control': 'no-cache',
@@ -2419,58 +2482,164 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           }
 
           // Start new build for this platform
-          console.log(`Building ${requestPlatform} bundle (Babel mode, Metro-compatible)...`);
-          const buildPromise = buildWithGraph(platformConfig);
-          buildingPlatforms.set(requestPlatform, buildPromise);
+          console.log(`Building ${requestPlatform} bundle...`);
 
-          try {
-            const build = await buildPromise;
-            cachedBuilds.set(requestPlatform, build);
-            buildingPlatforms.delete(requestPlatform);
+          if (supportsMultipart) {
+            // Use multipart/mixed for progress streaming (Metro-compatible)
+            const BOUNDARY = '3beqjf3apnqeu3h5jqorms4i';
+            const CRLF = '\r\n';
+            const encoder = new TextEncoder();
+            let totalCount = 0;
+            let lastProgress = -1;
 
-            // Save build state for HMR (if dev mode)
-            // IMPORTANT: Use the SAME graph and createModuleId from the build result
-            // to ensure module IDs are consistent between initial bundle and HMR updates
-            if (config.dev && build.graph && build.createModuleId) {
-              try {
-                const { graph, createModuleId } = build;
+            const stream = new ReadableStream({
+              async start(controller) {
+                try {
+                  // Initial message for clients that don't support multipart
+                  controller.enqueue(
+                    encoder.encode(
+                      'If you are seeing this, your client does not support multipart response',
+                    ),
+                  );
 
-                // Build module ID mappings using the SAME createModuleId used for the bundle
-                const moduleIdToPath = new Map<number | string, string>();
-                const pathToModuleId = new Map<string, number | string>();
-                for (const [path] of graph.entries()) {
-                  const moduleId = createModuleId(path);
-                  moduleIdToPath.set(moduleId, path);
-                  pathToModuleId.set(path, moduleId);
+                  // Build with progress callbacks
+                  const buildPromise = buildWithGraph(
+                    platformConfig,
+                    (transformedFileCount, totalFileCount) => {
+                      totalCount = totalFileCount;
+
+                      // Throttle: only send when percentage changes (Metro behavior)
+                      const currentProgress = Math.floor(
+                        (transformedFileCount / totalFileCount) * 100,
+                      );
+                      if (currentProgress <= lastProgress && totalFileCount >= 10) {
+                        return;
+                      }
+                      lastProgress = currentProgress;
+
+                      // Metro format: writeChunk with Content-Type header
+                      const chunk =
+                        `${CRLF}--${BOUNDARY}${CRLF}` +
+                        `Content-Type: application/json${CRLF}${CRLF}` +
+                        JSON.stringify({ done: transformedFileCount, total: totalFileCount });
+                      controller.enqueue(encoder.encode(chunk));
+                    },
+                  );
+
+                  buildingPlatforms.set(requestPlatform, buildPromise);
+                  const build = await buildPromise;
+                  buildingPlatforms.delete(requestPlatform);
+                  cachedBuilds.set(requestPlatform, build);
+
+                  // Ensure totalCount is set from actual graph size
+                  if (build.graph) {
+                    totalCount = build.graph.size;
+                  }
+
+                  // Save build state for HMR
+                  if (config.dev && build.graph && build.createModuleId) {
+                    try {
+                      const { graph, createModuleId } = build;
+                      const moduleIdToPath = new Map<number | string, string>();
+                      const pathToModuleId = new Map<string, number | string>();
+                      for (const [path] of graph.entries()) {
+                        const moduleId = createModuleId(path);
+                        moduleIdToPath.set(moduleId, path);
+                        pathToModuleId.set(path, moduleId);
+                      }
+                      const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                      platformBuildStates.set(requestPlatform, {
+                        graph,
+                        moduleIdToPath,
+                        pathToModuleId,
+                        revisionId,
+                        createModuleId,
+                      });
+                    } catch (error) {
+                      console.warn(`Failed to save build state for HMR:`, error);
+                    }
+                  }
+
+                  // Construct full URLs for sourceMappingURL and sourceURL (Metro-compatible)
+                  let bundleWithRefs = build.code;
+                  if (build.map) {
+                    bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
+                    bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
+                  }
+
+                  // Final chunk with bundle code (Metro format)
+                  // Metro sends: X-Metro-Files-Changed-Count, X-Metro-Delta-ID, Content-Type, Content-Length, Last-Modified
+                  const bundleBytes = Buffer.byteLength(bundleWithRefs);
+                  const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+                  const bundleChunk =
+                    `${CRLF}--${BOUNDARY}${CRLF}` +
+                    `X-Metro-Files-Changed-Count: ${totalCount}${CRLF}` +
+                    `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
+                    `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
+                    `Content-Length: ${bundleBytes}${CRLF}` +
+                    `Last-Modified: ${new Date().toUTCString()}${CRLF}${CRLF}` +
+                    bundleWithRefs +
+                    `${CRLF}--${BOUNDARY}--${CRLF}`;
+                  controller.enqueue(encoder.encode(bundleChunk));
+                  controller.close();
+                } catch (error) {
+                  buildingPlatforms.delete(requestPlatform);
+                  controller.error(error);
                 }
+              },
+            });
 
-                const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-                platformBuildStates.set(requestPlatform, {
-                  graph,
-                  moduleIdToPath,
-                  pathToModuleId,
-                  revisionId,
-                  createModuleId,
-                });
-              } catch (error) {
-                console.warn(`Failed to save build state for HMR:`, error);
-              }
-            }
-
-            const bundleWithMapRef = build.map
-              ? `${build.code}\n//# sourceMappingURL=${url.pathname}.map`
-              : build.code;
-
-            return new Response(bundleWithMapRef, {
+            return new Response(stream, {
               headers: {
-                'Content-Type': 'application/javascript',
+                'Content-Type': `multipart/mixed; boundary="${BOUNDARY}"`,
                 'Cache-Control': 'no-cache',
               },
             });
-          } catch (buildError) {
-            buildingPlatforms.delete(requestPlatform);
-            throw buildError;
           }
+
+          // Standard response (no multipart support)
+          const buildPromise = buildWithGraph(platformConfig);
+          buildingPlatforms.set(requestPlatform, buildPromise);
+          const build = await buildPromise;
+          buildingPlatforms.delete(requestPlatform);
+          cachedBuilds.set(requestPlatform, build);
+
+          // Save build state for HMR
+          if (config.dev && build.graph && build.createModuleId) {
+            try {
+              const { graph, createModuleId } = build;
+              const moduleIdToPath = new Map<number | string, string>();
+              const pathToModuleId = new Map<string, number | string>();
+              for (const [path] of graph.entries()) {
+                const moduleId = createModuleId(path);
+                moduleIdToPath.set(moduleId, path);
+                pathToModuleId.set(path, moduleId);
+              }
+              const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+              platformBuildStates.set(requestPlatform, {
+                graph,
+                moduleIdToPath,
+                pathToModuleId,
+                revisionId,
+                createModuleId,
+              });
+            } catch (error) {
+              console.warn(`Failed to save build state for HMR:`, error);
+            }
+          }
+
+          let bundleWithRefs3 = build.code;
+          if (build.map) {
+            bundleWithRefs3 += `\n//# sourceMappingURL=${mapUrl}`;
+            bundleWithRefs3 += `\n//# sourceURL=${bundleUrl}`;
+          }
+
+          return new Response(bundleWithRefs3, {
+            headers: {
+              'Content-Type': 'application/javascript',
+              'Cache-Control': 'no-cache',
+            },
+          });
         } catch (error) {
           console.error('Build error:', error);
           return new Response(`// Build error: ${error}`, {
@@ -2774,7 +2943,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
     },
   });
 
-  console.log(`✅ Dev server (Graph mode) running at http://${hostname}:${port}`);
+  console.log(`\n✅ Dev server running at http://${hostname}:${port}`);
   console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
 
   // File watcher for auto-rebuild on file changes (dev mode only)
@@ -2927,12 +3096,12 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               for (let i = 0; i < hmrMessage.body.modified.length; i++) {
                 const item = hmrMessage.body.modified[i];
                 if (!item || typeof item !== 'object') {
-                  console.error(`[bungae] CRITICAL: modified[${i}] is not an object!`, item);
+                  console.error(`CRITICAL: modified[${i}] is not an object!`, item);
                 } else if (!item.module || !Array.isArray(item.module)) {
-                  console.error(`[bungae] CRITICAL: modified[${i}].module is not an array!`, item);
+                  console.error(`CRITICAL: modified[${i}].module is not an array!`, item);
                 } else if (item.module.length !== 2) {
                   console.error(
-                    `[bungae] CRITICAL: modified[${i}].module.length is not 2!`,
+                    `CRITICAL: modified[${i}].module.length is not 2!`,
                     item.module.length,
                     item,
                   );
@@ -2948,12 +3117,12 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
               for (let i = 0; i < hmrMessage.body.added.length; i++) {
                 const item = hmrMessage.body.added[i];
                 if (!item || typeof item !== 'object') {
-                  console.error(`[bungae] CRITICAL: added[${i}] is not an object!`, item);
+                  console.error(`CRITICAL: added[${i}] is not an object!`, item);
                 } else if (!item.module || !Array.isArray(item.module)) {
-                  console.error(`[bungae] CRITICAL: added[${i}].module is not an array!`, item);
+                  console.error(`CRITICAL: added[${i}].module is not an array!`, item);
                 } else if (item.module.length !== 2) {
                   console.error(
-                    `[bungae] CRITICAL: added[${i}].module.length is not 2!`,
+                    `CRITICAL: added[${i}].module.length is not 2!`,
                     item.module.length,
                     item,
                   );
@@ -2968,10 +3137,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
             }
             // Log full JSON structure (truncated for readability)
             const jsonStr = JSON.stringify(hmrMessage);
-            console.log(
-              '[bungae] Sending HMR update JSON (first 1000 chars):',
-              jsonStr.substring(0, 1000),
-            );
+            console.log('Sending HMR update JSON (first 1000 chars):', jsonStr.substring(0, 1000));
             // Also log the structure in a readable format
             console.log('HMR message to send:', {
               type: hmrMessage.type,
@@ -3045,7 +3211,7 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
           // Double-check arrays (defensive programming)
           if (!Array.isArray(hmrMessage.body.added)) {
             console.error(
-              '[bungae] CRITICAL: Final check failed - added is not an array!',
+              'CRITICAL: Final check failed - added is not an array!',
               typeof hmrMessage.body.added,
             );
             hmrMessage.body.added = [];
@@ -3078,9 +3244,9 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
                 Array.isArray(parsed.body.modified) &&
                 Array.isArray(parsed.body.deleted)
               ) {
-                console.log('[bungae] ✅ JSON structure validated successfully');
+                console.log('✅ JSON structure validated successfully');
               } else {
-                console.error('[bungae] ❌ JSON structure validation failed!', {
+                console.error('❌ JSON structure validation failed!', {
                   hasBody: !!parsed.body,
                   addedIsArray: Array.isArray(parsed.body?.added),
                   modifiedIsArray: Array.isArray(parsed.body?.modified),
@@ -3156,7 +3322,10 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
     }
     isShuttingDown = true;
 
-    console.log(`\n${signal} received, shutting down dev server...`);
+    const isTestMode = process.env.NODE_ENV === 'test' || (globalThis as any).__BUNGAE_TEST_MODE__;
+    if (!isTestMode) {
+      console.log(`\n${signal} received, shutting down dev server...`);
+    }
 
     try {
       // Close file watcher (if it was created)
@@ -3177,29 +3346,65 @@ export async function serveWithGraph(config: ResolvedConfig): Promise<void> {
 
       // Stop the server
       await httpServer.stop();
-      console.log('[bungae] Server stopped');
+      if (!isTestMode) {
+        console.log('Server stopped');
+      }
 
-      process.exit(0);
+      // Only exit if not in test mode (test mode will call stop() directly)
+      if (!isTestMode) {
+        process.exit(0);
+      }
     } catch (error) {
-      console.error('Error during shutdown:', error);
-      process.exit(1);
+      if (!isTestMode) {
+        console.error('Error during shutdown:', error);
+        process.exit(1);
+      }
+      // In test mode, just throw the error
+      throw error;
     }
   };
 
   process.on('SIGINT', () => {
     shutdown('SIGINT').catch((err) => {
-      console.error('[bungae] Shutdown error:', err);
+      console.error('Shutdown error:', err);
       process.exit(1);
     });
   });
 
   process.on('SIGTERM', () => {
     shutdown('SIGTERM').catch((err) => {
-      console.error('[bungae] Shutdown error:', err);
+      console.error('Shutdown error:', err);
       process.exit(1);
     });
   });
 
   // Keep the process alive - Bun.serve keeps the event loop running
-  // The function doesn't need to return a pending promise
+  // Return server instance for testing purposes
+  return {
+    stop: async () => {
+      // Close file watcher first
+      if (fileWatcher) {
+        fileWatcher.close();
+        fileWatcher = null;
+      }
+
+      // Close all WebSocket connections
+      for (const ws of wsConnections) {
+        try {
+          ws.close();
+        } catch {
+          // Ignore errors when closing
+        }
+      }
+      wsConnections.clear();
+      hmrClients.clear();
+
+      // Stop the server
+      try {
+        await httpServer.stop();
+      } catch {
+        // Ignore errors - server might already be stopped
+      }
+    },
+  };
 }
