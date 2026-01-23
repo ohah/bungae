@@ -130,7 +130,7 @@ export function getPrependedModules(options: {
   } catch (error) {
     // Not a React Native project or metro-runtime not found, skip
     // This allows tests to run without react-native installed
-    console.warn(`[bungae] metro-runtime not found, skipping: ${error}`);
+    console.warn(`metro-runtime not found, skipping: ${error}`);
   }
 
   // 3. React Native polyfills (console, error-guard) - after metro-runtime
@@ -160,7 +160,7 @@ export function getPrependedModules(options: {
     }
   } catch (error) {
     // Not a React Native project, skip
-    console.warn(`[bungae] @react-native/js-polyfills not found, skipping: ${error}`);
+    console.warn(`@react-native/js-polyfills not found, skipping: ${error}`);
   }
 
   // 4. Additional polyfills (if any) - script modules
