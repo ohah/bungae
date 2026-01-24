@@ -14,6 +14,7 @@ import {
   getRunModuleStatement,
 } from '../../serializer';
 import { buildGraph, reorderGraph, graphToSerializerModules } from './graph';
+import { minifyCode } from './minify';
 import type { AssetInfo, BuildResult } from './types';
 import { getImageSize } from './utils';
 
@@ -229,7 +230,7 @@ export async function buildWithGraph(
   });
 
   // Combine bundle parts
-  const code = [
+  let code = [
     '// Bungae Bundle (Graph Mode)',
     bundle.pre,
     bundle.modules.map(([, code]) => code).join('\n'),
@@ -454,6 +455,27 @@ export async function buildWithGraph(
       // No fallback - let the error propagate for debugging
       console.error('Failed to generate source map:', error);
       throw error;
+    }
+  }
+
+  // Apply minification if enabled (production builds)
+  if (config.minify && !dev) {
+    console.log('Minifying bundle...');
+    const minifyStartTime = Date.now();
+    try {
+      const minifyResult = await minifyCode(code, {
+        minifier: config.transformer.minifier,
+        sourceMap: map,
+        fileName: bundleName || 'bundle.js',
+      });
+      code = minifyResult.code;
+      if (minifyResult.map) {
+        map = minifyResult.map;
+      }
+      console.log(`Minification completed in ${Date.now() - minifyStartTime}ms`);
+    } catch (error) {
+      console.warn('Minification failed, using unminified code:', error);
+      // Continue with unminified code
     }
   }
 

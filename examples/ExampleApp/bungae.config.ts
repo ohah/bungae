@@ -6,8 +6,8 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
 // Use source files directly during development (avoid dist/index.js issues)
-import { defineConfig } from '../../packages/bungae/src/config';
-import type { BungaeConfig } from '../../packages/bungae/src/config/types';
+import { defineConfig } from 'bungae';
+import type { BungaeConfig } from 'bungae';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

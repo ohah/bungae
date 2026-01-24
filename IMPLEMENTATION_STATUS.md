@@ -110,10 +110,12 @@
 - [x] `inlineSourceMap` 옵션 (base64 인코딩된 source map을 번들에 인라인 포함)
 - [ ] `x_google_ignoreList` 생성 (Chrome DevTools에서 특정 파일 제외)
 
-### 3. Minification ❌
+### 3. Minification ✅
 
-- [ ] Production 빌드 시 코드 압축
-- [ ] Terser 또는 Bun 내장 minifier 사용
+- [x] Production 빌드 시 코드 압축
+- [x] Terser 사용 (Metro와 동일한 기본값 및 설정)
+- [x] Bun, esbuild 대안 지원
+- [x] Metro 호환 Terser 설정 (compress, mangle, format 옵션)
 
 ### 4. Tree Shaking ❌
 

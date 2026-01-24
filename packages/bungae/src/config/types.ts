@@ -29,7 +29,7 @@ export interface ResolverConfig {
  */
 export interface TransformerConfig {
   /** Minifier to use */
-  minifier?: 'bun' | 'terser' | 'esbuild';
+  minifier?: 'bun' | 'terser' | 'esbuild' | 'swc';
   /** Enable inline requires */
   inlineRequires?: boolean;
 }

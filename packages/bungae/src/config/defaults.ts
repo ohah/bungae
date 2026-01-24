@@ -24,9 +24,10 @@ export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
 
 /**
  * Default transformer configuration
+ * Metro uses Terser by default for minification
  */
 export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
-  minifier: 'bun',
+  minifier: 'terser', // Metro-compatible: Metro uses Terser by default
   inlineRequires: false,
 };
 
