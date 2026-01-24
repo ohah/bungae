@@ -306,6 +306,8 @@ export async function graphToSerializerModules(
       // Generate code from AST (Metro-compatible: serializer generates code from AST)
       // @babel/generator can handle File node directly (it uses program property)
       let code = '';
+      let sourceMap: string | undefined;
+
       if (m.transformedAst) {
         // If AST is File node, generator handles it directly
         // If AST is Program node, wrap it in File node for consistency
@@ -313,22 +315,38 @@ export async function graphToSerializerModules(
           m.transformedAst.type === 'File'
             ? m.transformedAst
             : { type: 'File', program: m.transformedAst, comments: [], tokens: [] };
-        const generated = generator.default(astToGenerate, {
-          comments: true,
-          filename: m.path,
-        });
+
+        // Generate code WITH source maps for DevTools support
+        // This is critical for React Native DevTools to show correct source locations
+        // IMPORTANT: Pass original source code as 3rd parameter for accurate source map generation
+        const generated = generator.default(
+          astToGenerate,
+          {
+            comments: true,
+            filename: m.path,
+            sourceMaps: config.dev, // Generate source maps in dev mode
+            sourceFileName: m.path, // Use full path for source map
+          },
+          m.code, // Original source code - required for source map generation
+        );
         code = generated.code;
+
+        // Include generated source map if available
+        if (generated.map && config.dev) {
+          sourceMap = JSON.stringify(generated.map);
+        }
       } else {
         // Fallback for modules without AST (should not happen)
         code = m.code;
       }
+
       return {
         path: m.path,
         code,
         dependencies: m.dependencies,
         originalDependencies: m.originalDependencies,
         type: 'js/module' as const,
-        map: m.sourceMap, // Include source map if available
+        map: sourceMap || m.sourceMap, // Use generated source map, fallback to transformer's
       };
     }),
   );

@@ -36,6 +36,7 @@ function AppContent() {
     version?: string;
     isBungae: boolean;
   } | null>(null);
+  const [hermesEnabled, setHermesEnabled] = useState<boolean | null>(null);
 
   // Double-check: Verify which bundler was used
   useEffect(() => {
@@ -52,6 +53,11 @@ function AppContent() {
     };
 
     setBundlerInfo(info);
+
+    // Check if Hermes is enabled
+    const isHermes = !!(globalThis as any).HermesInternal;
+    setHermesEnabled(isHermes);
+    console.log('🔧 Hermes enabled:', isHermes);
 
     if (isBungae) {
       console.log('✅ Bungae Bundler detected!');
@@ -271,6 +277,24 @@ function AppContent() {
         </View>
       )}
 
+      {/* Hermes Status Badge */}
+      {hermesEnabled !== null && (
+        <View
+          style={[
+            styles.hermesBadge,
+            {
+              backgroundColor: hermesEnabled
+                ? 'rgba(34, 197, 94, 0.9)' // Green for Hermes
+                : 'rgba(239, 68, 68, 0.9)', // Red for JSC
+            },
+          ]}
+        >
+          <Text style={styles.bundlerText}>
+            {hermesEnabled ? '✅ Hermes' : '❌ JSC (No Hermes)'}
+          </Text>
+        </View>
+      )}
+
       {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
       <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
         <Text style={styles.testButtonText}>🧪 Test Button (Event Handler Test)</Text>
@@ -295,6 +319,22 @@ const styles = StyleSheet.create({
   bundlerBadge: {
     position: 'absolute',
     top: 50,
+    right: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  hermesBadge: {
+    position: 'absolute',
+    top: 85,
     right: 16,
     paddingHorizontal: 12,
     paddingVertical: 6,
