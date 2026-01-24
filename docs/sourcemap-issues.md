@@ -5,6 +5,7 @@
 React Native DevTools에서 콘솔 로그의 소스 위치가 올바르게 표시되지 않습니다.
 
 ### 증상
+
 - **콘솔 로그**: `index.bundle?platform=ios&dev=true&...:7` 형식으로 표시됨 (번들 파일 경로)
 - **에러 스택**: 올바르게 소스맵이 적용되어 원본 파일 경로 표시됨
 - **기대 동작**: 콘솔 로그도 `App.tsx:XX` 형식으로 원본 파일 경로가 표시되어야 함
@@ -55,6 +56,7 @@ if (options.dev) {
 ```
 
 **특징**:
+
 - 항상 상대 경로 사용: `App.tsx`
 - Metro와 동일한 방식
 - `sourcePaths` 모드와 무관하게 상대 경로 유지
@@ -75,6 +77,7 @@ const sourceMapPath =
 ```
 
 **특징**:
+
 - `sourcePaths=url-server`: `[metro-project]/App.tsx` 형식 사용
 - `sourcePaths=absolute`: 상대 경로 (`App.tsx`) 사용
 - Metro와 동일한 형식
@@ -106,6 +109,7 @@ const getSourceUrl = (modulePath: string): string => {
 ```
 
 **sourceRequestRoutingMap 구성**:
+
 ```typescript
 const sourceRequestRoutingMap: Array<[string, string]> = [
   ['[metro-project]/', resolve(config.root)],
@@ -122,11 +126,13 @@ for (let i = 0; i < config.resolver.nodeModulesPaths.length; i++) {
 ## Metro의 동작
 
 ### sourcePaths=url-server일 때
+
 - **verboseName**: `App.tsx` (상대 경로)
 - **소스맵 sources**: `[metro-project]/App.tsx` (getSourceUrl 형식)
 - **React Native 매칭**: React Native가 경로를 정규화하여 `[metro-project]/App.tsx`를 `App.tsx`로 매칭하는 것으로 추정
 
 ### sourcePaths=absolute일 때
+
 - **verboseName**: `App.tsx` (상대 경로)
 - **소스맵 sources**: `/Users/.../App.tsx` (절대 경로)
 
@@ -137,11 +143,13 @@ for (let i = 0; i < config.resolver.nodeModulesPaths.length; i++) {
 React Native DevTools가 `verboseName`을 사용하여 소스맵 `sources` 배열에서 파일을 찾는 방식이 예상과 다를 수 있습니다.
 
 **가능한 매칭 방식**:
+
 1. **정확 일치**: `verboseName`과 소스맵 `sources` 배열의 항목을 정확히 비교
 2. **경로 정규화**: 경로를 정규화하여 매칭 (예: `App.tsx` ↔ `[metro-project]/App.tsx`)
 3. **파일명 기반 매칭**: 파일명만 추출하여 매칭
 
 **현재 상태**:
+
 - `verboseName`: `App.tsx`
 - 소스맵 `sources`: `[metro-project]/App.tsx`
 - Metro와 동일한 형식이지만 여전히 작동하지 않음
@@ -170,6 +178,7 @@ React Native DevTools가 `verboseName`을 사용하여 소스맵 `sources` 배�
 ### 시도 1: verboseName과 소스맵 sources를 모두 상대 경로로 통일
 
 **결과**: 실패
+
 - `verboseName`: `App.tsx`
 - 소스맵 `sources`: `App.tsx`
 - 여전히 콘솔 로그가 작동하지 않음
@@ -177,6 +186,7 @@ React Native DevTools가 `verboseName`을 사용하여 소스맵 `sources` 배�
 ### 시도 2: Metro와 동일한 형식 사용 (현재)
 
 **결과**: 진행 중
+
 - `verboseName`: `App.tsx` (상대 경로)
 - 소스맵 `sources`: `[metro-project]/App.tsx` (getSourceUrl 형식)
 - Metro와 동일한 형식이지만 여전히 작동하지 않음
@@ -211,6 +221,7 @@ curl 'http://localhost:8081/index.bundle.map?platform=ios&dev=true' | \
 ```
 
 **예상 결과**:
+
 ```json
 {
   "version": 3,
@@ -226,6 +237,7 @@ curl 'http://localhost:8081/index.bundle.map?platform=ios&dev=true' | \
 ### 1. Metro의 실제 소스맵 확인
 
 Metro 서버에서 실제로 생성된 소스맵을 확인하여 Bungae와 비교:
+
 - 소스맵의 `sources` 배열 형식
 - 소스맵의 `mappings` 구조
 - 소스맵의 기타 필드들
@@ -233,6 +245,7 @@ Metro 서버에서 실제로 생성된 소스맵을 확인하여 Bungae와 비�
 ### 2. React Native DevTools의 소스맵 매칭 로직 분석
 
 React Native의 소스 코드를 확인하여:
+
 - `verboseName`을 어떻게 사용하는지
 - 소스맵 `sources` 배열과 어떻게 매칭하는지
 - 경로 정규화 로직이 있는지
@@ -240,6 +253,7 @@ React Native의 소스 코드를 확인하여:
 ### 3. 실제 생성된 번들과 소스맵 비교
 
 생성된 번들과 소스맵을 직접 확인하여:
+
 - `verboseName`이 올바르게 포함되어 있는지
 - 소스맵의 `sources` 배열이 올바른지
 - 소스맵의 `mappings`가 올바른지
@@ -247,6 +261,7 @@ React Native의 소스 코드를 확인하여:
 ### 4. Metro와 Bungae의 소스맵 비교
 
 Metro와 Bungae로 생성한 소스맵을 직접 비교하여:
+
 - 구조적 차이점 찾기
 - 형식적 차이점 찾기
 
