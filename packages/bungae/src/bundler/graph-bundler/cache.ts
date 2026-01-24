@@ -4,7 +4,16 @@
  */
 
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync } from 'fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  statSync,
+  unlinkSync,
+  rmSync,
+  readdirSync,
+} from 'fs';
 import { join } from 'path';
 
 export interface CacheEntry {
@@ -24,6 +33,7 @@ export interface CacheOptions {
 
 /**
  * Create a cache key from file path and config
+ * Includes all relevant config options that affect transformation
  */
 function createCacheKey(
   filePath: string,
@@ -31,6 +41,7 @@ function createCacheKey(
     platform: string;
     dev: boolean;
     root: string;
+    inlineRequires?: boolean;
   },
 ): string {
   const hash = createHash('sha256');
@@ -38,15 +49,23 @@ function createCacheKey(
   hash.update(config.platform);
   hash.update(String(config.dev));
   hash.update(config.root);
+  // Include inlineRequires in cache key since it affects transformation
+  hash.update(String(config.inlineRequires ?? false));
+  // Note: Babel config changes would require manual cache clear
+  // as we can't easily hash the entire babel.config.js content
   return hash.digest('hex');
 }
 
 /**
  * Get cache file path for a module
+ * Uses two-level directory structure for better distribution in large projects
  */
 function getCacheFilePath(cacheDir: string, cacheKey: string): string {
-  // Use first 2 characters for directory structure to avoid too many files in one directory
-  const dir = join(cacheDir, cacheKey.substring(0, 2));
+  // Use two-level directory structure (aa/bb/hash.json) for better distribution
+  // This prevents too many files in a single directory for large projects
+  const shard1 = cacheKey.substring(0, 2);
+  const shard2 = cacheKey.substring(2, 4);
+  const dir = join(cacheDir, shard1, shard2);
   mkdirSync(dir, { recursive: true });
   return join(dir, `${cacheKey}.json`);
 }
@@ -73,6 +92,7 @@ export class PersistentCache {
       platform: string;
       dev: boolean;
       root: string;
+      inlineRequires?: boolean;
     },
   ): CacheEntry | null {
     const cacheKey = createCacheKey(filePath, config);
@@ -89,7 +109,7 @@ export class PersistentCache {
       if (age > this.maxAge) {
         // Cache expired, delete it
         try {
-          require('fs').unlinkSync(cacheFilePath);
+          unlinkSync(cacheFilePath);
         } catch {
           // Ignore deletion errors
         }
@@ -123,6 +143,7 @@ export class PersistentCache {
       platform: string;
       dev: boolean;
       root: string;
+      inlineRequires?: boolean;
     },
     entry: CacheEntry,
   ): void {
@@ -146,7 +167,6 @@ export class PersistentCache {
    */
   clear(): void {
     try {
-      const { rmSync } = require('fs');
       if (existsSync(this.cacheDir)) {
         rmSync(this.cacheDir, { recursive: true, force: true });
         mkdirSync(this.cacheDir, { recursive: true });
@@ -164,18 +184,26 @@ export class PersistentCache {
     let entries = 0;
 
     try {
-      const { readdirSync, statSync } = require('fs');
       const dirs = readdirSync(this.cacheDir);
       for (const dir of dirs) {
         const dirPath = join(this.cacheDir, dir);
-        if (statSync(dirPath).isDirectory()) {
-          const files = readdirSync(dirPath);
-          for (const file of files) {
-            if (file.endsWith('.json')) {
-              const filePath = join(dirPath, file);
-              const stats = statSync(filePath);
-              size += stats.size;
-              entries++;
+        const dirStats = statSync(dirPath);
+        if (dirStats.isDirectory()) {
+          // Two-level structure: shard1/shard2/files
+          const subDirs = readdirSync(dirPath);
+          for (const subDir of subDirs) {
+            const subDirPath = join(dirPath, subDir);
+            const subDirStats = statSync(subDirPath);
+            if (subDirStats.isDirectory()) {
+              const files = readdirSync(subDirPath);
+              for (const file of files) {
+                if (file.endsWith('.json')) {
+                  const filePath = join(subDirPath, file);
+                  const stats = statSync(filePath);
+                  size += stats.size;
+                  entries++;
+                }
+              }
             }
           }
         }
