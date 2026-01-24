@@ -3,6 +3,7 @@
  * Metro-compatible terminal actions
  */
 
+import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
@@ -63,9 +64,10 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
     // Handle Ctrl+C separately (it's \u0003)
     // In raw mode, Ctrl+C doesn't automatically send SIGINT, so we need to handle it
     if (key === '\u0003') {
-      // Restore stdin to normal mode temporarily
+      // Remove stdin listener before sending signal to prevent race conditions
       if (process.stdin.isRaw) {
         process.stdin.setRawMode(false);
+        process.stdin.removeListener('data', handleKeyPress);
       }
       // Send SIGINT to the current process
       process.kill(process.pid, 'SIGINT');
@@ -74,9 +76,10 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
 
     // Handle Ctrl+D (EOF)
     if (key === '\u0004') {
-      // Restore stdin to normal mode temporarily
+      // Remove stdin listener before sending signal to prevent race conditions
       if (process.stdin.isRaw) {
         process.stdin.setRawMode(false);
+        process.stdin.removeListener('data', handleKeyPress);
       }
       // Send SIGTERM or exit
       process.kill(process.pid, 'SIGTERM');
@@ -186,7 +189,7 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
     // Open iOS Simulator using xcrun simctl
     // First, try to boot a simulator if none is running
     // Then open Simulator.app
-    const openSimulator = Bun.spawn(['open', '-a', 'Simulator'], {
+    const openSimulator = spawn('open', ['-a', 'Simulator'], {
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
     });
@@ -212,14 +215,21 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
     // List available AVDs and open the first one
     // For simplicity, we'll try to open the default emulator
     // In a real implementation, you might want to list AVDs and let user choose
-    const emulatorProcess = Bun.spawn([emulatorPath, '-list-avds'], {
-      stdout: 'pipe',
-      stderr: 'pipe',
+    const emulatorProcess = spawn(emulatorPath, ['-list-avds'], {
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
-    // Read stdout from Bun.spawn
-    const avdList = await new Response(emulatorProcess.stdout).text();
-    const exitCode = await emulatorProcess.exited;
+    // Read stdout from child_process.spawn
+    let avdList = '';
+    emulatorProcess.stdout.on('data', (data) => {
+      avdList += data.toString();
+    });
+
+    const exitCode = await new Promise<number>((resolve) => {
+      emulatorProcess.on('close', (code) => {
+        resolve(code ?? 0);
+      });
+    });
 
     if (exitCode !== 0) {
       console.log('Failed to list Android AVDs');
@@ -242,9 +252,19 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
       console.log('No Android AVDs found. Please create an AVD first.');
       return;
     }
+
+    // Validate AVD name to prevent command injection
+    // AVD names should only contain alphanumeric characters, underscores, hyphens, and dots
+    if (!/^[a-zA-Z0-9._-]+$/.test(avdName)) {
+      console.log(
+        'Invalid AVD name. AVD names must contain only alphanumeric characters, underscores, hyphens, and dots.',
+      );
+      return;
+    }
+
     console.log(`Opening Android Emulator: ${avdName}`);
 
-    const emulator = Bun.spawn([emulatorPath, '-avd', avdName], {
+    const emulator = spawn(emulatorPath, ['-avd', avdName], {
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
     });
