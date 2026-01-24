@@ -135,7 +135,6 @@ async function minifyWithTerser(
 ): Promise<MinifyResult> {
   try {
     // Try to import terser (optional dependency)
-    // @ts-expect-error - terser is optional dependency, types may not be available
     const terser = await import('terser').catch(() => null);
     if (!terser) {
       throw new Error('Terser is not installed. Install it with: bun add terser');
