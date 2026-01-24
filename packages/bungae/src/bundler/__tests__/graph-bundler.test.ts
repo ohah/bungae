@@ -517,15 +517,20 @@ console.log(config.name);
           entry: 'index.js',
           platform: 'ios',
           dev: true,
+          serializer: {
+            inlineSourceMap: true, // Use inline source map to test sourceMappingURL comment
+          },
         },
         testDir,
       );
 
       const result = await buildWithGraph(config);
 
-      expect(result.map).toBeDefined();
-      // Bundle code should contain sourceMappingURL comment
+      // When inlineSourceMap is true, map is undefined (embedded in code)
+      // But bundle code should contain sourceMappingURL comment
       expect(result.code).toContain('//# sourceMappingURL');
+      // Inline source maps are embedded in code, so separate map file is undefined
+      expect(result.map).toBeUndefined();
     });
 
     test('should generate source map with multiple modules', async () => {
@@ -615,13 +620,16 @@ console.log(config.name);
         testDir,
       );
 
-      const result = await buildWithGraph(config);
+      // Use sourcePaths='absolute' to get relative paths in source map
+      const result = await buildWithGraph(config, undefined, {
+        sourcePaths: 'absolute',
+      });
 
       expect(result.map).toBeDefined();
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.sources).toBeDefined();
 
-      // Sources should be relative paths from project root
+      // Sources should be relative paths from project root when sourcePaths='absolute'
       const entryRelativePath = relative(testDir, entryFile);
       expect(sourceMap.sources).toContain(entryRelativePath);
     });
@@ -649,11 +657,12 @@ console.log(config.name);
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.x_google_ignoreList).toBeDefined();
       expect(Array.isArray(sourceMap.x_google_ignoreList)).toBe(true);
-      // All modules should be in ignore list (index.js is the only module)
+      // All modules should be in ignore list
+      // __prelude__ is at index 0 (isIgnored: false), index.js is at index 1 (isIgnored: true)
       expect(sourceMap.x_google_ignoreList.length).toBeGreaterThan(0);
-      // Check that all source indices are in ignore list
+      // Check that index.js (at index 1) is in ignore list
       expect(sourceMap.x_google_ignoreList).toEqual(
-        expect.arrayContaining([0]), // First module (index.js) should be at index 0
+        expect.arrayContaining([1]), // index.js is at index 1 (after __prelude__ at index 0)
       );
     });
 
