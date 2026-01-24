@@ -63,16 +63,16 @@
 - [x] `/status` 엔드포인트
 - [x] `/open-url` 엔드포인트 (Metro 호환)
 
-#### 6. 터미널 단축키 (Phase 2-5) ❌
+#### 6. 터미널 단축키 (Phase 2-5) ✅
 
-- [ ] Metro 호환 터미널 단축키 지원
-- [ ] `r` - Reload (앱 리로드)
-- [ ] `d` - Open Dev Menu (개발 메뉴 열기)
-- [ ] `i` - Open iOS Simulator
-- [ ] `a` - Open Android Emulator
-- [ ] `j` - Open Chrome DevTools
-- [ ] `c` - Clear cache
-- [ ] `useGlobalHotkey` 설정 옵션 지원 (기본값: true)
+- [x] Metro 호환 터미널 단축키 지원
+- [x] `r` - Reload (앱 리로드)
+- [x] `d` - Open Dev Menu (개발 메뉴 열기)
+- [x] `i` - Open iOS Simulator
+- [x] `a` - Open Android Emulator
+- [x] `j` - Open Chrome DevTools
+- [x] `c` - Clear cache
+- [ ] `useGlobalHotkey` 설정 옵션 지원 (기본값: true) - 부분 구현 (설정은 있으나 완전한 글로벌 핫키 미지원)
 
 #### 3. HMR (Hot Module Replacement) (Phase 2-3) ✅
 
