@@ -190,7 +190,13 @@ export async function getModuleParams(
   const params: Array<unknown> = [moduleId, dependencyIds];
 
   // Add verbose name in dev mode
+  // Metro-compatible: verboseName is ALWAYS a relative path, regardless of sourcePaths mode
+  // Metro uses path.relative(projectRoot, module.path) for verboseName
+  // Even when sourcePaths=url-server, verboseName remains relative (e.g., "App.tsx")
+  // The source map sources use getSourceUrl (e.g., "[metro-project]/App.tsx")
+  // React Native matches verboseName to source map sources by normalizing paths
   if (options.dev) {
+    // Always use relative path for verboseName (Metro-compatible)
     const pathModule = await import('path');
     const relativePath = pathModule.relative(options.projectRoot, module.path);
     params.push(relativePath.replace(/\\/g, '/'));

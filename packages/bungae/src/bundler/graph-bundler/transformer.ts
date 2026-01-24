@@ -60,10 +60,9 @@ export async function transformWithBabel(
   const babel = await import('@babel/core');
   const hermesParser = await import('hermes-parser');
 
-  // Metro uses transformFromAstSync: parse AST first, then transform
-  // Metro behavior: hermesParser option determines parser (Hermes or Babel)
-  // We use Hermes parser by default (like Metro with hermesParser: true)
-  // This handles Flow syntax including "import typeof" correctly
+  // Metro-compatible: Set BABEL_ENV for @react-native/babel-preset
+  // This is required for codegen and other Babel preset features
+  // Metro sets BABEL_ENV before transform (see metro-babel-transformer/src/index.js)
   const OLD_BABEL_ENV = process.env.BABEL_ENV;
   process.env.BABEL_ENV = options.dev ? 'development' : process.env.BABEL_ENV || 'production';
 
@@ -156,11 +155,9 @@ export async function transformWithBabel(
         bundler: 'metro',
         name: 'metro',
         platform: options.platform,
-        // Metro includes these additional caller options for @react-native/babel-preset
-        isDev: options.dev,
-        isServer: false,
-        // Engine can be 'hermes' or 'jsc' - default to 'hermes' for React Native
-        engine: 'hermes',
+        // Metro's caller options - only these three are used by Metro
+        // Additional options like isDev, isServer, engine are NOT passed by Metro
+        // @react-native/babel-preset reads these from process.env or other sources
       },
       cloneInputAst: false, // Metro sets this to avoid cloning overhead
       code: false, // Metro-compatible: return AST only, serializer generates code
