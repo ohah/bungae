@@ -517,20 +517,20 @@ console.log(config.name);
           entry: 'index.js',
           platform: 'ios',
           dev: true,
-          serializer: {
-            inlineSourceMap: true, // Use inline source map to test sourceMappingURL comment
-          },
         },
         testDir,
       );
 
       const result = await buildWithGraph(config);
 
-      // When inlineSourceMap is true, map is undefined (embedded in code)
-      // But bundle code should contain sourceMappingURL comment
-      expect(result.code).toContain('//# sourceMappingURL');
-      // Inline source maps are embedded in code, so separate map file is undefined
-      expect(result.map).toBeUndefined();
+      // Metro-compatible: buildWithGraph returns code without sourceMappingURL comment
+      // The comment is added by the server when serving the bundle
+      // For this test, we verify that source map is generated (map is defined)
+      // and that the code doesn't contain sourceMappingURL (it will be added by server)
+      expect(result.map).toBeDefined();
+      // When not using inlineSourceMap, code should not contain sourceMappingURL
+      // (server.ts will add it when serving)
+      expect(result.code).not.toContain('//# sourceMappingURL');
     });
 
     test('should generate source map with multiple modules', async () => {
@@ -620,7 +620,8 @@ console.log(config.name);
         testDir,
       );
 
-      // Use sourcePaths='absolute' to get relative paths in source map
+      // Metro-compatible: default sourcePaths is 'url-server' which uses [metro-project]/ format
+      // For absolute paths, use sourcePaths='absolute'
       const result = await buildWithGraph(config, undefined, {
         sourcePaths: 'absolute',
       });
@@ -629,7 +630,7 @@ console.log(config.name);
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.sources).toBeDefined();
 
-      // Sources should be relative paths from project root when sourcePaths='absolute'
+      // When sourcePaths='absolute', sources should be relative paths from project root
       const entryRelativePath = relative(testDir, entryFile);
       expect(sourceMap.sources).toContain(entryRelativePath);
     });
