@@ -24,10 +24,31 @@ const __dirname = dirname(__filename);
 /**
  * Build bundle using Graph + Metro module system
  */
+export interface BuildOptions {
+  /** Exclude source code from source map (Metro-compatible) */
+  excludeSource?: boolean;
+  /** Return modules only, skip prelude and runtime (Metro-compatible) */
+  modulesOnly?: boolean;
+  /** Run module after loading (Metro-compatible) */
+  runModule?: boolean;
+  /** Bundle name for source map folder structure (e.g., 'index.bundle') */
+  bundleName?: string;
+  /** Source paths mode: 'absolute' or 'url-server' (Metro-compatible) */
+  sourcePaths?: 'absolute' | 'url-server';
+}
+
 export async function buildWithGraph(
   config: ResolvedConfig,
   onProgress?: (transformedFileCount: number, totalFileCount: number) => void,
+  options?: BuildOptions,
 ): Promise<BuildResult> {
+  const {
+    excludeSource = false,
+    modulesOnly = false,
+    runModule = true,
+    bundleName,
+    sourcePaths = 'url-server', // Default to url-server for Metro compatibility
+  } = options || {};
   const { entry, dev, root } = config;
 
   const entryPath = resolve(root, entry);
@@ -157,6 +178,41 @@ export async function buildWithGraph(
   // Create module ID factory
   const createModuleId = createModuleIdFactory();
 
+  // Metro-compatible: Build source request routing map for getSourceUrl
+  // This ensures verboseName matches source map sources path for console logs
+  const sourceRequestRoutingMap: Array<[string, string]> = [
+    ['[metro-project]/', resolve(config.root)],
+  ];
+  for (let i = 0; i < config.resolver.nodeModulesPaths.length; i++) {
+    const nodeModulesPath = config.resolver.nodeModulesPaths[i];
+    if (nodeModulesPath) {
+      const absolutePath = resolve(config.root, nodeModulesPath);
+      sourceRequestRoutingMap.push([`[metro-watchFolders]/${i}/`, absolutePath]);
+    }
+  }
+
+  // Metro-compatible: getSourceUrl function for verboseName and source map
+  // This ensures verboseName matches source map sources path for console logs
+  const getSourceUrl = (modulePath: string): string => {
+    for (const [pathnamePrefix, normalizedRootDir] of sourceRequestRoutingMap) {
+      const normalizedRootDirWithSep =
+        normalizedRootDir +
+        (normalizedRootDir.endsWith('/') || normalizedRootDir.endsWith('\\') ? '' : '/');
+      if (modulePath.startsWith(normalizedRootDirWithSep) || modulePath === normalizedRootDir) {
+        const relativePath =
+          modulePath === normalizedRootDir ? '' : modulePath.slice(normalizedRootDir.length + 1);
+        const relativePathPosix = relativePath
+          .split(/[/\\]/)
+          .map((segment) => encodeURIComponent(segment))
+          .join('/');
+        return pathnamePrefix + relativePathPosix;
+      }
+    }
+    // Fallback: if no match, use relative path from project root
+    const relativeModulePath = relative(config.root, modulePath).replace(/\\/g, '/');
+    return `[metro-project]/${relativeModulePath}`;
+  };
+
   // Serialize bundle
   const bundle = await baseJSBundle(entryPath, prependModules, graphModules, {
     createModuleId,
@@ -165,9 +221,11 @@ export async function buildWithGraph(
     projectRoot: root,
     serverRoot: root,
     globalPrefix: '',
-    runModule: true,
+    runModule,
+    modulesOnly,
     runBeforeMainModule,
     inlineSourceMap: config.serializer?.inlineSourceMap ?? false,
+    getSourceUrl: (module) => getSourceUrl(module.path),
   });
 
   // Combine bundle parts
@@ -202,8 +260,10 @@ export async function buildWithGraph(
       const { toBabelSegments, toSegmentTuple, fromRawMappings, generateFunctionMap } =
         metroSourceMap;
 
-      // Calculate prelude line offset
-      const preLines = bundle.pre.split('\n').length;
+      // Combine prelude with bundle header comment for accurate line counting
+      // This matches the actual bundle structure: header + prelude + modules + post
+      const preludeWithHeader = '// Bungae Bundle (Graph Mode)\n' + bundle.pre;
+      const preLines = preludeWithHeader.split('\n').length;
 
       // Prepare modules for fromRawMappings (Metro-compatible format)
       const metroModules: Array<{
@@ -220,6 +280,25 @@ export async function buildWithGraph(
         lineCount?: number;
       }> = [];
 
+      // Metro-compatible: Add __prelude__ as the first source (like Metro does)
+      // This represents the prelude/runtime code at the beginning of the bundle
+      // IMPORTANT: Use empty array [] for map, not null - Metro uses [] for prelude
+      // Metro uses folder structure like 'index.bundle/__prelude__' for DevTools
+      const bundlePrefix = bundleName ? `${bundleName}/` : '';
+      metroModules.push({
+        map: [], // Empty array, not null - Metro-compatible
+        functionMap: null,
+        path: `${bundlePrefix}__prelude__`,
+        source: preludeWithHeader,
+        code: preludeWithHeader,
+        isIgnored: false,
+        lineCount: preLines,
+      });
+
+      // Metro-compatible source map folder structure
+      // Use the same sourceRequestRoutingMap and getSourceUrl from above
+      // This ensures source map sources path matches verboseName
+
       // Process each module in the bundle
       for (const [moduleId, moduleCode] of bundle.modules) {
         const modulePath = moduleIdToPath.get(moduleId);
@@ -227,7 +306,19 @@ export async function buildWithGraph(
 
         // Find the module in graphModules to get its source map and AST
         const graphModule = graphModuleByPath.get(modulePath);
-        const relativeModulePath = relative(root, modulePath);
+
+        // Metro-compatible: verboseName is ALWAYS a relative path (e.g., "App.tsx")
+        // For sourcePaths=url-server, Metro uses getSourceUrl for source map sources (e.g., "[metro-project]/App.tsx")
+        // React Native matches verboseName (relative) to source map sources by normalizing paths
+        // Metro's behavior: verboseName="App.tsx", source map sources="[metro-project]/App.tsx"
+        // React Native normalizes "[metro-project]/App.tsx" to "App.tsx" for matching
+        const relativeModulePath = relative(config.root, modulePath).replace(/\\/g, '/');
+        // Use getSourceUrl format for source map sources when sourcePaths=url-server (Metro-compatible)
+        // This matches Metro's behavior exactly
+        const sourceMapPath =
+          sourcePaths === 'url-server'
+            ? getSourceUrl(modulePath) // Use [metro-project]/App.tsx format (Metro-compatible)
+            : relativeModulePath; // Use relative path for absolute mode
 
         // Read original source code
         let sourceCode: string;
@@ -249,49 +340,19 @@ export async function buildWithGraph(
           try {
             const babelSourceMap = JSON.parse(graphModule.map);
             // Convert Babel source map to raw mappings using toBabelSegments and toSegmentTuple
-            // Babel source map's sources array may contain absolute or relative paths
-            // Metro's fromRawMappings uses module.path for the sources array, so we need to ensure
-            // the path matches what Babel expects. However, toBabelSegments/toSegmentTuple
-            // only extract mappings, not source paths - Metro uses module.path for that.
             const babelSegments = toBabelSegments(babelSourceMap);
             rawMappings = babelSegments.map(toSegmentTuple);
-
-            // Debug: Log source map conversion details
-            if (config.dev) {
-              const babelSources = babelSourceMap.sources || [];
-              const babelMappingsCount = babelSourceMap.mappings
-                ? babelSourceMap.mappings.split(';').length
-                : 0;
-              if (rawMappings.length === 0) {
-                console.warn(
-                  `⚠️ Empty source map mappings for ${relativeModulePath}. Babel had ${babelSources.length} sources, ${babelMappingsCount} mapping lines.`,
-                );
-              } else if (rawMappings.length < babelMappingsCount / 2) {
-                // If we have significantly fewer mappings than Babel had, something might be wrong
-                console.warn(
-                  `⚠️ Fewer mappings than expected for ${relativeModulePath}: ${rawMappings.length} vs ${babelMappingsCount} Babel mapping lines.`,
-                );
-              }
-            }
-          } catch (error) {
+          } catch {
             // If conversion fails, create basic line-by-line mappings
             // Metro includes modules even without source maps
             const moduleLines = moduleCode.split('\n').length;
             rawMappings = [];
             for (let i = 0; i < moduleLines; i++) {
-              // [generatedLine, generatedColumn, sourceLine, sourceColumn]
               rawMappings.push([i + 1, 0, i + 1, 0]);
-            }
-            if (config.dev) {
-              console.warn(
-                `Failed to convert source map for ${modulePath}, using basic mappings:`,
-                error,
-              );
             }
           }
         } else {
           // No source map - create basic line-by-line mappings (Metro-compatible)
-          // Metro includes all modules in source map even without mappings
           const moduleLines = moduleCode.split('\n').length;
           rawMappings = [];
           for (let i = 0; i < moduleLines; i++) {
@@ -363,10 +424,13 @@ export async function buildWithGraph(
             })
           : false;
 
+        // sourceMapPath is always assigned (relativeModulePath)
+        // Ensure it's never empty or undefined
+        const finalSourceMapPath = sourceMapPath || relativeModulePath;
         metroModules.push({
           map: rawMappings,
           functionMap,
-          path: relativeModulePath,
+          path: finalSourceMapPath,
           source: sourceCode,
           code: moduleCode,
           isIgnored,
@@ -375,59 +439,21 @@ export async function buildWithGraph(
       }
 
       // Generate source map using Metro's fromRawMappings API
-      const generator = fromRawMappings(metroModules, preLines);
+      // offsetLines should be 0 since __prelude__ is included as the first module
+      // The prelude's lineCount will be added to carryOver automatically
+      const generator = fromRawMappings(metroModules, 0);
 
       // Convert Generator to source map JSON
-      const sourceMap = generator.toMap(basename(entryPath), {
-        excludeSource: false,
+      // Metro uses undefined for the file parameter (see sourceMapObject.js)
+      const sourceMap = generator.toMap(undefined, {
+        excludeSource,
       });
-
-      // Debug: Log source map info in dev mode
-      if (config.dev) {
-        const sourceCount = sourceMap.sources?.length || 0;
-        const mappingsLength = sourceMap.mappings?.length || 0;
-        const hasSourcesContent =
-          Array.isArray(sourceMap.sourcesContent) && sourceMap.sourcesContent.length > 0;
-        const mappingsLineCount = sourceMap.mappings ? sourceMap.mappings.split(';').length : 0;
-        console.log(
-          `✅ Generated source map: ${sourceCount} sources, ${mappingsLength} chars mappings (${mappingsLineCount} lines), sourcesContent: ${hasSourcesContent}`,
-        );
-        if (sourceCount > 0 && sourceCount <= 10) {
-          console.log(`  Sources: ${sourceMap.sources.slice(0, 10).join(', ')}`);
-        } else if (sourceCount > 10) {
-          console.log(
-            `  Sources (first 10): ${sourceMap.sources.slice(0, 10).join(', ')}... (${sourceCount} total)`,
-          );
-        }
-        // Check if mappings are empty (indicates problem)
-        if (mappingsLength === 0 || mappingsLineCount === 0) {
-          console.warn(
-            `⚠️ WARNING: Source map has empty mappings! This will prevent symbolication.`,
-          );
-        }
-      }
 
       map = JSON.stringify(sourceMap);
     } catch (error) {
-      // Fallback to basic source map if metro-source-map fails
-      console.warn('Failed to generate source map with metro-source-map, using fallback:', error);
-      const fallbackMap = {
-        version: 3,
-        file: basename(entryPath),
-        sources: Array.from(graph.keys()).map((p) => relative(root, p)),
-        names: [],
-        mappings: '',
-        sourcesContent: Array.from(graph.keys()).map((p) => {
-          try {
-            return readFileSync(p, 'utf-8');
-          } catch {
-            // Keep placeholder (null) to preserve 1:1 alignment with `sources`
-            // Source map spec requires sourcesContent to have same length/order as sources
-            return null;
-          }
-        }),
-      };
-      map = JSON.stringify(fallbackMap);
+      // No fallback - let the error propagate for debugging
+      console.error('Failed to generate source map:', error);
+      throw error;
     }
   }
 
@@ -445,13 +471,11 @@ export async function buildWithGraph(
     finalCode = code + inlineSourceMapComment;
     finalMap = undefined; // Don't return separate map file when inline
   } else if (map) {
-    // For non-inline source maps, add relative path sourceMappingURL
-    // server.ts will replace this with full URL when serving via HTTP
-    // For file-based builds (build command), relative path is sufficient
-    const entryBaseName = basename(entryPath).replace(/\.(js|ts|jsx|tsx)$/, '') || 'index';
-    const mapFileName = `${entryBaseName}.bundle.map`;
-    const sourceMappingURLComment = `\n//# sourceMappingURL=${mapFileName}`;
-    finalCode = code + sourceMappingURLComment;
+    // For non-inline source maps, DON'T add sourceMappingURL here
+    // server.ts will add the full URL when serving via HTTP
+    // This prevents duplicate/conflicting sourceMappingURL comments
+    // For file-based builds (build command), the caller should add the URL
+    finalCode = code;
   }
 
   // Extract asset files from bundle modules (only assets actually included in bundle)
