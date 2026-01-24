@@ -56,6 +56,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-native-community/cli-server-api": "^15.0.0",
+    "@react-native/dev-middleware": "^0.83.1",
     "@babel/core": "^7.28.6",
     "@babel/generator": "^7.28.6",
     "@babel/plugin-transform-class-properties": "^7.28.6",
@@ -79,7 +81,8 @@
     "metro-source-map": "^0.83.3",
     "oxc-parser": "^0.108.0",
     "oxc-transform": "^0.108.0",
-    "source-map": "^0.7.4"
+    "source-map": "^0.7.4",
+    "ws": "^8.18.0"
   },
   "devDependencies": {
     "@babel/plugin-proposal-export-default-from": "^7.27.1",
@@ -107,6 +110,7 @@
     "@types/babel__generator": "^7.6.8",
     "@types/babel__traverse": "^7.20.5",
     "@types/bun": "latest",
+    "@types/ws": "^8.5.10",
     "typescript": "^5"
   },
   "peerDependencies": {
