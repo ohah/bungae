@@ -15,6 +15,7 @@
 
 // Public exports
 export { buildWithGraph } from './build';
+export type { BuildOptions } from './build';
 export { serveWithGraph } from './server';
 export { createHMRUpdateMessage, incrementalBuild } from './hmr';
 
