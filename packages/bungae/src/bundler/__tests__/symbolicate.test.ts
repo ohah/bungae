@@ -268,7 +268,7 @@ export default testFunction;
 
       expect(result).toHaveProperty('stack');
       expect(result.stack).toHaveLength(1);
-      
+
       // Symbolication may fail if line number doesn't match source map
       // In that case, the original frame is returned
       const symbolicatedFrame = result.stack[0];
