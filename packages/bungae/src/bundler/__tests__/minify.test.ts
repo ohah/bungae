@@ -46,12 +46,15 @@ describe('minifyCode', () => {
     expect(result.code.length).toBeGreaterThan(0);
   });
 
-  it('should preserve Metro runtime functions', async () => {
+  it('should preserve Metro runtime functions with Bun minifier', async () => {
     const code = `
       __d(function() {
         return 'module';
       }, 1, []);
       __r(1);
+      __DEV__ = true;
+      __METRO__ = true;
+      __BUNGAE__ = true;
     `;
 
     const result = await minifyCode(code, {
@@ -60,6 +63,78 @@ describe('minifyCode', () => {
 
     expect(result.code).toContain('__d');
     expect(result.code).toContain('__r');
+    expect(result.code).toContain('__DEV__');
+    expect(result.code).toContain('__METRO__');
+    expect(result.code).toContain('__BUNGAE__');
+  });
+
+  it('should preserve Metro runtime functions with Terser minifier', async () => {
+    const code = `
+      __d(function() {
+        return 'module';
+      }, 1, []);
+      __r(1);
+      __DEV__ = true;
+      __METRO__ = true;
+      __BUNGAE__ = true;
+    `;
+
+    const result = await minifyCode(code, {
+      minifier: 'terser',
+    });
+
+    expect(result.code).toContain('__d');
+    expect(result.code).toContain('__r');
+    expect(result.code).toContain('__DEV__');
+    expect(result.code).toContain('__METRO__');
+    expect(result.code).toContain('__BUNGAE__');
+  });
+
+  it('should preserve Metro runtime functions with esbuild minifier', async () => {
+    const code = `
+      __d(function() {
+        return 'module';
+      }, 1, []);
+      __r(1);
+      __DEV__ = true;
+      __METRO__ = true;
+      __BUNGAE__ = true;
+    `;
+
+    const result = await minifyCode(code, {
+      minifier: 'esbuild',
+    });
+
+    // esbuild may not mangle global function names in practice, but it's not guaranteed
+    // This test verifies current behavior
+    expect(result.code).toContain('__d');
+    expect(result.code).toContain('__r');
+    expect(result.code).toContain('__DEV__');
+    expect(result.code).toContain('__METRO__');
+    expect(result.code).toContain('__BUNGAE__');
+  });
+
+  it('should preserve Metro runtime functions with SWC minifier', async () => {
+    const code = `
+      __d(function() {
+        return 'module';
+      }, 1, []);
+      __r(1);
+      __DEV__ = true;
+      __METRO__ = true;
+      __BUNGAE__ = true;
+    `;
+
+    const result = await minifyCode(code, {
+      minifier: 'swc',
+    });
+
+    // SWC uses keep_fnames: true to preserve function names
+    expect(result.code).toContain('__d');
+    expect(result.code).toContain('__r');
+    expect(result.code).toContain('__DEV__');
+    expect(result.code).toContain('__METRO__');
+    expect(result.code).toContain('__BUNGAE__');
   });
 
   it('should handle empty code', async () => {
