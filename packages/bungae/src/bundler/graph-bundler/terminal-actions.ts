@@ -19,7 +19,7 @@ export interface TerminalActionsOptions {
   /** Dev server port */
   port: number;
   /** Broadcast function for message socket (reload/devMenu) */
-  broadcast?: (method: string, params?: unknown) => void;
+  broadcast?: (method: string, params?: Record<string, any>) => void;
 }
 
 /**
