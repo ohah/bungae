@@ -337,7 +337,13 @@ export async function serveWithGraph(
     }
 
     // Symbolicate endpoint
-    if (url.pathname === '/symbolicate' && req.method === 'POST') {
+    if (url.pathname === '/symbolicate') {
+      if (req.method !== 'POST') {
+        // Metro-compatible: Return 405 for non-POST requests
+        res.writeHead(405, { 'Content-Type': 'text/plain' });
+        res.end('Method Not Allowed');
+        return;
+      }
       await handleSymbolicate(req, res, url);
       return;
     }
@@ -792,9 +798,23 @@ export async function serveWithGraph(
             return { ...frame };
           }
 
-          const sourcePath = originalPos.source.startsWith('/')
-            ? originalPos.source
-            : resolve(config.root, originalPos.source);
+          // Handle Metro-style source paths like [metro-project]/App.tsx
+          // Convert to actual file path for symbolication
+          let sourcePath: string;
+          if (originalPos.source.startsWith('[metro-project]/')) {
+            // Remove [metro-project]/ prefix and resolve from project root
+            const relativePath = originalPos.source.slice('[metro-project]/'.length);
+            sourcePath = resolve(config.root, relativePath);
+          } else if (originalPos.source.startsWith('[metro-watchFolders]/')) {
+            // Handle [metro-watchFolders]/{i}/ paths
+            // For now, try to resolve from project root (can be improved)
+            const relativePath = originalPos.source.replace(/^\[metro-watchFolders\]\/\d+\//, '');
+            sourcePath = resolve(config.root, relativePath);
+          } else if (originalPos.source.startsWith('/')) {
+            sourcePath = originalPos.source;
+          } else {
+            sourcePath = resolve(config.root, originalPos.source);
+          }
 
           const originalLine =
             typeof originalPos.line === 'number' ? originalPos.line : Number(originalPos.line);
