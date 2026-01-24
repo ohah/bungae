@@ -39,21 +39,10 @@ class ReactNativeDelegate: RCTDefaultReactNativeFactoryDelegate {
   }
 
   override func bundleURL() -> URL? {
-    // Check if Bungae bundle exists (for both DEBUG and RELEASE)
-    // Priority: main.jsbundle (release) > index.jsbundle (dev) > Metro dev server
-    if let bungaeBundle = Bundle.main.url(forResource: "main", withExtension: "jsbundle") {
-      return bungaeBundle
-    }
-    
-    if let bungaeDevBundle = Bundle.main.url(forResource: "index", withExtension: "jsbundle") {
-      return bungaeDevBundle
-    }
-    
-    // Fallback to Metro dev server only if no Bungae bundle is found
 #if DEBUG
     return RCTBundleURLProvider.sharedSettings().jsBundleURL(forBundleRoot: "index")
 #else
-    return nil
+    return Bundle.main.url(forResource: "main", withExtension: "jsbundle")
 #endif
   }
 }
