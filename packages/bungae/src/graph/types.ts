@@ -44,7 +44,7 @@ export interface GraphBuildOptions {
   };
   /** Transformer config */
   transformer: {
-    minifier?: 'bun' | 'terser' | 'esbuild';
+    minifier?: 'bun' | 'terser' | 'esbuild' | 'swc';
     inlineRequires?: boolean;
   };
   /** Serializer config */

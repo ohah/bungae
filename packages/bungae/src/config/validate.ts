@@ -138,7 +138,7 @@ export function validateConfig(config: BungaeConfig): void {
     }
 
     if (config.transformer.minifier !== undefined) {
-      const validMinifiers = ['bun', 'terser', 'esbuild'];
+      const validMinifiers = ['bun', 'terser', 'esbuild', 'swc'];
       if (!validMinifiers.includes(config.transformer.minifier)) {
         throw new ConfigValidationError(
           `Invalid config: \`transformer.minifier\` must be one of ${validMinifiers.join(', ')}, but received ${config.transformer.minifier}`,

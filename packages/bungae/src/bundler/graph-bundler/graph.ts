@@ -3,10 +3,12 @@
  */
 
 import { readFileSync } from 'fs';
+import { join } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
 import type { Module } from '../../serializer/types';
 import { extractDependenciesFromAst } from '../../transformer/extract-dependencies-from-ast';
+import { PersistentCache } from './cache';
 import { resolveModule } from './resolver';
 import { transformFile } from './transformer';
 import type { GraphModule } from './types';
@@ -23,6 +25,10 @@ export async function buildGraph(
   const modules = new Map<string, GraphModule>();
   const visited = new Set<string>();
   const processing = new Set<string>();
+
+  // Initialize persistent cache
+  const cacheDir = join(config.root, '.bungae', 'cache');
+  const cache = new PersistentCache({ cacheDir });
 
   let processedCount = 0;
   let totalCount = 1;
@@ -100,10 +106,29 @@ export async function buildGraph(
     // Read file
     const code = readFileSync(filePath, 'utf-8');
 
-    // JSON files: No dependencies, just wrap as module
+    // Check cache first (skip for assets and JSON files)
     const isJSON = filePath.endsWith('.json');
+    let transformResult: { ast: any; sourceMap?: string } | null = null;
+    let cachedDependencies: string[] | null = null;
+
+    if (!isJSON && !isAsset) {
+      const cacheEntry = cache.get(filePath, {
+        platform: config.platform,
+        dev: config.dev,
+        root: config.root,
+      });
+
+      if (cacheEntry) {
+        // Use cached transformation result
+        // Note: AST is not cached (too large), so we still need to transform
+        // But we can use cached dependencies to skip dependency extraction
+        cachedDependencies = cacheEntry.dependencies;
+      }
+    }
+
+    // JSON files: No dependencies, just wrap as module
     if (isJSON) {
-      const transformResult = await transformFile(filePath, code, config, entryPath);
+      transformResult = await transformFile(filePath, code, config, entryPath);
       const module: GraphModule = {
         path: filePath,
         code,
@@ -121,7 +146,9 @@ export async function buildGraph(
     }
 
     // Transform code (returns AST only, Metro-compatible)
-    const transformResult = await transformFile(filePath, code, config, entryPath);
+    if (!transformResult) {
+      transformResult = await transformFile(filePath, code, config, entryPath);
+    }
     if (!transformResult) {
       // Flow file or other skipped file
       visited.add(filePath);
@@ -134,7 +161,14 @@ export async function buildGraph(
     // Metro-compatible: Extract dependencies from transformed AST only (no code generation)
     // Metro uses collectDependencies on transformed AST - type-only imports are handled by Babel preset
     // Babel may add new imports (e.g., react/jsx-runtime for JSX) which will be in the transformed AST
-    const allDeps = await extractDependenciesFromAst(transformResult.ast);
+    let allDeps: string[] = [];
+    if (cachedDependencies) {
+      // Use cached dependencies (but still need to resolve them)
+      allDeps = cachedDependencies;
+    } else {
+      // Extract dependencies from AST
+      allDeps = await extractDependenciesFromAst(transformResult.ast);
+    }
 
     // Resolve dependencies (including asset files)
     const resolvedDependencies: string[] = [];
@@ -150,6 +184,24 @@ export async function buildGraph(
       } else if (config.dev) {
         console.warn(`Failed to resolve "${dep}" from ${filePath}`);
       }
+    }
+
+    // Cache transformation result (without AST to save space)
+    if (!isJSON && !isAsset) {
+      cache.set(
+        filePath,
+        {
+          platform: config.platform,
+          dev: config.dev,
+          root: config.root,
+        },
+        {
+          code,
+          dependencies: resolvedDependencies,
+          sourceMap: transformResult.sourceMap,
+          timestamp: Date.now(),
+        },
+      );
     }
 
     // Create module (store AST, serializer will generate code)

@@ -101,7 +101,9 @@ export default defineConfig({
     },
 
     // Minifier
-    minifier: 'bun', // 'bun' | 'terser' | 'esbuild'
+    // Metro officially supports: 'terser' (default), 'esbuild' (via metro-minify-esbuild)
+    // Bungae additionally supports: 'bun', 'swc'
+    minifier: 'terser', // 'terser' (Metro default) | 'esbuild' | 'bun' | 'swc'
   },
 
   serializer: {
