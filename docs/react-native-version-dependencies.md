@@ -46,38 +46,39 @@ Bungae가 사용하는 React Native 관련 패키지들은 React Native 버전�
 
 ### 런타임 의존성 (Bungae)
 
-| 패키지 | 역할 | 버전 규칙 |
-|--------|------|-----------|
-| `@react-native/dev-middleware` | DevTools 지원 (Chrome Inspector, Hermes Debugger) | RN 버전과 동일 |
-| `@react-native-community/cli-server-api` | 메시지 소켓 (`/message`), reload/devMenu 명령 | RN CLI 버전에 맞춤 (15.x for RN 0.83) |
-| `metro-runtime` | Metro 런타임 폴리필 (`__d`, `__r`) | Metro 버전과 동일 |
-| `metro-source-map` | 소스맵 파싱/심볼리케이션 | Metro 버전과 동일 |
-| `hermes-parser` | Hermes/Flow 구문 파싱 | 최신 버전 사용 가능 |
-| `babel-plugin-syntax-hermes-parser` | Babel에서 Hermes 파서 사용 | hermes-parser 버전과 호환 |
-| `babel-plugin-transform-flow-enums` | Flow enum 변환 | 최신 버전 사용 가능 |
+| 패키지                                   | 역할                                              | 버전 규칙                             |
+| ---------------------------------------- | ------------------------------------------------- | ------------------------------------- |
+| `@react-native/dev-middleware`           | DevTools 지원 (Chrome Inspector, Hermes Debugger) | RN 버전과 동일                        |
+| `@react-native-community/cli-server-api` | 메시지 소켓 (`/message`), reload/devMenu 명령     | RN CLI 버전에 맞춤 (15.x for RN 0.83) |
+| `metro-runtime`                          | Metro 런타임 폴리필 (`__d`, `__r`)                | Metro 버전과 동일                     |
+| `metro-source-map`                       | 소스맵 파싱/심볼리케이션                          | Metro 버전과 동일                     |
+| `hermes-parser`                          | Hermes/Flow 구문 파싱                             | 최신 버전 사용 가능                   |
+| `babel-plugin-syntax-hermes-parser`      | Babel에서 Hermes 파서 사용                        | hermes-parser 버전과 호환             |
+| `babel-plugin-transform-flow-enums`      | Flow enum 변환                                    | 최신 버전 사용 가능                   |
 
 ### 개발 의존성 (Bungae)
 
-| 패키지 | 역할 | 버전 규칙 |
-|--------|------|-----------|
-| `@react-native/babel-preset` | RN Babel 변환 프리셋 | RN 버전과 동일 |
-| `@react-native/babel-plugin-codegen` | Native 모듈 코드젠 | RN 버전과 동일 |
+| 패키지                               | 역할                 | 버전 규칙      |
+| ------------------------------------ | -------------------- | -------------- |
+| `@react-native/babel-preset`         | RN Babel 변환 프리셋 | RN 버전과 동일 |
+| `@react-native/babel-plugin-codegen` | Native 모듈 코드젠   | RN 버전과 동일 |
 
 ## 버전 매핑 표
 
-| React Native | @react-native/* | cli-server-api | CLI | Metro |
-|--------------|-----------------|----------------|-----|-------|
-| 0.83.x | 0.83.x | 15.x | 20.x | 0.83.x |
-| 0.82.x | 0.82.x | 15.x | 19.x | 0.82.x |
-| 0.81.x | 0.81.x | 14.x | 18.x | 0.81.x |
-| 0.80.x | 0.80.x | 14.x | 17.x | 0.80.x |
-| 0.76.x ~ 0.79.x | 0.76.x ~ 0.79.x | 13.x | 16.x | 0.76.x ~ 0.79.x |
-| 0.73.x ~ 0.75.x | 0.73.x ~ 0.75.x | 12.x | 15.x | 0.73.x ~ 0.75.x |
-| 0.72.x | 0.72.x | 11.x | 14.x | 0.76.x |
-| 0.71.x | 0.71.x | 10.x | 13.x | 0.73.x |
-| 0.70.x | - | 9.x | 12.x | 0.72.x |
+| React Native    | @react-native/\* | cli-server-api | CLI  | Metro           |
+| --------------- | ---------------- | -------------- | ---- | --------------- |
+| 0.83.x          | 0.83.x           | 15.x           | 20.x | 0.83.x          |
+| 0.82.x          | 0.82.x           | 15.x           | 19.x | 0.82.x          |
+| 0.81.x          | 0.81.x           | 14.x           | 18.x | 0.81.x          |
+| 0.80.x          | 0.80.x           | 14.x           | 17.x | 0.80.x          |
+| 0.76.x ~ 0.79.x | 0.76.x ~ 0.79.x  | 13.x           | 16.x | 0.76.x ~ 0.79.x |
+| 0.73.x ~ 0.75.x | 0.73.x ~ 0.75.x  | 12.x           | 15.x | 0.73.x ~ 0.75.x |
+| 0.72.x          | 0.72.x           | 11.x           | 14.x | 0.76.x          |
+| 0.71.x          | 0.71.x           | 10.x           | 13.x | 0.73.x          |
+| 0.70.x          | -                | 9.x            | 12.x | 0.72.x          |
 
-> **참고**: 
+> **참고**:
+>
 > - React Native 0.73 이전에는 `@react-native/*` 패키지 대신 `metro-*` 패키지만 사용했습니다.
 > - `@react-native-community/cli` 버전은 React Native 앱에서 사용되며, Bungae는 `cli-server-api`만 사용합니다.
 
@@ -86,6 +87,7 @@ Bungae가 사용하는 React Native 관련 패키지들은 React Native 버전�
 ### React Native 버전 업그레이드 시:
 
 1. **`@react-native/*` 패키지 업데이트**
+
    ```bash
    bun add @react-native/dev-middleware@^0.XX.0
    bun add -d @react-native/babel-preset@^0.XX.0
@@ -93,16 +95,18 @@ Bungae가 사용하는 React Native 관련 패키지들은 React Native 버전�
    ```
 
 2. **Metro 관련 패키지 업데이트**
+
    ```bash
    bun add metro-runtime@^0.XX.0
    bun add metro-source-map@^0.XX.0
    ```
 
 3. **CLI 패키지 업데이트 (필요시)**
+
    ```bash
    bun add @react-native-community/cli-server-api@^XX.0.0
    ```
-   
+
    > **주의**: `cli-server-api` 버전은 React Native CLI 버전과 다를 수 있습니다. 호환성 테이블을 참고하세요.
 
 4. **Babel 플러그인 호환성 확인**
