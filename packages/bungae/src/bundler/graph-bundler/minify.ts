@@ -63,68 +63,65 @@ async function minifyWithBun(
   sourceMap?: string,
   fileName?: string,
 ): Promise<MinifyResult> {
+  // Use a unique temp file path to avoid collisions in high-concurrency scenarios
+  const tempId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+  const tempFile = `/tmp/bungae-minify-${tempId}.js`;
+  let tempFileCreated = false;
+
   try {
     // Bun has a built-in minifier via Bun.Transpiler
     // However, Bun.Transpiler doesn't support minification directly
     // Use Bun.build() for minification instead
-    const tempFile = `/tmp/bungae-minify-${Date.now()}.js`;
     await Bun.write(tempFile, code);
+    tempFileCreated = true;
 
-    try {
-      const result = await Bun.build({
-        entrypoints: [tempFile],
-        minify: {
-          whitespace: true,
-          syntax: true,
-          identifiers: true,
-        },
-        sourcemap: sourceMap ? 'external' : 'none',
-        outdir: '/tmp',
-        naming: '[name].min.js',
-      });
+    const result = await Bun.build({
+      entrypoints: [tempFile],
+      minify: {
+        whitespace: true,
+        syntax: true,
+        identifiers: true,
+      },
+      sourcemap: sourceMap ? 'external' : 'none',
+      outdir: '/tmp',
+      naming: '[name].min.js',
+    });
 
-      if (!result.success || result.outputs.length === 0) {
-        throw new Error('Bun minification failed');
-      }
-
-      // TypeScript doesn't know that outputs[0] exists after length check
-      // We've already verified length > 0, so this is safe
-      const firstOutput = result.outputs[0]!;
-      const minifiedCode = await firstOutput.text();
-      let minifiedMap: string | undefined;
-
-      if (sourceMap && result.outputs.length > 1) {
-        // Source map is in the second output
-        const mapOutput = result.outputs.find((output) => output.path.endsWith('.map'));
-        if (mapOutput) {
-          minifiedMap = await mapOutput.text();
-        }
-      }
-
-      // Clean up temp file
-      try {
-        await Bun.file(tempFile).unlink();
-      } catch {
-        // Ignore cleanup errors
-      }
-
-      return {
-        code: minifiedCode,
-        map: minifiedMap,
-      };
-    } catch (error) {
-      // Clean up temp file on error
-      try {
-        await Bun.file(tempFile).unlink();
-      } catch {
-        // Ignore cleanup errors
-      }
-      throw error;
+    if (!result.success || result.outputs.length === 0) {
+      throw new Error('Bun minification failed');
     }
+
+    // TypeScript doesn't know that outputs[0] exists after length check
+    // We've already verified length > 0, so this is safe
+    const firstOutput = result.outputs[0]!;
+    const minifiedCode = await firstOutput.text();
+    let minifiedMap: string | undefined;
+
+    if (sourceMap && result.outputs.length > 1) {
+      // Source map is in the second output
+      const mapOutput = result.outputs.find((output) => output.path.endsWith('.map'));
+      if (mapOutput) {
+        minifiedMap = await mapOutput.text();
+      }
+    }
+
+    return {
+      code: minifiedCode,
+      map: minifiedMap,
+    };
   } catch (error) {
     // Fallback to Terser if Bun minification fails (Metro-compatible)
     console.warn('Bun minification failed, falling back to Terser (Metro-compatible):', error);
     return minifyWithTerser(code, sourceMap, fileName);
+  } finally {
+    // Always clean up temp file, even on error
+    if (tempFileCreated) {
+      try {
+        await Bun.file(tempFile).unlink();
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   }
 }
 
@@ -232,6 +229,9 @@ async function minifyWithEsbuild(
       sourcefile: fileName,
       target: 'es2015',
       format: 'cjs',
+      // Note: esbuild doesn't provide explicit reserved names option like Terser.
+      // In practice, esbuild's minifier doesn't mangle global function names like __d, __r,
+      // but this behavior is not guaranteed. For guaranteed Metro compatibility, use Terser.
       keepNames: false,
       legalComments: 'none',
     });
@@ -269,10 +269,11 @@ async function minifyWithSwc(
             drop_debugger: true,
           },
           mangle: {
-            // SWC doesn't support reserved names directly, but we can use keep_classnames/keep_fnames
-            // Note: Metro runtime functions are preserved by not mangling them in the code
-            keep_classnames: false,
-            keep_fnames: false,
+            // SWC doesn't support a Terser-style "reserved" list for mangling.
+            // To reliably preserve Metro runtime functions (__d, __r, __DEV__, __METRO__, __BUNGAE__),
+            // we keep all function and class names (less aggressive, but Metro-compatible).
+            keep_classnames: true,
+            keep_fnames: true,
           },
         },
         target: 'es2015',
