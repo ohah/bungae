@@ -27,7 +27,8 @@ export async function buildGraph(
   const processing = new Set<string>();
 
   // Initialize persistent cache
-  const cacheDir = join(config.root, '.bungae', 'cache');
+  // Use .bungae-cache to avoid conflict with outDir (which may be .bungae)
+  const cacheDir = join(config.root, '.bungae-cache');
   const cache = new PersistentCache({ cacheDir });
 
   let processedCount = 0;
@@ -116,12 +117,14 @@ export async function buildGraph(
         platform: config.platform,
         dev: config.dev,
         root: config.root,
+        inlineRequires: config.transformer.inlineRequires,
       });
 
       if (cacheEntry) {
         // Use cached transformation result
         // Note: AST is not cached (too large), so we still need to transform
         // But we can use cached dependencies to skip dependency extraction
+        // Cache stores unresolved dependencies (original specifiers like 'react' or './utils')
         cachedDependencies = cacheEntry.dependencies;
       }
     }
@@ -146,9 +149,7 @@ export async function buildGraph(
     }
 
     // Transform code (returns AST only, Metro-compatible)
-    if (!transformResult) {
-      transformResult = await transformFile(filePath, code, config, entryPath);
-    }
+    transformResult = await transformFile(filePath, code, config, entryPath);
     if (!transformResult) {
       // Flow file or other skipped file
       visited.add(filePath);
@@ -187,6 +188,7 @@ export async function buildGraph(
     }
 
     // Cache transformation result (without AST to save space)
+    // Store unresolved dependencies (allDeps) not resolved ones, so cache can be reused
     if (!isJSON && !isAsset) {
       cache.set(
         filePath,
@@ -194,10 +196,11 @@ export async function buildGraph(
           platform: config.platform,
           dev: config.dev,
           root: config.root,
+          inlineRequires: config.transformer.inlineRequires,
         },
         {
           code,
-          dependencies: resolvedDependencies,
+          dependencies: allDeps, // Store unresolved dependencies, not resolved ones
           sourceMap: transformResult.sourceMap,
           timestamp: Date.now(),
         },
