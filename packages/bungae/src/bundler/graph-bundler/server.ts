@@ -4,10 +4,11 @@
  */
 
 import { spawn } from 'child_process';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, readFile } from 'fs';
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http';
 import { extname, resolve, sep } from 'path';
 import type { Duplex } from 'stream';
+import { promisify } from 'util';
 
 // Import React Native CLI server API for message socket (reload/devMenu)
 import { createDevServerMiddleware } from '@react-native-community/cli-server-api';
@@ -489,7 +490,11 @@ export async function serveWithGraph(
       };
 
       // Use cached build if available
-      const cachedBuild = cachedBuilds.get(requestPlatform);
+      // Create cache key that includes all relevant build parameters
+      const bundleCacheKey = `${requestPlatform}:${requestDev}:${requestMinify}:${requestExcludeSource}:${requestModulesOnly}:${requestRunModule}:${requestSourcePaths}`;
+
+      // Check cache with parameter-based key
+      const cachedBuild = cachedBuilds.get(bundleCacheKey);
       if (cachedBuild) {
         let bundleWithRefs = cachedBuild.code;
         // Metro-compatible: sourceMappingURL comes before sourceURL
@@ -511,11 +516,12 @@ export async function serveWithGraph(
         return;
       }
 
-      // If already building for this platform, wait for it
-      const existingBuildPromise = buildingPlatforms.get(requestPlatform);
+      // If already building for this platform with same parameters, wait for it
+      const existingBuildPromise = buildingPlatforms.get(bundleCacheKey);
       if (existingBuildPromise) {
         const build = await existingBuildPromise;
-        cachedBuilds.set(requestPlatform, build);
+        // Note: Build is already cached by the original request that started it
+        // We don't need to cache it again here
 
         let bundleWithRefs = build.code;
         // Metro-compatible: sourceMappingURL comes before sourceURL
@@ -557,6 +563,8 @@ export async function serveWithGraph(
         res.write('If you are seeing this, your client does not support multipart response');
 
         try {
+          // Set buildingPlatforms before starting build to prevent race conditions
+          // If multiple requests arrive concurrently, they will all wait for the same promise
           const buildPromise = buildWithGraph(
             platformConfig,
             (transformedFileCount, totalFileCount) => {
@@ -582,10 +590,13 @@ export async function serveWithGraph(
             },
           );
 
-          buildingPlatforms.set(requestPlatform, buildPromise);
+          // Set buildingPlatforms immediately to handle concurrent requests
+          // Use parameter-based cache key to avoid serving stale builds
+          const bundleCacheKey = `${requestPlatform}:${requestDev}:${requestMinify}:${requestExcludeSource}:${requestModulesOnly}:${requestRunModule}:${requestSourcePaths}`;
+          buildingPlatforms.set(bundleCacheKey, buildPromise);
           const build = await buildPromise;
-          buildingPlatforms.delete(requestPlatform);
-          cachedBuilds.set(requestPlatform, build);
+          buildingPlatforms.delete(bundleCacheKey);
+          cachedBuilds.set(bundleCacheKey, build);
 
           if (build.graph) {
             totalCount = build.graph.size;
@@ -931,7 +942,13 @@ export async function serveWithGraph(
       for (const ext of config.resolver.sourceExts) {
         const tryPath = `${pathWithoutExt}.${ext}`;
         if (existsSync(tryPath)) {
-          normalizedFilePath = resolve(tryPath);
+          const resolvedTryPath = resolve(tryPath);
+          // Re-check security after resolving with extension to prevent path traversal
+          if (!resolvedTryPath.startsWith(normalizedRootDir)) {
+            sendText(res, 403, 'Forbidden');
+            return;
+          }
+          normalizedFilePath = resolvedTryPath;
           found = true;
           break;
         }
@@ -968,7 +985,7 @@ export async function serveWithGraph(
     const mimeType = mimeTypes[ext] || 'text/plain';
 
     try {
-      const content = await Bun.file(normalizedFilePath).text();
+      const content = await promisify(readFile)(normalizedFilePath, 'utf-8');
       res.writeHead(200, {
         'Content-Type': mimeType,
         'Access-Control-Allow-Origin': '*',
@@ -1010,9 +1027,10 @@ export async function serveWithGraph(
       const bundleNameMatch = url.pathname.match(/\/([^/]+\.bundle)(?:\.js)?$/);
       const bundleName = bundleNameMatch ? bundleNameMatch[1] : undefined;
 
-      // Check if we have a cached build with matching parameters
-      // For now, we use platform as cache key (can be extended to include other params)
-      const cachedBuild = cachedBuilds.get(mapPlatform);
+      // Create cache key that includes all relevant build parameters
+      // This ensures we don't serve stale source maps with different parameters
+      const cacheKey = `${mapPlatform}:${mapDev}:${mapMinify}:${mapExcludeSource}:${mapModulesOnly}:${mapRunModule}:${mapSourcePaths}`;
+      const cachedBuild = cachedBuilds.get(cacheKey);
 
       // If cached build exists and parameters match, use it
       if (cachedBuild?.map) {
@@ -1045,6 +1063,11 @@ export async function serveWithGraph(
         bundleName,
         sourcePaths: mapSourcePaths === 'url-server' ? 'url-server' : 'absolute',
       });
+
+      // Cache the build with the parameter-based key
+      if (build.map) {
+        cachedBuilds.set(cacheKey, build);
+      }
 
       if (build.map) {
         res.writeHead(200, {
@@ -1291,8 +1314,7 @@ export async function serveWithGraph(
       },
       projectRoot: config.root,
       port,
-      broadcast: (method: string, params?: unknown) =>
-        broadcast(method, params as Record<string, any>),
+      broadcast: (method: string, params?: Record<string, any>) => broadcast(method, params ?? {}),
     });
     console.log('\n📱 Terminal shortcuts enabled:');
     console.log('   r - Reload app');
