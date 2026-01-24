@@ -82,6 +82,7 @@
     "oxc-parser": "^0.108.0",
     "oxc-transform": "^0.108.0",
     "source-map": "^0.7.4",
+    "terser": "^5.15.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {
