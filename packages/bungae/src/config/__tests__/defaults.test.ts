@@ -34,7 +34,7 @@ describe('Config Defaults', () => {
   test('should have default transformer config', () => {
     const config = getDefaultConfig();
 
-    expect(config.transformer.minifier).toBe('bun');
+    expect(config.transformer.minifier).toBe('terser'); // Metro-compatible: Metro uses Terser by default
     expect(config.transformer.inlineRequires).toBe(false);
   });
 
