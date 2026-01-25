@@ -16,6 +16,9 @@ export function handleAssetRequest(res: ServerResponse, url: URL, config: Resolv
   try {
     let assetRelativePath: string;
     if (url.pathname.startsWith('/assets/')) {
+      // /assets/ is relative to project root
+      // /assets/icon.png -> icon.png (project root)
+      // /assets/subdir/icon.png -> subdir/icon.png
       assetRelativePath = url.pathname.slice('/assets/'.length);
       const pathSegments = assetRelativePath.split('/');
       const resolvedSegments: string[] = [];
