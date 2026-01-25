@@ -240,8 +240,6 @@ export class TerminalReporter {
       const message = messages[0] || '';
       // Calculate actual display width (without ANSI codes)
       const displayWidth = message.replace(/\x1b\[[0-9;]*m/g, '').length;
-      // Use the maximum of current message width and last rendered width to ensure we clear everything
-      const clearWidth = Math.max(displayWidth, this._lastRenderedLength, 150);
       this._lastRenderedLength = displayWidth;
 
       // Clear and write on same line (no newline) - use ANSI escape to clear to end of line

@@ -29,22 +29,6 @@ export interface AssetInfo {
 }
 
 /**
- * Build options for buildWithGraph
- */
-export interface BuildOptions {
-  /** Exclude source code from bundle (modulesOnly mode) */
-  excludeSource?: boolean;
-  /** Return only modules without prelude/runtime */
-  modulesOnly?: boolean;
-  /** Run entry module after loading */
-  runModule?: boolean;
-  /** Bundle name for identification */
-  bundleName?: string;
-  /** Source path format: 'url-server' or 'absolute' */
-  sourcePaths?: 'url-server' | 'absolute';
-}
-
-/**
  * Build result from buildWithGraph
  */
 export interface BuildResult {
