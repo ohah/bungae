@@ -5,7 +5,8 @@ node_modules/
 dist/
 build/
 out/
-# .bungae/
+.bungae/
+.bungae-cache/
 
 # Bun
 .bun/

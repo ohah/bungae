@@ -156,7 +156,7 @@ export async function handleBundleRequest(
     const buildID = `${requestPlatform}-${bundleCacheKey}`;
     const entryFile = config.entry || 'index.js';
     const bundleType = 'bundle';
-    
+
     // Initialize progress (will be updated as build progresses)
     reporter.updateBundleProgress(buildID, entryFile, bundleType, 0, 1);
 
@@ -183,7 +183,7 @@ export async function handleBundleRequest(
           platformConfig,
           (transformedFileCount, totalFileCount) => {
             totalCount = totalFileCount;
-            
+
             // Metro-compatible: Use conservative progress calculation
             // Metro uses Math.pow(ratio, 2) to prevent progress from going backwards
             // This is important because onDependencyAdd increases total before numProcessed
@@ -196,9 +196,9 @@ export async function handleBundleRequest(
               const baseRatio = transformedFileCount / Math.max(totalFileCount, 10);
               progressRatio = Math.min(Math.pow(baseRatio, 2), 0.999);
             }
-            
+
             const currentProgress = Math.floor(progressRatio * 100);
-            
+
             // Update terminal reporter (always update, throttling is handled in reporter)
             reporter.updateBundleProgress(
               buildID,
