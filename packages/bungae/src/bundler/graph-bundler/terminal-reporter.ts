@@ -239,6 +239,7 @@ export class TerminalReporter {
       // Clear line and write (no newline at end)
       const message = messages[0] || '';
       // Calculate actual display width (without ANSI codes)
+      // eslint-disable-next-line no-control-regex -- ANSI escape codes are required for terminal formatting
       const displayWidth = message.replace(/\x1b\[[0-9;]*m/g, '').length;
       this._lastRenderedLength = displayWidth;
 
