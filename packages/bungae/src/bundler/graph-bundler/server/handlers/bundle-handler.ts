@@ -230,7 +230,6 @@ export async function handleBundleRequest(
 
         // Set buildingPlatforms immediately to handle concurrent requests
         // Use parameter-based cache key to avoid serving stale builds
-        // Note: bundleCacheKey is already defined above (line 102)
         buildingPlatforms.set(bundleCacheKey, buildPromise);
         const build = await buildPromise;
         buildingPlatforms.delete(bundleCacheKey);
