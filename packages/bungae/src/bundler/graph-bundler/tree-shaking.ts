@@ -207,9 +207,12 @@ export async function extractExports(ast: any): Promise<ExportInfo[]> {
       }
     },
 
-    // module.exports = ... (CommonJS)
+    // module.exports = ... (CommonJS default export)
+    // exports.foo = ... (CommonJS named export - Babel transformed)
     AssignmentExpression(path: any) {
       const { node } = path;
+
+      // module.exports = ... (default export)
       if (
         types.isMemberExpression(node.left) &&
         types.isIdentifier(node.left.object) &&
@@ -221,6 +224,22 @@ export async function extractExports(ast: any): Promise<ExportInfo[]> {
         exports.push({
           name: 'default',
           isDefault: true,
+          isReExport: false,
+        });
+        return;
+      }
+
+      // exports.foo = ... (named export - Babel transformed from ESM)
+      if (
+        types.isMemberExpression(node.left) &&
+        types.isIdentifier(node.left.object) &&
+        node.left.object.name === 'exports' &&
+        types.isIdentifier(node.left.property)
+      ) {
+        // This is a named export in CommonJS (Babel transformed)
+        exports.push({
+          name: node.left.property.name,
+          isDefault: false,
           isReExport: false,
         });
       }
@@ -490,6 +509,27 @@ export async function removeUnusedExports(ast: any, usedExports: UsedExports): P
   const clonedAst = JSON.parse(JSON.stringify(ast));
 
   traverse(clonedAst, {
+    // Remove unused CommonJS exports (exports.foo = ...)
+    // This handles Babel-transformed code where ESM exports become exports.foo = ...
+    AssignmentExpression(path: any) {
+      const { node } = path;
+
+      // exports.foo = ... (named export - Babel transformed)
+      if (
+        types.isMemberExpression(node.left) &&
+        types.isIdentifier(node.left.object) &&
+        node.left.object.name === 'exports' &&
+        types.isIdentifier(node.left.property)
+      ) {
+        const exportName = node.left.property.name;
+
+        // If this export is not used, remove it
+        if (!usedExports.allUsed && !usedExports.used.has(exportName)) {
+          path.remove();
+        }
+      }
+    },
+
     // Remove unused named exports
     ExportNamedDeclaration(path: any) {
       const { node } = path;
@@ -588,6 +628,30 @@ export async function removeUnusedExports(ast: any, usedExports: UsedExports): P
     ExportAllDeclaration(path: any) {
       if (!usedExports.allUsed && !usedExports.used.has('*')) {
         path.remove();
+      }
+    },
+
+    // Remove unused Object.defineProperty(exports, 'foo', ...) (Babel helper)
+    CallExpression(path: any) {
+      const { node } = path;
+
+      if (
+        types.isMemberExpression(node.callee) &&
+        types.isIdentifier(node.callee.object) &&
+        node.callee.object.name === 'Object' &&
+        types.isIdentifier(node.callee.property) &&
+        node.callee.property.name === 'defineProperty' &&
+        node.arguments.length >= 2 &&
+        types.isIdentifier(node.arguments[0]) &&
+        node.arguments[0].name === 'exports' &&
+        types.isStringLiteral(node.arguments[1])
+      ) {
+        const exportName = node.arguments[1].value;
+
+        // If this export is not used, remove it
+        if (!usedExports.allUsed && !usedExports.used.has(exportName)) {
+          path.remove();
+        }
       }
     },
   });
