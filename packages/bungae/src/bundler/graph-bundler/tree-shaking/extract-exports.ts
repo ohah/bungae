@@ -207,19 +207,31 @@ export async function extractExports(ast: any): Promise<ExportInfo[]> {
         return;
       }
 
-      // exports.foo = ... (named export - Babel transformed from ESM)
+      // exports.foo = ... / exports['foo'] = ... (named export - Babel transformed from ESM)
       if (
         types.isMemberExpression(node.left) &&
         types.isIdentifier(node.left.object) &&
-        node.left.object.name === 'exports' &&
-        types.isIdentifier(node.left.property)
+        node.left.object.name === 'exports'
       ) {
-        // This is a named export in CommonJS (Babel transformed)
-        exports.push({
-          name: node.left.property.name,
-          isDefault: false,
-          isReExport: false,
-        });
+        // Static property: exports.foo
+        if (!node.left.computed && types.isIdentifier(node.left.property)) {
+          exports.push({
+            name: node.left.property.name,
+            isDefault: false,
+            isReExport: false,
+          });
+        }
+        // String-literal property: exports['foo']
+        else if (node.left.computed && types.isStringLiteral(node.left.property)) {
+          exports.push({
+            name: node.left.property.value,
+            isDefault: false,
+            isReExport: false,
+          });
+        }
+        // Dynamic / unknown key: exports[expr] where expr is not a simple string literal
+        // We don't extract these as specific exports, but they will be handled conservatively
+        // in remove-unused-exports.ts (allUsed = true)
       }
     },
   });
