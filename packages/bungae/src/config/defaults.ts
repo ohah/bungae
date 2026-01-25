@@ -8,6 +8,7 @@ import type {
   TransformerConfig,
   SerializerConfig,
   ServerConfig,
+  ExperimentalConfig,
 } from './types';
 
 /**
@@ -29,6 +30,13 @@ export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
 export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
   minifier: 'terser', // Metro-compatible: Metro uses Terser by default
   inlineRequires: false,
+};
+
+/**
+ * Default experimental configuration
+ */
+export const DEFAULT_EXPERIMENTAL: Required<ExperimentalConfig> = {
+  treeShaking: false, // Disabled by default (experimental feature)
 };
 
 /**
@@ -124,6 +132,7 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     transformer: { ...DEFAULT_TRANSFORMER },
     serializer: { ...DEFAULT_SERIALIZER },
     server: { ...DEFAULT_SERVER },
+    experimental: { ...DEFAULT_EXPERIMENTAL },
   };
 }
 

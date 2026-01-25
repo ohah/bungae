@@ -15,6 +15,7 @@ import {
 } from '../../../serializer';
 import { buildGraph, reorderGraph, graphToSerializerModules } from '../graph';
 import { minifyCode } from '../minify';
+import { applyTreeShaking } from '../tree-shaking';
 import type { BuildResult } from '../types';
 import { extractAssets } from './assets';
 import { generateSourceMap } from './sourcemap';
@@ -138,9 +139,25 @@ export async function buildWithGraph(
     }
   }
 
+  // Apply tree shaking if enabled (production builds only)
+  let finalGraph = graph;
+  if (config.experimental.treeShaking && !dev) {
+    console.log('Applying tree shaking...');
+    const treeShakingStartTime = Date.now();
+    finalGraph = await applyTreeShaking(graph, entryPath);
+    const removedModules = graph.size - finalGraph.size;
+    if (removedModules > 0) {
+      console.log(
+        `Tree shaking removed ${removedModules} unused module(s) in ${Date.now() - treeShakingStartTime}ms`,
+      );
+    } else {
+      console.log(`Tree shaking completed in ${Date.now() - treeShakingStartTime}ms (no unused modules found)`);
+    }
+  }
+
   // Reorder graph modules in DFS order (Metro-compatible)
   // This ensures module ID assignment matches Metro's behavior
-  const orderedGraphModules = reorderGraph(graph, entryPath);
+  const orderedGraphModules = reorderGraph(finalGraph, entryPath);
   if (dev) {
     console.log(`Reordered ${orderedGraphModules.length} modules in DFS order (Metro-compatible)`);
   }
@@ -235,7 +252,7 @@ export async function buildWithGraph(
       sourcePaths,
       moduleIdToPath,
       graphModuleByPath,
-      graph,
+      graph: finalGraph,
     });
   }
 
@@ -286,8 +303,8 @@ export async function buildWithGraph(
     config,
     bundle,
     moduleIdToPath,
-    graph,
+    graph: finalGraph,
   });
 
-  return { code: finalCode, map: finalMap, assets, graph, createModuleId };
+  return { code: finalCode, map: finalMap, assets, graph: finalGraph, createModuleId };
 }

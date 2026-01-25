@@ -61,6 +61,7 @@ export function mergeConfig(
       transformer: deepMerge(merged.transformer, userConfig.transformer || {}),
       serializer: deepMerge(merged.serializer, userConfig.serializer || {}),
       server: deepMerge(merged.server, userConfig.server || {}),
+      experimental: deepMerge(merged.experimental, userConfig.experimental || {}),
     };
 
     // Merge top-level properties, with nested configs taking precedence

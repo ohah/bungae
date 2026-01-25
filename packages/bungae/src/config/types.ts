@@ -35,6 +35,30 @@ export interface TransformerConfig {
 }
 
 /**
+ * Experimental configuration
+ * Features in this section are experimental and may change or be removed
+ */
+export interface ExperimentalConfig {
+  /**
+   * Enable tree shaking (remove unused exports and modules)
+   *
+   * ⚠️ EXPERIMENTAL: This feature is experimental and may have compatibility issues.
+   *
+   * ⚠️ WARNING: Metro includes ALL exports, allowing dynamic access at runtime.
+   * Tree shaking removes unused exports, which can break code that:
+   * - Dynamically accesses exports: `require('module')[key]`, `module.exports[key]`
+   * - Uses CommonJS with dynamic property access
+   * - Has side effects at module load time
+   *
+   * CommonJS modules (`require()`) are safer as they're treated as namespace imports
+   * (all exports preserved). ESM named imports may have exports removed.
+   *
+   * Only enable if you're certain your code doesn't use dynamic access patterns.
+   */
+  treeShaking?: boolean;
+}
+
+/**
  * Serializer configuration
  */
 export interface SerializerConfig {
@@ -106,17 +130,20 @@ export interface BungaeConfig {
   serializer?: SerializerConfig;
   /** Server configuration */
   server?: ServerConfig;
+  /** Experimental configuration */
+  experimental?: ExperimentalConfig;
 }
 
 /**
  * Resolved configuration (with defaults applied)
  */
 export interface ResolvedConfig extends Required<
-  Omit<BungaeConfig, 'resolver' | 'transformer' | 'serializer' | 'server'>
+  Omit<BungaeConfig, 'resolver' | 'transformer' | 'serializer' | 'server' | 'experimental'>
 > {
   resolver: Required<ResolverConfig>;
   transformer: Required<TransformerConfig>;
   serializer: Required<Omit<SerializerConfig, 'shouldAddToIgnoreList'>> &
     Pick<SerializerConfig, 'shouldAddToIgnoreList'>;
   server: Required<ServerConfig>;
+  experimental: Required<ExperimentalConfig>;
 }
