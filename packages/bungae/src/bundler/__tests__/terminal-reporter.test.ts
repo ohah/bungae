@@ -195,7 +195,7 @@ describe('Terminal Reporter', () => {
       expect(calls.length).toBeGreaterThan(0);
 
       // Progress bar should contain block characters
-      const output = calls.map((call) => call[0]).join('');
+      const output = calls.map((call: any[]) => call[0]).join('');
       // Should contain progress information
       expect(output).toBeDefined();
     });
