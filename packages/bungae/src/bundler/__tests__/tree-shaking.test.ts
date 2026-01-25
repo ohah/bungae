@@ -102,6 +102,59 @@ describe('Tree Shaking', () => {
       expect(defaultExport?.name).toBe('default');
       expect(defaultExport?.isDefault).toBe(true);
     });
+
+    test('should extract object destructuring exports with renamed properties', async () => {
+      const babel = await import('@babel/core');
+      const ast = await babel.parseAsync(
+        `
+        export const { foo: bar, baz } = obj;
+      `,
+        { sourceType: 'module' },
+      );
+
+      const exports = await extractExports(ast);
+      expect(exports.length).toBe(2);
+      // Renamed property: foo -> bar (exported name is bar)
+      expect(exports.some((e) => e?.name === 'bar' && !e.isDefault)).toBe(true);
+      // Regular property: baz
+      expect(exports.some((e) => e?.name === 'baz' && !e.isDefault)).toBe(true);
+      // Original key 'foo' should not be exported
+      expect(exports.some((e) => e?.name === 'foo')).toBe(false);
+    });
+
+    test('should extract object destructuring exports with rest elements', async () => {
+      const babel = await import('@babel/core');
+      const ast = await babel.parseAsync(
+        `
+        export const { foo, ...rest } = obj;
+      `,
+        { sourceType: 'module' },
+      );
+
+      const exports = await extractExports(ast);
+      expect(exports.length).toBe(2);
+      expect(exports.some((e) => e?.name === 'foo' && !e.isDefault)).toBe(true);
+      expect(exports.some((e) => e?.name === 'rest' && !e.isDefault)).toBe(true);
+    });
+
+    test('should extract CommonJS exports with computed property names', async () => {
+      const babel = await import('@babel/core');
+      const ast = await babel.parseAsync(
+        `
+        exports['foo'] = 1;
+        exports['bar'] = 2;
+        const key = 'baz';
+        exports[key] = 3; // Dynamic - should mark allUsed
+      `,
+        { sourceType: 'module' },
+      );
+
+      const exports = await extractExports(ast);
+      // Static string literal properties should be extracted
+      expect(exports.some((e) => e?.name === 'foo' && !e.isDefault)).toBe(true);
+      expect(exports.some((e) => e?.name === 'bar' && !e.isDefault)).toBe(true);
+      // Dynamic computed properties are handled conservatively (allUsed = true)
+    });
   });
 
   describe('extractImports', () => {
@@ -326,6 +379,109 @@ describe('Tree Shaking', () => {
       // Note: Module resolution matching may not be perfect, so we just verify the structure
       expect(utilsUsage?.used instanceof Set).toBe(true);
       expect(typeof utilsUsage?.allUsed === 'boolean').toBe(true);
+    });
+
+    test('should handle require() with destructuring pattern', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const utilsFile = join(testDir, 'utils.js');
+
+      writeFileSync(
+        entryFile,
+        `
+        const { foo, bar } = require('./utils');
+        console.log(foo, bar);
+      `,
+        'utf-8',
+      );
+
+      writeFileSync(
+        utilsFile,
+        `
+        module.exports = {
+          foo: 1,
+          bar: 2,
+          baz: 3, // Should be removed if tree shaking works
+        };
+      `,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const graph = await buildGraph(entryFile, config);
+
+      // Find actual resolved paths in graph
+      const graphPaths = Array.from(graph.keys());
+      const resolvedUtilsPath = graphPaths.find((p) => p.includes('utils.js')) || utilsFile;
+
+      const usedExports = await analyzeUsedExports(graph, entryFile);
+
+      const utilsUsage = usedExports.get(resolvedUtilsPath);
+      expect(utilsUsage).toBeDefined();
+      // Destructured properties should be marked as used
+      expect(utilsUsage?.used.has('foo')).toBe(true);
+      expect(utilsUsage?.used.has('bar')).toBe(true);
+      // baz should not be used (unless allUsed is true)
+      if (!utilsUsage?.allUsed) {
+        expect(utilsUsage?.used.has('baz')).toBe(false);
+      }
+    });
+
+    test('should handle require() with destructuring and rest element', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const utilsFile = join(testDir, 'utils.js');
+
+      writeFileSync(
+        entryFile,
+        `
+        const { foo, ...rest } = require('./utils');
+        console.log(foo, rest);
+      `,
+        'utf-8',
+      );
+
+      writeFileSync(
+        utilsFile,
+        `
+        module.exports = {
+          foo: 1,
+          bar: 2,
+          baz: 3,
+        };
+      `,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const graph = await buildGraph(entryFile, config);
+
+      // Find actual resolved paths in graph
+      const graphPaths = Array.from(graph.keys());
+      const resolvedUtilsPath = graphPaths.find((p) => p.includes('utils.js')) || utilsFile;
+
+      const usedExports = await analyzeUsedExports(graph, entryFile);
+
+      const utilsUsage = usedExports.get(resolvedUtilsPath);
+      expect(utilsUsage).toBeDefined();
+      // Rest element should mark all exports as used
+      expect(utilsUsage?.allUsed).toBe(true);
     });
   });
 
@@ -2230,6 +2386,148 @@ describe('Tree Shaking', () => {
 
       // foo should be in bundle
       expect(result.code).toContain('foo');
+    });
+
+    test('should preserve side effects in export default expression', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const utilsFile = join(testDir, 'utils.js');
+
+      writeFileSync(entryFile, `import './utils';`, 'utf-8');
+      writeFileSync(
+        utilsFile,
+        `
+        let sideEffectRan = false;
+        function initializeApp() {
+          sideEffectRan = true;
+          return 'App';
+        }
+        export default initializeApp(); // Has side effect - should be preserved
+      `,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+          experimental: {
+            ...getDefaultConfig(testDir).experimental,
+            treeShaking: true,
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // Side effect should be preserved (initializeApp() should be called)
+      // The expression should be kept even if default export is unused
+      expect(result.code).toContain('initializeApp');
+      expect(result.code).toContain('sideEffectRan');
+    });
+
+    test('should handle circular dependencies correctly', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const fileA = join(testDir, 'a.js');
+      const fileB = join(testDir, 'b.js');
+
+      writeFileSync(entryFile, `import { foo } from './a'; console.log(foo);`, 'utf-8');
+      writeFileSync(
+        fileA,
+        `
+        import { bar } from './b';
+        export const foo = 1;
+        export const unusedA = 2; // Should be removed
+      `,
+        'utf-8',
+      );
+      writeFileSync(
+        fileB,
+        `
+        import { foo } from './a'; // Circular dependency
+        export const bar = 3;
+        export const unusedB = 4; // Should be removed
+      `,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+          experimental: {
+            ...getDefaultConfig(testDir).experimental,
+            treeShaking: true,
+          },
+        },
+        testDir,
+      );
+
+      const graph = await buildGraph(entryFile, config);
+      const usedExports = await analyzeUsedExports(graph, entryFile);
+
+      // Find resolved paths
+      const graphPaths = Array.from(graph.keys());
+      const resolvedA = graphPaths.find((p) => p.includes('a.js')) || fileA;
+      const resolvedB = graphPaths.find((p) => p.includes('b.js')) || fileB;
+
+      const usageA = usedExports.get(resolvedA);
+      const usageB = usedExports.get(resolvedB);
+
+      // foo is used (imported from entry)
+      expect(usageA?.used.has('foo')).toBe(true);
+      // unusedA should not be used
+      if (!usageA?.allUsed) {
+        expect(usageA?.used.has('unusedA')).toBe(false);
+      }
+
+      // bar is used (imported from a.js)
+      expect(usageB?.used.has('bar')).toBe(true);
+      // unusedB should not be used
+      if (!usageB?.allUsed) {
+        expect(usageB?.used.has('unusedB')).toBe(false);
+      }
+    });
+
+    test('should handle CommonJS exports with string literal property access', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const utilsFile = join(testDir, 'utils.js');
+
+      writeFileSync(entryFile, `const { foo } = require('./utils'); console.log(foo);`, 'utf-8');
+      writeFileSync(
+        utilsFile,
+        `
+        exports['foo'] = 1; // String literal property
+        exports['bar'] = 2; // Should be removed
+        exports.baz = 3; // Regular property - should be removed
+      `,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+          experimental: {
+            ...getDefaultConfig(testDir).experimental,
+            treeShaking: true,
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // foo should be in bundle (used)
+      expect(result.code).toContain('foo');
+      // bar and baz might be removed if tree shaking works correctly
+      // (Note: exact removal depends on implementation)
     });
   });
 });
