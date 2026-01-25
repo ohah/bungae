@@ -5,7 +5,7 @@
 import type { IncomingMessage, ServerResponse } from 'http';
 
 import type { ResolvedConfig } from '../../../../config/types';
-import { buildWithGraph } from '../../build';
+import { buildWithGraph } from '../../build/index';
 import { getTerminalReporter } from '../../terminal-reporter';
 import type { BuildResult } from '../../types';
 

@@ -8,7 +8,7 @@ import { extname, resolve } from 'path';
 import { promisify } from 'util';
 
 import type { ResolvedConfig } from '../../../../config/types';
-import { buildWithGraph } from '../../build';
+import { buildWithGraph } from '../../build/index';
 import type { BuildResult } from '../../types';
 import { sendText } from '../utils';
 
