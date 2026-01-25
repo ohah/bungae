@@ -32,6 +32,9 @@ describe('mergeConfig', () => {
           minifier: 'bun',
           inlineRequires: false,
         },
+        experimental: {
+          treeShaking: false,
+        },
         serializer: {
           polyfills: [],
           prelude: [],

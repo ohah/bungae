@@ -156,6 +156,28 @@ export function validateConfig(config: BungaeConfig): void {
     }
   }
 
+  // Validate experimental
+  if (config.experimental !== undefined) {
+    if (
+      typeof config.experimental !== 'object' ||
+      config.experimental === null ||
+      Array.isArray(config.experimental)
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`experimental\` must be an object, but received ${typeof config.experimental}`,
+      );
+    }
+
+    if (
+      config.experimental.treeShaking !== undefined &&
+      typeof config.experimental.treeShaking !== 'boolean'
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`experimental.treeShaking\` must be a boolean, but received ${typeof config.experimental.treeShaking}`,
+      );
+    }
+  }
+
   // Validate serializer
   if (config.serializer !== undefined) {
     if (
