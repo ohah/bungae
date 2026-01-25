@@ -46,19 +46,84 @@ export async function analyzeUsedExports(
       }
     }
 
-    // If already visited, we still need to process re-exports to ensure
-    // transitive dependencies are marked as used
+    // If already visited, only process re-exports to avoid infinite recursion
+    // Re-exports need to be processed even on revisit to ensure transitive dependencies
+    // are marked as used, but we skip processing imports to prevent infinite loops
     if (wasVisited) {
-      // Continue processing to handle re-exports even on revisit
-      // This ensures circular dependencies don't prevent re-export tracking
-    } else {
-      visited.add(modulePath);
+      // Process re-exports only (skip imports to prevent infinite recursion)
+      const module = graph.get(modulePath);
+      if (module?.transformedAst) {
+        const exports = await extractExports(module.transformedAst);
+
+        for (const exp of exports) {
+          if (exp.isReExport && exp.sourceModule) {
+            // Find the resolved module path for re-export
+            let resolvedPath: string | undefined;
+
+            const depIndex = module.originalDependencies.findIndex(
+              (origDep) => origDep === exp.sourceModule,
+            );
+
+            if (depIndex >= 0 && depIndex < module.dependencies.length) {
+              resolvedPath = module.dependencies[depIndex];
+            } else {
+              // Fallback: try matching resolved paths directly
+              resolvedPath = module.dependencies.find((dep) => {
+                let normalizedSource = exp.sourceModule!.replace(/\\/g, '/');
+                if (normalizedSource.startsWith('./')) {
+                  normalizedSource = normalizedSource.slice(2);
+                } else if (normalizedSource.startsWith('../')) {
+                  normalizedSource = normalizedSource.slice(3);
+                } else if (normalizedSource.startsWith('/')) {
+                  normalizedSource = normalizedSource.slice(1);
+                }
+
+                const normalizedDep = dep.replace(/\\/g, '/');
+                const normalizedDepWithoutExt = normalizedDep.replace(/\.[^/.]+$/, '');
+                const normalizedSourceWithoutExt = normalizedSource.replace(/\.[^/.]+$/, '');
+
+                return (
+                  normalizedDep === normalizedSource ||
+                  normalizedDepWithoutExt === normalizedSourceWithoutExt ||
+                  normalizedDepWithoutExt.endsWith('/' + normalizedSourceWithoutExt)
+                );
+              });
+
+              if (!resolvedPath) {
+                const hasPathSeparator =
+                  exp.sourceModule.includes('/') || exp.sourceModule.includes('\\');
+                if (!hasPathSeparator) {
+                  const sourceFileName = exp.sourceModule.split('/').pop() || exp.sourceModule;
+                  const sourceFileNameWithoutExt = sourceFileName.replace(/\.[^/.]+$/, '');
+                  resolvedPath = module.dependencies.find((dep) => {
+                    const depFileName = (dep.split('/').pop() || dep).replace(/\.[^/.]+$/, '');
+                    return depFileName === sourceFileNameWithoutExt;
+                  });
+                }
+              }
+            }
+
+            if (resolvedPath && graph.has(resolvedPath)) {
+              // For re-exports, if this export is used, mark the source export as used
+              if (usage.allUsed || usage.used.has(exp.name)) {
+                if (exp.name === '*') {
+                  await markExportsUsed(resolvedPath, ['*'], true);
+                } else {
+                  const sourceExportName = exp.localName || exp.name;
+                  await markExportsUsed(resolvedPath, [sourceExportName], false);
+                }
+              }
+            }
+          }
+        }
+      }
+      return; // Skip processing imports to prevent infinite recursion
     }
+
+    visited.add(modulePath);
 
     const module = graph.get(modulePath);
     if (!module) return;
-
-    // Usage info already merged above, continue with processing
 
     // Extract imports from this module and recursively mark them as used
     if (module.transformedAst) {
