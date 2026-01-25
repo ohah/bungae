@@ -60,8 +60,6 @@ export async function buildWithGraph(
     throw new Error(`Entry file not found: ${entryPath}`);
   }
 
-  console.log(`Building dependency graph (Babel + Metro-compatible)...`);
-
   // Get modules to run before main module (Metro-compatible)
   // This needs to be done before building graph to ensure these modules are included
   // Pass nodeModulesPaths for monorepo support (Metro-compatible)
@@ -72,9 +70,6 @@ export async function buildWithGraph(
         projectRoot: root,
         nodeModulesPaths: config.resolver.nodeModulesPaths,
       });
-      if (dev && runBeforeMainModule.length > 0) {
-        console.log(`Modules to run before main: ${runBeforeMainModule.join(', ')}`);
-      }
     } catch (error) {
       if (dev) {
         console.warn(`Error calling getModulesRunBeforeMainModule: ${error}`);
