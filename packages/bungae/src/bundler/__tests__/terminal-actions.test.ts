@@ -5,7 +5,11 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { setupTerminalActions, type TerminalActionsOptions } from '../graph-bundler/terminal-actions';
+
+import {
+  setupTerminalActions,
+  type TerminalActionsOptions,
+} from '../graph-bundler/terminal-actions';
 
 describe('Terminal Actions', () => {
   let originalStdin: any;
