@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from 'http';
 
 import type { ResolvedConfig } from '../../../../config/types';
 import { buildWithGraph } from '../../build';
+import { getTerminalReporter } from '../../terminal-reporter';
 import type { BuildResult } from '../../types';
 
 /**
@@ -151,7 +152,13 @@ export async function handleBundleRequest(
     }
 
     // Start new build
-    console.log(`Building ${requestPlatform} bundle...`);
+    const reporter = getTerminalReporter();
+    const buildID = `${requestPlatform}-${bundleCacheKey}`;
+    const entryFile = config.entry || 'index.js';
+    const bundleType = 'bundle';
+    
+    // Initialize progress (will be updated as build progresses)
+    reporter.updateBundleProgress(buildID, entryFile, bundleType, 0, 1);
 
     if (supportsMultipart) {
       // Use multipart/mixed for progress streaming
@@ -176,17 +183,41 @@ export async function handleBundleRequest(
           platformConfig,
           (transformedFileCount, totalFileCount) => {
             totalCount = totalFileCount;
-            const currentProgress = Math.floor((transformedFileCount / totalFileCount) * 100);
-            if (currentProgress <= lastProgress && totalFileCount >= 10) {
-              return;
+            
+            // Metro-compatible: Use conservative progress calculation
+            // Metro uses Math.pow(ratio, 2) to prevent progress from going backwards
+            // This is important because onDependencyAdd increases total before numProcessed
+            let progressRatio: number;
+            if (transformedFileCount === totalFileCount && totalFileCount > 0) {
+              // Complete: show 100%
+              progressRatio = 1.0;
+            } else {
+              // In progress: use conservative calculation, cap at 99.9%
+              const baseRatio = transformedFileCount / Math.max(totalFileCount, 10);
+              progressRatio = Math.min(Math.pow(baseRatio, 2), 0.999);
             }
-            lastProgress = currentProgress;
+            
+            const currentProgress = Math.floor(progressRatio * 100);
+            
+            // Update terminal reporter (always update, throttling is handled in reporter)
+            reporter.updateBundleProgress(
+              buildID,
+              entryFile,
+              bundleType,
+              transformedFileCount,
+              totalFileCount,
+            );
 
-            const chunk =
-              `${CRLF}--${BOUNDARY}${CRLF}` +
-              `Content-Type: application/json${CRLF}${CRLF}` +
-              JSON.stringify({ done: transformedFileCount, total: totalFileCount });
-            res.write(chunk);
+            // Only send progress to client if it increased (to reduce network traffic)
+            // Metro-compatible: Always send when complete (100%) or when progress increases
+            if (currentProgress > lastProgress || totalFileCount < 10 || progressRatio === 1.0) {
+              lastProgress = currentProgress;
+              const chunk =
+                `${CRLF}--${BOUNDARY}${CRLF}` +
+                `Content-Type: application/json${CRLF}${CRLF}` +
+                JSON.stringify({ done: transformedFileCount, total: totalFileCount });
+              res.write(chunk);
+            }
           },
           {
             excludeSource: requestExcludeSource,
@@ -199,7 +230,7 @@ export async function handleBundleRequest(
 
         // Set buildingPlatforms immediately to handle concurrent requests
         // Use parameter-based cache key to avoid serving stale builds
-        const bundleCacheKey = `${requestPlatform}:${requestDev}:${requestMinify}:${requestExcludeSource}:${requestModulesOnly}:${requestRunModule}:${requestSourcePaths}`;
+        // Note: bundleCacheKey is already defined above (line 102)
         buildingPlatforms.set(bundleCacheKey, buildPromise);
         const build = await buildPromise;
         buildingPlatforms.delete(bundleCacheKey);
@@ -209,8 +240,19 @@ export async function handleBundleRequest(
           totalCount = build.graph.size;
         }
 
+        // Mark bundle as done in terminal reporter
+        reporter.bundleDone(buildID);
+
         // Save build state for HMR
         saveBuildStateForHMR(requestPlatform, build);
+
+        // Send final 100% progress message before bundle chunk (Metro-compatible)
+        // This tells the client that bundling is complete and progress bar should be hidden
+        const finalProgressChunk =
+          `${CRLF}--${BOUNDARY}${CRLF}` +
+          `Content-Type: application/json${CRLF}${CRLF}` +
+          JSON.stringify({ done: totalCount, total: totalCount });
+        res.write(finalProgressChunk);
 
         let bundleWithRefs = build.code;
         bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
@@ -231,24 +273,41 @@ export async function handleBundleRequest(
           `${CRLF}--${BOUNDARY}--${CRLF}`;
         res.end(bundleChunk);
       } catch (error) {
-        buildingPlatforms.delete(requestPlatform);
+        buildingPlatforms.delete(bundleCacheKey);
+        reporter.bundleFailed(buildID);
         console.error('Build error:', error);
         res.end(`${CRLF}--${BOUNDARY}--${CRLF}`);
       }
     } else {
-      // Standard response
+      // Standard response (no multipart, but still show progress)
       try {
-        const buildPromise = buildWithGraph(platformConfig, undefined, {
-          excludeSource: requestExcludeSource,
-          modulesOnly: requestModulesOnly,
-          runModule: requestRunModule,
-          bundleName,
-          sourcePaths: requestSourcePaths === 'url-server' ? 'url-server' : 'absolute',
-        });
-        buildingPlatforms.set(requestPlatform, buildPromise);
+        const buildPromise = buildWithGraph(
+          platformConfig,
+          (transformedFileCount, totalFileCount) => {
+            // Update terminal reporter even for non-multipart requests
+            reporter.updateBundleProgress(
+              buildID,
+              entryFile,
+              bundleType,
+              transformedFileCount,
+              totalFileCount,
+            );
+          },
+          {
+            excludeSource: requestExcludeSource,
+            modulesOnly: requestModulesOnly,
+            runModule: requestRunModule,
+            bundleName,
+            sourcePaths: requestSourcePaths === 'url-server' ? 'url-server' : 'absolute',
+          },
+        );
+        buildingPlatforms.set(bundleCacheKey, buildPromise);
         const build = await buildPromise;
-        buildingPlatforms.delete(requestPlatform);
-        cachedBuilds.set(requestPlatform, build);
+        buildingPlatforms.delete(bundleCacheKey);
+        cachedBuilds.set(bundleCacheKey, build);
+
+        // Mark bundle as done in terminal reporter
+        reporter.bundleDone(buildID);
 
         saveBuildStateForHMR(requestPlatform, build);
 
@@ -265,7 +324,8 @@ export async function handleBundleRequest(
         });
         res.end(bundleWithRefs);
       } catch (error) {
-        buildingPlatforms.delete(requestPlatform);
+        buildingPlatforms.delete(bundleCacheKey);
+        reporter.bundleFailed(buildID);
         console.error('Build error:', error);
         res.writeHead(500, { 'Content-Type': 'application/javascript' });
         res.end(`// Build error: ${error}`);

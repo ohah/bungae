@@ -31,8 +31,25 @@ export async function buildGraph(
   const cacheDir = join(config.root, '.bungae-cache');
   const cache = new PersistentCache({ cacheDir });
 
-  let processedCount = 0;
-  let totalCount = 1;
+  // Metro-compatible progress tracking
+  // Metro uses numProcessed and total, calling onProgress twice per module:
+  // 1. onDependencyAdd: when dependency is discovered (total++ before transform)
+  // 2. onDependencyAdded: when dependency is processed (numProcessed++ after transform)
+  let numProcessed = 0;
+  let total = 0;
+
+  // Metro's onDependencyAdd and onDependencyAdded pattern
+  const onDependencyAdd = () => {
+    if (onProgress) {
+      onProgress(numProcessed, ++total);
+    }
+  };
+
+  const onDependencyAdded = () => {
+    if (onProgress) {
+      onProgress(++numProcessed, total);
+    }
+  };
 
   async function processModule(filePath: string): Promise<void> {
     if (visited.has(filePath) || processing.has(filePath)) {
@@ -45,6 +62,9 @@ export async function buildGraph(
     if (filePath.endsWith('.flow.js') || filePath.endsWith('.flow')) {
       visited.add(filePath);
       processing.delete(filePath);
+      // Metro: still count skipped files for progress
+      onDependencyAdd();
+      onDependencyAdded();
       return;
     }
 
@@ -55,6 +75,9 @@ export async function buildGraph(
       return filePath.endsWith(normalizedExt);
     });
     if (isAsset) {
+      // Metro: onDependencyAdd when asset is discovered
+      onDependencyAdd();
+
       // Resolve AssetRegistry dependency
       const assetRegistryPath = 'react-native/Libraries/Image/AssetRegistry';
       let resolvedAssetRegistry: string | null = null;
@@ -67,6 +90,8 @@ export async function buildGraph(
         console.warn(`AssetRegistry not found, skipping asset: ${filePath}`);
         visited.add(filePath);
         processing.delete(filePath);
+        // Metro: still count skipped files for progress
+        onDependencyAdded();
         return;
       }
 
@@ -90,8 +115,9 @@ export async function buildGraph(
       modules.set(filePath, module);
       visited.add(filePath);
       processing.delete(filePath);
-      processedCount++;
-      onProgress?.(processedCount, totalCount);
+
+      // Metro: onDependencyAdded when asset is processed
+      onDependencyAdded();
 
       // Process AssetRegistry dependency if not already processed
       if (
@@ -131,6 +157,9 @@ export async function buildGraph(
 
     // JSON files: No dependencies, just wrap as module
     if (isJSON) {
+      // Metro: onDependencyAdd when JSON file is discovered
+      onDependencyAdd();
+
       transformResult = await transformFile(filePath, code, config, entryPath);
       const module: GraphModule = {
         path: filePath,
@@ -143,10 +172,14 @@ export async function buildGraph(
       modules.set(filePath, module);
       visited.add(filePath);
       processing.delete(filePath);
-      processedCount++;
-      onProgress?.(processedCount, totalCount);
+
+      // Metro: onDependencyAdded when JSON file is processed
+      onDependencyAdded();
       return;
     }
+
+    // Metro: onDependencyAdd when module is discovered (before transform)
+    onDependencyAdd();
 
     // Transform code (returns AST only, Metro-compatible)
     transformResult = await transformFile(filePath, code, config, entryPath);
@@ -154,8 +187,8 @@ export async function buildGraph(
       // Flow file or other skipped file
       visited.add(filePath);
       processing.delete(filePath);
-      processedCount++;
-      onProgress?.(processedCount, totalCount);
+      // Metro: still count skipped files for progress
+      onDependencyAdded();
       return;
     }
 
@@ -220,16 +253,18 @@ export async function buildGraph(
     modules.set(filePath, module);
     visited.add(filePath);
 
-    processedCount++;
-    totalCount = Math.max(totalCount, modules.size + resolvedDependencies.length);
-    onProgress?.(processedCount, totalCount);
-
-    // Process dependencies
+    // Process dependencies FIRST (before onDependencyAdded)
+    // This ensures that when onDependencyAdded is called, dependencies are already being processed
+    // which means total > numProcessed, giving us proper progress (e.g., 1/3, 2/3, 3/3)
     for (const dep of resolvedDependencies) {
       if (!visited.has(dep) && !processing.has(dep)) {
         await processModule(dep);
       }
     }
+
+    // Metro: onDependencyAdded when module is processed (after transform, dependency resolution, AND dependency processing)
+    // This is called after dependencies are processed, so numProcessed can catch up to total
+    onDependencyAdded();
 
     processing.delete(filePath);
   }
