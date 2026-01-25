@@ -117,10 +117,16 @@
 - [x] Bun, esbuild 대안 지원
 - [x] Metro 호환 Terser 설정 (compress, mangle, format 옵션)
 
-### 4. Tree Shaking ❌
+### 4. Tree Shaking ✅ (Experimental)
 
-- [ ] 사용하지 않는 코드 제거
-- [ ] Dead code elimination
+- [x] 사용하지 않는 export 제거
+- [x] 사용하지 않는 모듈 제거
+- [x] CommonJS export 처리 (Babel 변환 코드 지원)
+- [x] `package.json` `sideEffects` 필드 지원
+- [x] Metro CJS 구조 (`__d()`/`__r()`) 호환
+- [x] 55개 포괄적인 테스트 케이스
+- [x] Experimental config 섹션
+- [ ] Dead code elimination (향후 개선)
 
 ### 5. 영구 캐싱 ❌
 
@@ -239,9 +245,9 @@
    - ❌ `x_google_ignoreList` 생성 미지원
 
 2. **Production 빌드**
-   - ⚠️ 기본 번들링은 가능하지만 최적화 기능 부족
-   - ❌ Minification 미지원
-   - ❌ Tree Shaking 미지원
+   - ✅ 기본 번들링 가능
+   - ✅ Minification 지원
+   - ✅ Tree Shaking 지원 (Experimental)
 
 3. **고급 번들 타입**
    - ❌ RAM Bundle (Indexed/File) 미지원
@@ -297,7 +303,7 @@
 
 2. **Production 최적화**
    - ❌ Minification 없음 (번들 크기 증가)
-   - ❌ Tree Shaking 없음 (사용하지 않는 코드 포함)
+   - ✅ Tree Shaking 지원 (Experimental, 사용하지 않는 export/모듈 제거)
 
 3. **고급 번들 타입**
    - ❌ RAM Bundle 미지원 (iOS/Android 최적화 제한)
@@ -355,7 +361,7 @@
 ### Phase 3-2: Production 최적화 (중간 우선순위)
 
 - [ ] Minification 구현
-- [ ] Tree Shaking 구현
+- [x] Tree Shaking 구현 (Experimental)
 - [ ] 영구 캐싱 구현
 
 ### Phase 4-1: RAM Bundle (낮은 우선순위)
