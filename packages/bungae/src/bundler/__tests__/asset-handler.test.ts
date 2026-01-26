@@ -5,8 +5,9 @@
  */
 
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, rmSync } from 'fs';
 import type { ServerResponse } from 'http';
+import { tmpdir } from 'os';
 import { join } from 'path';
 
 import { resolveConfig } from '../../config';
@@ -22,7 +23,7 @@ describe('Asset Handler', () => {
   let responseBody: Buffer | null;
 
   beforeEach(() => {
-    testDir = join('/tmp', `bungae-asset-test-${Date.now()}`);
+    testDir = join(tmpdir(), `bungae-asset-test-${Date.now()}`);
     mkdirSync(testDir, { recursive: true });
 
     config = resolveConfig(
@@ -57,8 +58,7 @@ describe('Asset Handler', () => {
   afterEach(() => {
     // Cleanup test directory
     if (existsSync(testDir)) {
-      // Note: In real tests, you might want to use rimraf or similar
-      // For now, we'll leave the cleanup to the OS
+      rmSync(testDir, { recursive: true, force: true });
     }
   });
 
