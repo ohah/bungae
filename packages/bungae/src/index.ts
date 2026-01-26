@@ -4,6 +4,16 @@
  * @packageDocumentation
  */
 
+import {
+  loadConfig,
+  resolveConfig,
+  getDefaultConfig,
+  mergeConfig,
+  defineConfig,
+  DEFAULT_RESOLVER,
+  DEFAULT_TRANSFORMER,
+  DEFAULT_SERIALIZER,
+} from './config';
 // Import everything first, then export in a single block to avoid duplicate exports
 import type {
   BungaeConfig,
@@ -15,24 +25,10 @@ import type {
   Mode,
   BundleType,
 } from './config/types';
-
-import {
-  loadConfig,
-  resolveConfig,
-  getDefaultConfig,
-  mergeConfig,
-  defineConfig,
-  DEFAULT_RESOLVER,
-  DEFAULT_TRANSFORMER,
-  DEFAULT_SERIALIZER,
-} from './config';
-
+import { buildGraph, graphModulesToSerializerModules } from './graph';
+import type { GraphBuildOptions, GraphBuildResult, GraphModule } from './graph/types';
 import { createPlatformResolverPlugin } from './resolver';
 import type { PlatformResolverOptions } from './resolver';
-
-import { transform } from './transformer';
-import type { TransformOptions, TransformResult } from './transformer';
-
 import {
   baseJSBundle,
   getPrependedModules,
@@ -40,9 +36,8 @@ import {
   getRunModuleStatement,
 } from './serializer';
 import type { Module, Bundle, SerializerOptions } from './serializer';
-
-import { buildGraph, graphModulesToSerializerModules } from './graph';
-import type { GraphBuildOptions, GraphBuildResult, GraphModule } from './graph/types';
+import { transform } from './transformer';
+import type { TransformOptions, TransformResult } from './transformer';
 
 // Export VERSION constant
 export const VERSION = '0.0.1';
