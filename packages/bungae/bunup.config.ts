@@ -8,6 +8,7 @@ export default defineConfig({
   clean: true,
   sourcemap: 'linked',
   target: 'node',
+  splitting: false, // Disable code splitting to prevent duplicate exports
   external: [
     'react-native',
     'hermes-parser',
