@@ -5,7 +5,7 @@
 
 import { existsSync, readFileSync, readdirSync, realpathSync, lstatSync } from 'fs';
 import type { ServerResponse } from 'http';
-import { extname, resolve, sep, dirname, basename } from 'path';
+import { extname, resolve, sep, dirname } from 'path';
 
 import type { ResolvedConfig } from '../../../../config/types';
 import { sendText } from '../utils';
@@ -93,7 +93,7 @@ export function handleAssetRequest(res: ServerResponse, url: URL, config: Resolv
       // or: node_modules/package-name/rest/path (hoisted)
       // Bun encodes @scope/package as @scope+package in .bun directory
       const nodeModulesMatch = normalizedPath.match(
-        /node_modules[\/\\](?:\.(?:pnpm|bun)[\/\\]([^\/\\]+)[\/\\]node_modules[\/\\])?([^\/\\]+)[\/\\](.+)$/,
+        /node_modules[/\\](?:\.(?:pnpm|bun)[/\\]([^/\\]+)[/\\]node_modules[/\\])?([^/\\]+)[/\\](.+)$/,
       );
 
       if (nodeModulesMatch && nodeModulesMatch[2] && nodeModulesMatch[3]) {
@@ -257,13 +257,13 @@ export function handleAssetRequest(res: ServerResponse, url: URL, config: Resolv
             // Extract module specifier from path
             // e.g., node_modules/@react-native/new-app-screen/src/assets/react-light.png
             // -> @react-native/new-app-screen
-            const modulePath = normalizedPath.replace(/^node_modules[\/\\]/, '');
+            const modulePath = normalizedPath.replace(/^node_modules[/\\]/, '');
 
             // Extract package name (first segment for scoped, or first segment for non-scoped)
             let packageName: string | undefined;
             if (modulePath.startsWith('@')) {
               // Scoped package: @scope/package
-              const match = modulePath.match(/^(@[^\/\\]+[\/\\][^\/\\]+)/);
+              const match = modulePath.match(/^(@[^/\\]+[/\\][^/\\]+)/);
               packageName = match ? match[1] : modulePath.split(sep)[0];
             } else {
               // Non-scoped package: package-name
@@ -315,7 +315,7 @@ export function handleAssetRequest(res: ServerResponse, url: URL, config: Resolv
             if (existsSync(assetPath)) {
               resolvedAssetPath = resolveSymlink(assetPath);
             }
-          } catch (error) {
+          } catch {
             // All strategies failed, resolvedAssetPath will remain as initial value
             // This is OK - we'll return 404 below
           }
