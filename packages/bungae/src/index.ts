@@ -38,9 +38,10 @@ import {
 import type { Module, Bundle, SerializerOptions } from './serializer';
 import { transform } from './transformer';
 import type { TransformOptions, TransformResult } from './transformer';
+import { VERSION } from './version';
 
-// Export VERSION constant
-export const VERSION = '0.0.1';
+// Re-export VERSION constant
+export { VERSION };
 
 // Export all in a single block to prevent duplicate exports during bundling
 export type {

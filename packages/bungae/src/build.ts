@@ -7,9 +7,7 @@ import { resolve, join, dirname } from 'path';
 
 import { buildWithGraph } from './bundler';
 import type { ResolvedConfig } from './config/types';
-
-// VERSION constant (same as in index.ts to avoid circular dependency)
-const VERSION = '0.0.1';
+import { VERSION } from './version';
 
 export async function build(config: ResolvedConfig): Promise<void> {
   const { entry, platform, dev, outDir, root } = config;
