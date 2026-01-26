@@ -7,6 +7,8 @@ import { relative } from 'path';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { getRunModuleStatement } from '../../../serializer';
+import { addParamsToDefineCall } from '../../../serializer/helpers/addParamsToDefineCall';
+import { wrapModule } from '../../../serializer/helpers/js';
 import { graphToSerializerModules } from '../graph';
 import type { DeltaResult, GraphModule, HMRUpdateMessage } from '../types';
 
@@ -81,10 +83,7 @@ export async function createHMRUpdateMessage(
   }> = [];
   const deleted: number[] = [];
 
-  // Import wrapModule and addParamsToDefineCall
-  const { wrapModule } = await import('../../../serializer/helpers/js');
-  const { addParamsToDefineCall } =
-    await import('../../../serializer/helpers/addParamsToDefineCall');
+  // wrapModule and addParamsToDefineCall are now statically imported at the top
 
   // Process added modules
   for (const [path, module] of delta.added.entries()) {
