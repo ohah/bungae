@@ -4,14 +4,14 @@
  * Tests for asset request handler
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
 import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import type { ServerResponse } from 'http';
+import { join } from 'path';
 
-import { handleAssetRequest } from '../graph-bundler/server/handlers/asset-handler';
-import type { ResolvedConfig } from '../../config/types';
 import { resolveConfig } from '../../config';
+import type { ResolvedConfig } from '../../config/types';
+import { handleAssetRequest } from '../graph-bundler/server/handlers/asset-handler';
 
 describe('Asset Handler', () => {
   let testDir: string;
@@ -80,13 +80,23 @@ describe('Asset Handler', () => {
 
   test('should serve asset from /node_modules/ path', () => {
     // Create test asset in node_modules
-    const nodeModulesDir = join(testDir, 'node_modules', 'react-native', 'Libraries', 'LogBox', 'UI', 'LogBoxImages');
+    const nodeModulesDir = join(
+      testDir,
+      'node_modules',
+      'react-native',
+      'Libraries',
+      'LogBox',
+      'UI',
+      'LogBoxImages',
+    );
     mkdirSync(nodeModulesDir, { recursive: true });
     const assetFile = join(nodeModulesDir, 'close.png');
     const assetContent = Buffer.from('fake png content');
     writeFileSync(assetFile, assetContent);
 
-    const url = new URL('http://localhost:8081/node_modules/react-native/Libraries/LogBox/UI/LogBoxImages/close.png');
+    const url = new URL(
+      'http://localhost:8081/node_modules/react-native/Libraries/LogBox/UI/LogBoxImages/close.png',
+    );
 
     handleAssetRequest(mockRes, url, config);
 
