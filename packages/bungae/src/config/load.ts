@@ -17,6 +17,66 @@ export interface LoadConfigOptions {
 }
 
 /**
+ * Format config loading error with detailed information
+ */
+function formatConfigLoadError(configPath: string, error: unknown): Error {
+  const errorName = error instanceof Error ? error.constructor.name : 'Error';
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  const errorStack = error instanceof Error ? error.stack : undefined;
+
+  // Build detailed error message
+  let detailedMessage = `Failed to load config file: ${configPath}\n`;
+  detailedMessage += `Error Type: ${errorName}\n`;
+  detailedMessage += `Error Message: ${errorMessage}\n`;
+
+  // Handle AggregateError (contains multiple errors)
+  if (error instanceof AggregateError && error.errors) {
+    detailedMessage += `\nThis error contains ${error.errors.length} sub-error(s):\n`;
+    error.errors.forEach((subError, index) => {
+      const subErrorName = subError instanceof Error ? subError.constructor.name : 'Error';
+      const subErrorMessage = subError instanceof Error ? subError.message : String(subError);
+      const subErrorStack = subError instanceof Error ? subError.stack : undefined;
+
+      detailedMessage += `\n  Error ${index + 1}:\n`;
+      detailedMessage += `    Type: ${subErrorName}\n`;
+      detailedMessage += `    Message: ${subErrorMessage}\n`;
+
+      if (subErrorStack) {
+        const stackLines = subErrorStack.split('\n').slice(0, 3).join('\n');
+        detailedMessage += `    Stack:\n${stackLines.split('\n').map(line => `      ${line}`).join('\n')}\n`;
+      }
+    });
+  }
+
+  // Add stack trace if available (helpful for debugging)
+  if (errorStack) {
+    // Limit stack trace to first 5 lines to avoid too much noise
+    const stackLines = errorStack.split('\n').slice(0, 6).join('\n');
+    detailedMessage += `\nStack Trace:\n${stackLines}`;
+  }
+
+  // Add helpful context for common errors
+  if (errorMessage.includes('duplicate name') || errorMessage.includes('duplicate export')) {
+    detailedMessage += `\n\nPossible causes:\n`;
+    detailedMessage += `  1. The config file may be exporting a name that conflicts with 'bungae' package exports\n`;
+    detailedMessage += `  2. Check if you're accidentally exporting 'loadConfig' or other names from bungae package\n`;
+    detailedMessage += `  3. This might be a Bun module resolution issue with dynamic imports\n`;
+  }
+
+  // Add context for AggregateError related to building
+  if (errorMessage.includes('building') || errorMessage.includes('chunk')) {
+    detailedMessage += `\n\nPossible causes:\n`;
+    detailedMessage += `  1. The 'bungae' package may need to be rebuilt (run 'bun run build' in packages/bungae)\n`;
+    detailedMessage += `  2. There may be issues with the built dist files\n`;
+    detailedMessage += `  3. Try cleaning and rebuilding: 'rm -rf packages/bungae/dist && bun run build'\n`;
+  }
+
+  // Preserve original error as cause for debugging
+  const cause = error instanceof Error ? error : new Error(String(error));
+  return new Error(detailedMessage, { cause });
+}
+
+/**
  * Load configuration from file
  * Metro-compatible: loadConfig({ config: path }) or loadConfig({ cwd: dir })
  */
@@ -59,31 +119,7 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
         return config as BungaeConfig;
       }
     } catch (error) {
-      const errorName = error instanceof Error ? error.constructor.name : 'Error';
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      const errorStack = error instanceof Error ? error.stack : undefined;
-
-      // Build detailed error message
-      let detailedMessage = `Failed to load config file: ${configPath}\n`;
-      detailedMessage += `Error Type: ${errorName}\n`;
-      detailedMessage += `Error Message: ${errorMessage}\n`;
-
-      // Add stack trace if available (helpful for debugging)
-      if (errorStack) {
-        // Limit stack trace to first 5 lines to avoid too much noise
-        const stackLines = errorStack.split('\n').slice(0, 6).join('\n');
-        detailedMessage += `\nStack Trace:\n${stackLines}`;
-      }
-
-      // Add helpful context for common errors
-      if (errorMessage.includes('duplicate name') || errorMessage.includes('duplicate export')) {
-        detailedMessage += `\n\nPossible causes:\n`;
-        detailedMessage += `  1. The config file may be exporting a name that conflicts with 'bungae' package exports\n`;
-        detailedMessage += `  2. Check if you're accidentally exporting 'loadConfig' or other names from bungae package\n`;
-        detailedMessage += `  3. This might be a Bun module resolution issue with dynamic imports\n`;
-      }
-
-      throw new Error(detailedMessage);
+      throw formatConfigLoadError(configPath, error);
     }
   }
 
@@ -117,31 +153,7 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
           return config as BungaeConfig;
         }
       } catch (error) {
-        const errorName = error instanceof Error ? error.constructor.name : 'Error';
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const errorStack = error instanceof Error ? error.stack : undefined;
-
-        // Build detailed error message
-        let detailedMessage = `Failed to load config file: ${configPath}\n`;
-        detailedMessage += `Error Type: ${errorName}\n`;
-        detailedMessage += `Error Message: ${errorMessage}\n`;
-
-        // Add stack trace if available (helpful for debugging)
-        if (errorStack) {
-          // Limit stack trace to first 5 lines to avoid too much noise
-          const stackLines = errorStack.split('\n').slice(0, 6).join('\n');
-          detailedMessage += `\nStack Trace:\n${stackLines}`;
-        }
-
-        // Add helpful context for common errors
-        if (errorMessage.includes('duplicate name') || errorMessage.includes('duplicate export')) {
-          detailedMessage += `\n\nPossible causes:\n`;
-          detailedMessage += `  1. The config file may be exporting a name that conflicts with 'bungae' package exports\n`;
-          detailedMessage += `  2. Check if you're accidentally exporting 'loadConfig' or other names from bungae package\n`;
-          detailedMessage += `  3. This might be a Bun module resolution issue with dynamic imports\n`;
-        }
-
-        throw new Error(detailedMessage);
+        throw formatConfigLoadError(configPath, error);
       }
     }
   }
