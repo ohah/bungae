@@ -6,4 +6,4 @@
 
 import packageJson from '../package.json';
 
-export const VERSION = packageJson.version;
+export const VERSION: string = packageJson.version;
