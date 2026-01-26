@@ -148,7 +148,8 @@ describe('Asset Handler', () => {
     // Path traversal is blocked by normalization (../../ is removed)
     // Resulting path 'etc/passwd' doesn't exist, so it returns 404
     // Or if path is completely invalid, might return 400
-    expect([400, 403, 404]).toContain(responseStatus);
+    expect(responseStatus).not.toBeNull();
+    expect([400, 403, 404]).toContain(responseStatus!);
   });
 
   test('should support different image formats', () => {
@@ -174,9 +175,11 @@ describe('Asset Handler', () => {
 
       handleAssetRequest(mockRes, url, config);
 
-      expect(responseStatus).toBe(200);
+      expect(responseStatus).not.toBeNull();
+      expect(responseStatus!).toBe(200);
       expect(responseHeaders['Content-Type']).toBe(contentType);
-      expect(responseBody).toEqual(assetContent);
+      expect(responseBody).not.toBeNull();
+      expect(responseBody!).toEqual(assetContent);
     }
   });
 
