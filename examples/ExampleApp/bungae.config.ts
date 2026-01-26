@@ -15,7 +15,6 @@ const __dirname = dirname(__filename);
 export default defineConfig({
   root: __dirname,
   entry: 'index.js',
-  platform: 'ios', // Can be overridden via CLI: --platform android
   dev: true,
   minify: false,
   outDir: join(__dirname, '.bungae'),
@@ -39,7 +38,7 @@ export default defineConfig({
     nodeModulesPaths: [join(__dirname, '../../node_modules')],
   },
   transformer: {
-    minifier: 'bun',
+    minifier: 'terser',
     inlineRequires: false,
   },
   serializer: {
