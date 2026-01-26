@@ -43,7 +43,10 @@ function formatConfigLoadError(configPath: string, error: unknown): Error {
 
       if (subErrorStack) {
         const stackLines = subErrorStack.split('\n').slice(0, 3).join('\n');
-        detailedMessage += `    Stack:\n${stackLines.split('\n').map(line => `      ${line}`).join('\n')}\n`;
+        detailedMessage += `    Stack:\n${stackLines
+          .split('\n')
+          .map((line) => `      ${line}`)
+          .join('\n')}\n`;
       }
     });
   }
