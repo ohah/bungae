@@ -59,7 +59,31 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
         return config as BungaeConfig;
       }
     } catch (error) {
-      throw new Error(`Failed to load config from ${configPath}: ${error}`);
+      const errorName = error instanceof Error ? error.constructor.name : 'Error';
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      // Build detailed error message
+      let detailedMessage = `Failed to load config file: ${configPath}\n`;
+      detailedMessage += `Error Type: ${errorName}\n`;
+      detailedMessage += `Error Message: ${errorMessage}\n`;
+      
+      // Add stack trace if available (helpful for debugging)
+      if (errorStack) {
+        // Limit stack trace to first 5 lines to avoid too much noise
+        const stackLines = errorStack.split('\n').slice(0, 6).join('\n');
+        detailedMessage += `\nStack Trace:\n${stackLines}`;
+      }
+      
+      // Add helpful context for common errors
+      if (errorMessage.includes('duplicate name') || errorMessage.includes('duplicate export')) {
+        detailedMessage += `\n\nPossible causes:\n`;
+        detailedMessage += `  1. The config file may be exporting a name that conflicts with 'bungae' package exports\n`;
+        detailedMessage += `  2. Check if you're accidentally exporting 'loadConfig' or other names from bungae package\n`;
+        detailedMessage += `  3. This might be a Bun module resolution issue with dynamic imports\n`;
+      }
+      
+      throw new Error(detailedMessage);
     }
   }
 
@@ -93,7 +117,31 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
           return config as BungaeConfig;
         }
       } catch (error) {
-        throw new Error(`Failed to load config from ${configPath}: ${error}`);
+        const errorName = error instanceof Error ? error.constructor.name : 'Error';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorStack = error instanceof Error ? error.stack : undefined;
+        
+        // Build detailed error message
+        let detailedMessage = `Failed to load config file: ${configPath}\n`;
+        detailedMessage += `Error Type: ${errorName}\n`;
+        detailedMessage += `Error Message: ${errorMessage}\n`;
+        
+        // Add stack trace if available (helpful for debugging)
+        if (errorStack) {
+          // Limit stack trace to first 5 lines to avoid too much noise
+          const stackLines = errorStack.split('\n').slice(0, 6).join('\n');
+          detailedMessage += `\nStack Trace:\n${stackLines}`;
+        }
+        
+        // Add helpful context for common errors
+        if (errorMessage.includes('duplicate name') || errorMessage.includes('duplicate export')) {
+          detailedMessage += `\n\nPossible causes:\n`;
+          detailedMessage += `  1. The config file may be exporting a name that conflicts with 'bungae' package exports\n`;
+          detailedMessage += `  2. Check if you're accidentally exporting 'loadConfig' or other names from bungae package\n`;
+          detailedMessage += `  3. This might be a Bun module resolution issue with dynamic imports\n`;
+        }
+        
+        throw new Error(detailedMessage);
       }
     }
   }
