@@ -118,7 +118,7 @@ Bun.Transpiler; // 코드 변환
 
 ## Implementation Roadmap
 
-### Phase 1: 핵심 번들링
+### Phase 1: 핵심 번들링 ✅ 완료
 
 - [x] **Config 시스템** (플랫폼 정보 등 설정)
   - ✅ Config 로딩 (`bungae.config.ts/js/json`, `package.json`)
@@ -136,21 +136,22 @@ Bun.Transpiler; // 코드 변환
   - ✅ Bun.Transpiler 기반 변환 구현
   - ✅ TypeScript/TSX/JSX → JavaScript 변환
   - ✅ 의존성 추출 (require, import, dynamic import)
-  - ✅ Babel 선택적 통합 스켈레톤 (Phase 2에서 구현)
+  - ✅ Babel 선택적 통합
   - ✅ Metro 스타일 테스트 코드 (10개 테스트 케이스 모두 통과)
 - [x] **Serialization** - Metro 호환 번들 형식
   - ✅ baseJSBundle 구현 (Metro 호환)
   - ✅ metro-runtime 번들 포함
   - ✅ prelude, polyfills 지원
-  - ✅ **d(), **r() 형식 지원
+  - ✅ `__d()`, `__r()` 형식 지원
   - ✅ 모듈 ID 생성 및 정렬
   - ✅ Source map URL 지원
-  - ✅ SerializerOptions에 Metro 호환 옵션 추가 (inlineSourceMap, shouldAddToIgnoreList, includeAsyncPaths, modulesOnly, asyncRequireModulePath, getSourceUrl)
+  - ✅ SerializerOptions에 Metro 호환 옵션 추가
   - ✅ modulesOnly 옵션 구현 (prelude/runtime 제외)
-  - ✅ inlineSourceMap 옵션 스켈레톤 추가 (Phase 2에서 완전 구현 예정)
+  - ✅ inlineSourceMap 옵션 구현
+  - ✅ x_google_ignoreList 생성 (shouldAddToIgnoreList)
   - ✅ InitializeCore 자동 감지 및 runBeforeMainModule 처리
   - ✅ sourceUrl, sourceMapUrl 옵션 사용 (개발 서버)
-  - ✅ Metro 스타일 테스트 코드 (6개 Metro 테스트 통과, 2개 skip, InitializeCore 테스트 포함)
+  - ✅ Metro 스타일 테스트 코드
 
 **⚠️ Resolution 구현 전략**:
 
@@ -158,91 +159,107 @@ Bun.Transpiler; // 코드 변환
 - 플랫폼 확장자만 Plugin으로 추가 처리
 - 완전히 새로 구현할 필요 없음
 
-### Phase 2: 개발 환경 (증분 빌드 포함)
+### Phase 2: 개발 환경 ✅ 완료
 
-- [ ] **증분 빌드 시스템** (핵심)
-  - [ ] 의존성 그래프 (Graph)
-  - [ ] 델타 계산기 (DeltaCalculator)
-  - [ ] 변환 캐시 (TransformCache)
-  - [ ] 순환 참조 GC
-- [ ] 개발 서버 (Bun.serve)
-- [ ] 파일 감시 (fs.watch)
-- [ ] HMR (WebSocket + 증분 업데이트)
+- [x] **증분 빌드 시스템** (핵심)
+  - ✅ 의존성 그래프 - `graph.ts` (`buildGraph()`, `buildInverseDependencies()`)
+  - ✅ 델타 계산기 - `hmr/delta.ts` (`calculateDelta()`, `hashModule()`)
+  - ✅ 변환 캐시 - `cache.ts` (`PersistentCache` 클래스, 디스크 기반)
+  - ✅ 증분 빌드 - `hmr/incremental.ts` (`incrementalBuild()`)
+- [x] **개발 서버** - `server/index.ts` (Node.js http + Bun)
+  - ✅ HTTP 서버 (번들 요청, 에셋 요청, 소스맵 요청)
+  - ✅ WebSocket 서버 (HMR, DevTools)
+  - ✅ @react-native/dev-middleware 통합
+  - ✅ @react-native-community/cli-server-api 통합
+- [x] **파일 감시** - `file-watcher.ts` (`createFileWatcher()`)
+  - ✅ fs.watch 기반 재귀적 감시
+  - ✅ 디바운싱 지원 (기본 300ms)
+  - ✅ 원자적 쓰기 처리 (rename 이벤트)
+- [x] **HMR** (Hot Module Replacement)
+  - ✅ Metro 호환 HMR 프로토콜
+  - ✅ WebSocket 기반 업데이트 전송
+  - ✅ update-start / update / update-done 메시지
+  - ✅ 에러 시 error 메시지 전송
+- [x] **터미널 단축키** - `terminal-actions.ts`
+  - ✅ `r` - Reload app
+  - ✅ `d` - Open Dev Menu
+  - ✅ `j` - Open DevTools
+  - ✅ `i` - Open iOS Simulator
+  - ✅ `a` - Open Android Emulator
+  - ✅ `c` - Clear cache
 
-**📌 증분 빌드를 Phase 2에 넣는 이유:**
+**📌 함수 기반 구현 선택 이유:**
 
-- 개발 서버와 HMR의 핵심 의존성
-- 파일 변경 → 변경분만 재빌드 → HMR 전송
-- Phase 3 최적화와 별개로 필수 기능
+- 테스트 용이성 (순수 함수, 모킹 간단)
+- 상태 격리 (테스트 간 상태 공유 없음)
+- 의존성 명시적 (매개변수로 전달)
 
 상세 구현: `rules/incremental-build.md`
 
-### Phase 3: 최적화
+### Phase 3: 최적화 ✅ 완료
 
-- [ ] 영구 캐싱 (디스크)
-- [ ] Minification
-- [ ] Tree Shaking
+- [x] **영구 캐싱** - `cache.ts` (`PersistentCache`)
+  - ✅ 디스크 기반 캐시 (`.bungae-cache/`)
+  - ✅ 캐시 만료 처리 (기본 7일)
+  - ✅ 소스 파일 변경 감지
+  - ✅ 2단계 디렉토리 구조 (대규모 프로젝트 지원)
+- [x] **Minification** - `minify.ts`
+  - ✅ Bun 내장 minifier (`Bun.build()`)
+  - ✅ Terser (Metro 호환, 기본)
+  - ✅ esbuild
+  - ✅ SWC
+  - ✅ Metro 런타임 함수 예약어 처리 (`__d`, `__r`, `__DEV__`)
+- [x] **Tree Shaking** - `tree-shaking/`
+  - ✅ `applyTreeShaking()` - 사용하지 않는 export 제거
+  - ✅ `extractExports()` - export 분석
+  - ✅ `extractImports()` - import 분석
+  - ✅ `analyzeUsedExports()` - 사용 분석
+  - ✅ `removeUnusedExports()` - AST에서 제거
+  - ✅ `hasSideEffects()` - side effects 체크
 
-### Phase 4: 고급 기능
+### Phase 4: 고급 기능 (미구현)
 
-- [ ] RAM Bundle
-- [ ] Fast Refresh
-- [ ] 플러그인 시스템
-- [ ] require.context
-- [ ] Lazy/Async 모듈
+- [ ] **Source Map 정확도 개선** - DevTools console.log 소스 위치 추론 정확도
+- [ ] **RAM Bundle** - iOS/Android 최적화 번들 형식
+- [ ] **플러그인 시스템** - 사용자 확장
+- [ ] **require.context** - 동적 require 패턴
+- [ ] **Lazy/Async 모듈** - code splitting (`import()` 번들 분리)
+- [ ] **순환 참조 GC** - Bacon-Rajan 알고리즘
+- [ ] **롤백 시스템** - 빌드 에러 시 이전 상태 복원
 
-## Metro 호환성 및 제외된 기능
+## Metro 호환성
 
-### Phase 1-3에서 구현하지 않은 기능 (Phase 2 또는 Phase 3에서 구현 예정)
+### 구현 완료된 Metro 기능
 
-다음 기능들은 Metro에 있지만 Phase 1-3에서는 구현하지 않았으며, Phase 2 또는 Phase 3에서 구현할 예정입니다:
+다음 기능들은 Metro와 호환되도록 구현 완료되었습니다:
 
-1. **inlineSourceMap 옵션** (스켈레톤 완료, 완전 구현 예정)
-   - **Metro에서의 용도**: Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
-   - **현재 상태**: 옵션 타입 및 스켈레톤 구현 완료, 실제 source map 생성 로직은 Phase 2에서 구현 예정
-   - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `should add an inline source map to a very simple bundle` (Metro 테스트, skip 상태)
+1. **inlineSourceMap 옵션** ✅
+   - Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
+   - 구현 위치: `serializer/helpers/getAppendScripts.ts`
 
-2. **x_google_ignoreList 생성** (옵션 완료, 생성 로직 예정)
-   - **Metro에서의 용도**: Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외하기 위한 source map 메타데이터
-   - **현재 상태**: `shouldAddToIgnoreList` 옵션 추가 완료, `x_google_ignoreList` 생성 로직은 Phase 2에서 구현 예정
-   - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트, skip 상태)
+2. **x_google_ignoreList 생성** ✅
+   - Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외
+   - `shouldAddToIgnoreList` 옵션으로 커스텀 가능
+   - 기본값: `node_modules/` 경로 파일 제외
+   - 구현 위치: `graph-bundler/build/sourcemap.ts`
 
-3. **Asset 지원**
-   - **Metro에서의 용도**: 이미지, 폰트 등 정적 자산을 번들에 포함
-   - **현재 상태**: 기본 번들링 테스트에서는 asset 없이도 핵심 기능 검증 가능
-   - **구현 시점**: Phase 3 또는 Phase 4 (필요 시)
-   - **관련 테스트**: Metro의 `basic_bundle/Foo.js`는 `require('./test.png')`를 사용
-   - **참고**: 현재는 JavaScript/TypeScript 모듈 번들링에 집중
+3. **Asset 지원** ✅
+   - 이미지, 폰트 등 정적 자산을 번들에 포함
+   - AssetRegistry 연동
+   - 구현 위치: `graph-bundler/build/assets.ts`
 
-4. **TypeScript 모듈 통합 테스트**
-   - **Metro에서의 용도**: TypeScript 파일을 번들에 포함하고 실행 검증
-   - **현재 상태**: TypeScript 변환은 지원하지만, Metro의 `TypeScript.ts` 모듈 통합 테스트는 미구현
-   - **구현 시점**: Phase 3 또는 Phase 4 (필요 시)
-   - **관련 테스트**: Metro의 `basic_bundle/TypeScript.ts`는 복잡한 TypeScript 기능 테스트
-   - **참고**: 현재는 기본 TypeScript 변환만 테스트 (별도 테스트 케이스 존재)
+4. **Fast Refresh** ✅
+   - React Refresh 완전 지원
+   - 의존성 그래프를 통해 자동 포함
+   - Metro와 동일한 동작 방식
 
-### 테스트 일치성 관련 이슈
+### 진행 중인 기능
 
-현재 통합 테스트는 Metro와 동일한 스타일(`execBundle` + `toMatchSnapshot()`)을 사용하지만, 테스트 파일이 다르기 때문에 snapshot 결과가 다릅니다:
-
-1. **테스트 파일 차이**
-   - **Metro**: `TestBundle.js`가 `{Foo, Bar, TypeScript}`를 export
-   - **Bungae**: `TestBundle.js`가 `{Foo, Bar}`만 export (TypeScript 모듈 없음)
-   - **영향**: Snapshot 결과가 다름 (Metro는 3개 모듈, Bungae는 2개 모듈)
-
-2. **Asset 의존성 차이**
-   - **Metro**: `Foo.js`가 `require('./test.png')`를 사용하여 asset을 포함
-   - **Bungae**: `Foo.js`가 간단한 객체만 export (asset 없음)
-   - **영향**: Metro의 snapshot에는 `asset` 객체가 포함되지만, Bungae에는 없음
-
-3. **의존성 구조 차이**
-   - **Metro**: `Bar.js`가 `Foo.js`를 require하여 `Foo.type`을 참조
-   - **Bungae**: `Bar.js`와 `Foo.js`가 독립적
-   - **영향**: Metro의 snapshot은 `Bar.foo: "foo"`를 포함하지만, Bungae는 독립적인 구조
-
-**참고**: 현재 테스트는 핵심 번들링 기능(의존성 해석, 변환, 직렬화, require 경로 변환)을 검증하는 데 충분합니다. Asset과 TypeScript 모듈 통합 테스트는 위의 백로그 항목으로 관리됩니다.
+1. **Source Map 정확도** ⚠️ 진행 중
+   - 소스맵 생성은 구현됨
+   - DevTools console.log 소스 위치 추론이 정확하지 않음
+   - Metro와 동일한 정확도 달성 필요
+   - 구현 위치: `graph-bundler/build/sourcemap.ts`
 
 ### 구현하지 않는 Metro 기능
 

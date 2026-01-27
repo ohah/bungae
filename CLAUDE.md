@@ -157,12 +157,13 @@ Bun.hash(); // 캐시 키 생성
 
 2. **개발 서버** (Phase 2-2)
    - `serveWithGraph()` 함수 구현
-   - Bun.serve() 기반 HTTP 서버
+   - Node.js http + Bun 기반 HTTP 서버
    - 번들 요청 처리 (`/index.bundle?platform=ios&dev=true`)
    - WebSocket 지원 (HMR용)
    - 플랫폼별 번들 캐싱
-   - 구현 위치: `graph-bundler.ts`의 `serveWithGraph()` 함수
-   - ❌ **터미널 단축키 미구현** (Phase 2-5에서 구현 예정)
+   - @react-native/dev-middleware 통합
+   - @react-native-community/cli-server-api 통합
+   - 구현 위치: `graph-bundler/server/index.ts`
 
 3. **HMR (Hot Module Replacement)** (Phase 2-3)
    - **Metro 호환 HMR 프로토콜**: React Native의 내장 HMRClient와 호환
@@ -190,7 +191,7 @@ Bun.hash(); // 캐시 키 생성
    - 디바운싱 지원 (기본 300ms)
    - 구현 위치: `file-watcher.ts`의 `createFileWatcher()` 함수
 
-6. **터미널 단축키** (Phase 2-5) ❌
+6. **터미널 단축키** (Phase 2-5) ✅
    - Metro 호환 터미널 단축키 지원
    - `r` - Reload (앱 리로드)
    - `d` - Open Dev Menu (개발 메뉴 열기)
@@ -199,7 +200,7 @@ Bun.hash(); // 캐시 키 생성
    - `j` - Open Chrome DevTools
    - `c` - Clear cache
    - `useGlobalHotkey` 설정 옵션 지원 (기본값: true)
-   - 구현 위치: `server.ts` 또는 별도 모듈
+   - 구현 위치: `graph-bundler/terminal-actions.ts`
 
 #### HMR (Hot Module Replacement) 구현 전략
 
@@ -267,20 +268,56 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 
 **완전 지원**: 의존성 그래프를 통해 `setUpReactRefresh` 모듈이 자동 포함되며, Metro와 동일하게 컴포넌트 상태를 유지하면서 코드 변경을 반영합니다.
 
-#### 📋 Phase 1-3에서 구현하지 않은 기능 (Phase 2 또는 Phase 3에서 구현 예정)
+#### ✅ Phase 2-3에서 구현 완료된 기능
 
-다음 기능들은 Metro에 있지만 Phase 1-3에서는 구현하지 않았으며, Phase 2 또는 Phase 3에서 구현할 예정입니다:
+다음 기능들은 Metro 호환으로 구현 완료되었습니다:
 
-1. **inlineSourceMap 옵션**
-   - **Metro에서의 용도**: Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
-   - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `should add an inline source map to a very simple bundle` (Metro 테스트)
+1. **inlineSourceMap 옵션** ✅
+   - Source map을 번들 파일에 인라인으로 포함 (base64 인코딩)
+   - 구현 위치: `serializer/helpers/getAppendScripts.ts`
 
-2. **x_google_ignoreList 생성**
-   - **Metro에서의 용도**: Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외하기 위한 source map 메타데이터
-   - **구현 시점**: Phase 2 또는 Phase 3
-   - **관련 테스트**: `emits x_google_ignoreList based on shouldAddToIgnoreList` (Metro 테스트)
-   - **참고**: `shouldAddToIgnoreList` 옵션은 이미 있지만, `x_google_ignoreList` 생성 로직은 미구현
+2. **x_google_ignoreList 생성** ✅
+   - Chrome DevTools에서 특정 소스 파일을 디버깅에서 제외
+   - `shouldAddToIgnoreList` 옵션으로 커스텀 가능
+   - 기본값: `node_modules/` 경로 파일 제외
+   - 구현 위치: `graph-bundler/build/sourcemap.ts`
+
+#### ⚠️ 진행 중인 기능
+
+1. **Source Map 정확도** ⚠️
+   - 소스맵 생성은 구현됨
+   - DevTools console.log 소스 위치 추론이 정확하지 않음
+   - Metro와 동일한 정확도 달성 필요
+   - 구현 위치: `graph-bundler/build/sourcemap.ts`
+
+### Phase 3: 최적화 ✅ 완료
+
+1. **영구 캐싱** ✅
+   - `PersistentCache` 클래스 구현 (`cache.ts`)
+   - 디스크 기반 캐시 (`.bungae-cache/`)
+   - 캐시 만료 처리 (기본 7일)
+   - 소스 파일 변경 감지
+
+2. **Minification** ✅
+   - `minify.ts` 구현
+   - Bun 내장 minifier, Terser, esbuild, SWC 지원
+   - Metro 런타임 함수 예약어 처리 (`__d`, `__r`, `__DEV__`)
+
+3. **Tree Shaking** ✅
+   - `tree-shaking/` 폴더 구현
+   - `applyTreeShaking()` - 사용하지 않는 export 제거
+   - `extractExports()`, `extractImports()` - import/export 분석
+   - `hasSideEffects()` - side effects 체크
+
+### Phase 4: 고급 기능 (미구현)
+
+- [ ] **Source Map 정확도 개선** - DevTools console.log 소스 위치 추론 정확도
+- [ ] **RAM Bundle** - iOS/Android 최적화 번들 형식
+- [ ] **플러그인 시스템** - 사용자 확장
+- [ ] **require.context** - 동적 require 패턴
+- [ ] **Lazy/Async 모듈** - code splitting (`import()` 번들 분리)
+- [ ] **순환 참조 GC** - Bacon-Rajan 알고리즘
+- [ ] **롤백 시스템** - 빌드 에러 시 이전 상태 복원
 
 ## Metro 호환성 및 제외된 기능
 
