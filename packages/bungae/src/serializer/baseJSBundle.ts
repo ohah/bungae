@@ -37,7 +37,10 @@ export async function baseJSBundle(
   };
 
   const preProcessed = await processModules(preModules, processOptions);
-  const preCode = preProcessed.map(([_, code]) => code).join('\n');
+  // Join module codes with newline and remove trailing newline if present
+  // This ensures consistent line counting for source map offsetLines
+  const preCodeRaw = preProcessed.map(([_, code]) => code).join('\n');
+  const preCode = preCodeRaw.endsWith('\n') ? preCodeRaw.slice(0, -1) : preCodeRaw;
 
   // Sort modules by module ID
   const sortedModules = [...graphModules].sort((a, b) => {
@@ -74,6 +77,9 @@ export async function baseJSBundle(
     pre: preCode,
     post: postCode,
     modules: modulesArray,
+    // Metro-compatible: Return processed prepend modules with transformed code
+    // This is needed for accurate source map generation
+    processedPreModules: preProcessed,
   };
 }
 

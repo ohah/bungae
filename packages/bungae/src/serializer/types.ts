@@ -32,6 +32,8 @@ export interface Bundle {
   post: string;
   /** Modules array: [moduleId, code][] */
   modules: Array<[number | string, string]>;
+  /** Processed prepend modules with transformed code and source map (for source map generation) */
+  processedPreModules?: ReadonlyArray<[Module, string, any | null]>;
 }
 
 export interface SerializerOptions {
