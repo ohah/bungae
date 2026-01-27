@@ -157,22 +157,22 @@ export function extractAssets(options: ExtractAssetsOptions): AssetInfo[] {
               .split(',')
               .map((d) => d.trim())
               .filter((d) => d && d !== '');
-                    // Find which dependencyMap indices are actually used in require() calls
-                            // Metro only includes dependencies that are actually require()'d
-                            // Pattern: _$$_REQUIRE(_dependencyMap[index]) or require(dependencyMap[index]) for legacy
-                            // CRITICAL: In release builds, exclude requires inside __DEV__ conditional blocks
-                            const usedDepIndices = new Set<number>();
-                            // Match both new format (_$$_REQUIRE(_dependencyMap[...])) and legacy format (require(dependencyMap[...]))
-                            const requireMatches = moduleCode.match(
-                              /(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/g,
-                            );
-                            if (requireMatches) {
-                              for (const match of requireMatches) {
-                                // Extract index from both formats
-                                const indexMatch = match.match(
-                                  /(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/,
-                                );
-                                if (indexMatch) {
+            // Find which dependencyMap indices are actually used in require() calls
+            // Metro only includes dependencies that are actually require()'d
+            // Pattern: _$$_REQUIRE(_dependencyMap[index]) or require(dependencyMap[index]) for legacy
+            // CRITICAL: In release builds, exclude requires inside __DEV__ conditional blocks
+            const usedDepIndices = new Set<number>();
+            // Match both new format (_$$_REQUIRE(_dependencyMap[...])) and legacy format (require(dependencyMap[...]))
+            const requireMatches = moduleCode.match(
+              /(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/g,
+            );
+            if (requireMatches) {
+              for (const match of requireMatches) {
+                // Extract index from both formats
+                const indexMatch = match.match(
+                  /(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/,
+                );
+                if (indexMatch) {
                   const depIndex = Number(indexMatch[1]);
 
                   // In release builds, exclude requires inside __DEV__ conditional blocks
@@ -186,10 +186,10 @@ export function extractAssets(options: ExtractAssetsOptions): AssetInfo[] {
                       const pos = moduleCode.indexOf(match, searchStart);
                       if (pos === -1) break;
                       // Check if this is the same require we're looking for (by checking the index)
-                                      const testMatch = moduleCode
-                                        .substring(pos)
-                                        .match(/(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/);
-                                      if (testMatch && Number(testMatch[1]) === depIndex) {
+                      const testMatch = moduleCode
+                        .substring(pos)
+                        .match(/(?:_\$\$_REQUIRE\(_dependencyMap|require\(dependencyMap)\[(\d+)\]\)/);
+                      if (testMatch && Number(testMatch[1]) === depIndex) {
                         requirePos = pos;
                         break;
                       }
