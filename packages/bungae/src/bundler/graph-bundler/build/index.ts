@@ -39,6 +39,10 @@ export interface BuildOptions {
   bundleName?: string;
   /** Source paths mode: 'absolute' or 'url-server' (Metro-compatible) */
   sourcePaths?: 'absolute' | 'url-server';
+  /** Source URL for bundle (Metro-compatible: passed to getAppendScripts) */
+  sourceUrl?: string;
+  /** Source map URL for bundle (Metro-compatible: passed to getAppendScripts) */
+  sourceMapUrl?: string;
 }
 
 export async function buildWithGraph(
@@ -51,7 +55,9 @@ export async function buildWithGraph(
     modulesOnly = false,
     runModule = true,
     bundleName,
-    sourcePaths = 'url-server', // Default to url-server for Metro compatibility
+    sourcePaths = 'absolute', // Default to absolute for DevTools/Hermes compatibility
+    sourceUrl,
+    sourceMapUrl,
   } = options || {};
   const { entry, dev, root } = config;
 
@@ -199,6 +205,9 @@ export async function buildWithGraph(
   const getSourceUrl = createGetSourceUrl(config, sourceRequestRoutingMap);
 
   // Serialize bundle
+  // Metro-compatible: pass sourceUrl and sourceMapUrl to baseJSBundle
+  // These are added to bundle.post via getAppendScripts, ensuring they're part of the bundle structure
+  // This is important for source map line number accuracy
   const bundle = await baseJSBundle(entryPath, prependModules, graphModules, {
     createModuleId,
     getRunModuleStatement,
@@ -211,15 +220,33 @@ export async function buildWithGraph(
     runBeforeMainModule,
     inlineSourceMap: config.serializer?.inlineSourceMap ?? false,
     getSourceUrl: (module) => getSourceUrl(module.path),
+    sourceUrl, // Metro-compatible: passed to getAppendScripts
+    sourceMapUrl, // Metro-compatible: passed to getAppendScripts
   });
 
-  // Combine bundle parts
-  let code = [
-    '// Bungae Bundle (Graph Mode)',
-    bundle.pre,
-    bundle.modules.map(([, code]) => code).join('\n'),
-    bundle.post,
-  ].join('\n');
+  // Combine bundle parts (Metro-compatible: no header comment)
+  // Metro's bundleToString: bundle.pre + modules + bundle.post (no header)
+  let code = bundle.pre.length > 0 ? bundle.pre + '\n' : '';
+  const sortedModules = bundle.modules
+    .slice()
+    .sort((a, b) => {
+      const aId = typeof a[0] === 'number' ? a[0] : 0;
+      const bId = typeof b[0] === 'number' ? b[0] : 0;
+      return aId - bId;
+    });
+  
+  for (const [, moduleCode] of sortedModules) {
+    if (moduleCode.length > 0) {
+      code += moduleCode + '\n';
+    }
+  }
+  
+  if (bundle.post.length > 0) {
+    code += bundle.post;
+  } else {
+    // Remove trailing newline if post is empty (Metro-compatible)
+    code = code.slice(0, -1);
+  }
 
   // Create reverse mapping: moduleId -> module path from graphModules
   // This is needed for source map generation
@@ -279,17 +306,19 @@ export async function buildWithGraph(
   let finalCode = code;
   let finalMap = map;
 
+  // Metro-compatible: sourceURL and sourceMappingURL are already in bundle.post via getAppendScripts
+  // No need to add them again here
+  // For inline source maps: getAppendScripts handles it via inlineSourceMap option
+  // For non-inline source maps: getAppendScripts adds sourceMappingURL comment to bundle.post
   if (inlineSourceMap && map) {
     // Encode source map as base64 and add inline source map comment
+    // Note: getAppendScripts should handle this, but we add it here as fallback
     const base64Map = Buffer.from(map).toString('base64');
     const inlineSourceMapComment = `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${base64Map}`;
     finalCode = code + inlineSourceMapComment;
     finalMap = undefined; // Don't return separate map file when inline
-  } else if (map) {
-    // For non-inline source maps, DON'T add sourceMappingURL here
-    // server.ts will add the full URL when serving via HTTP
-    // This prevents duplicate/conflicting sourceMappingURL comments
-    // For file-based builds (build command), the caller should add the URL
+  } else {
+    // For non-inline source maps: sourceMappingURL is already in bundle.post via getAppendScripts
     finalCode = code;
   }
 
