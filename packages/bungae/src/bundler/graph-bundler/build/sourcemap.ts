@@ -97,7 +97,7 @@ export async function generateSourceMap(
       path: preludePath,
       source: bundle.pre,
       code: preludeCode, // Strip trailing newline for correct countLines calculation
-      isIgnored: true, // Metro-compatible: prelude is always in ignoreList
+      isIgnored: false, // __prelude__ should NOT be in ignoreList (it's initialization code, not library code)
       lineCount: preLines,
     });
 
