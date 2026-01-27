@@ -102,6 +102,7 @@ export function getAppendScripts(
           path: `require-${modulePath}`,
           code,
           dependencies: [],
+          type: 'js/script/virtual',
         });
       } else if (options.dev) {
         // In dev mode, warn if runBeforeMainModule module is not found
@@ -122,7 +123,7 @@ export function getAppendScripts(
 
     if (options.inlineSourceMap) {
       // Generate inline source map (base64 encoded)
-      // TODO: Implement full source map generation with x_google_ignoreList
+      // Note: x_google_ignoreList is now supported in source map generation
       // For now, use sourceMapUrl if available, otherwise skip
       if (options.sourceMapUrl) {
         sourceMappingURL = options.sourceMapUrl;
@@ -143,6 +144,7 @@ export function getAppendScripts(
       path: 'source-map',
       code,
       dependencies: [],
+      type: 'js/script/virtual',
     });
   }
 
@@ -152,6 +154,7 @@ export function getAppendScripts(
       path: 'source-url',
       code: `//# sourceURL=${options.sourceUrl}`,
       dependencies: [],
+      type: 'js/script/virtual',
     });
   }
 

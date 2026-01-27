@@ -37,20 +37,20 @@ export function addParamsToDefineCall(
   }
 
   // Code doesn't have __d(), wrap it in a function
-  // Metro's FactoryFn signature: function(global, require, metroImportDefault, metroImportAll, moduleObject, exports, dependencyMap)
+  // Metro's FactoryFn signature: function(global, _$$_REQUIRE, _$$_IMPORT_DEFAULT, _$$_IMPORT_ALL, module, exports, _dependencyMap)
   // Metro's transformer converts CommonJS modules and wraps them in this signature
-  // But the actual code inside uses: require, module, exports
+  // The code inside uses: require() calls which are converted to _$$_REQUIRE(_dependencyMap[index])
   // Metro's factory call passes: (global, metroRequire, metroImportDefault, metroImportAll, moduleObject, exports, dependencyMap)
-  // So we need to map: require = metroRequire (2nd param), module = moduleObject (5th param), exports = exports (6th param)
+  // So _$$_REQUIRE maps to metroRequire (2nd param), module maps to moduleObject (5th param), exports maps to exports (6th param)
   const params = paramsToAdd.map((param) =>
     param !== undefined ? JSON.stringify(param) : 'undefined',
   );
 
   // Wrap code in a function expression matching Metro's FactoryFn signature
   // Metro format: function(global, _$$_REQUIRE, _$$_IMPORT_DEFAULT, _$$_IMPORT_ALL, module, exports, _dependencyMap) { ... }
-  // But our transformer doesn't rename variables, so we use: function(global, require, metroImportDefault, metroImportAll, module, exports, dependencyMap) { ... }
+  // Metro uses these exact parameter names for stack trace compatibility
   // The code inside uses: require, module, exports (which map to params 2, 5, 6)
-  const wrappedCode = `function(global, require, metroImportDefault, metroImportAll, module, exports, dependencyMap) { ${code} }`;
+  const wrappedCode = `function(global, _$$_REQUIRE, _$$_IMPORT_DEFAULT, _$$_IMPORT_ALL, module, exports, _dependencyMap) { ${code} }`;
 
   return `${defineCall}${wrappedCode}${params.length > 0 ? ',' + params.join(',') : ''});`;
 }

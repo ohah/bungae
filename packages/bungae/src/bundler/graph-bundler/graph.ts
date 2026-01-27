@@ -108,7 +108,7 @@ export async function buildGraph(
       const module: GraphModule = {
         path: filePath,
         code: assetCode,
-        transformedAst: assetAst,
+        transformedAst: assetAst!,
         dependencies: resolvedAssetRegistry ? [resolvedAssetRegistry] : [],
         originalDependencies: assetDeps.length > 0 ? assetDeps : [assetRegistryPath],
       };
@@ -135,7 +135,7 @@ export async function buildGraph(
 
     // Check cache first (skip for assets and JSON files)
     const isJSON = filePath.endsWith('.json');
-    let transformResult: { ast: any; sourceMap?: string } | null = null;
+    let transformResult: { ast: any } | null = null;
     let cachedDependencies: string[] | null = null;
 
     if (!isJSON && !isAsset) {
@@ -167,7 +167,6 @@ export async function buildGraph(
         transformedAst: transformResult?.ast || null,
         dependencies: [],
         originalDependencies: [],
-        sourceMap: transformResult?.sourceMap,
       };
       modules.set(filePath, module);
       visited.add(filePath);
@@ -234,20 +233,20 @@ export async function buildGraph(
         {
           code,
           dependencies: allDeps, // Store unresolved dependencies, not resolved ones
-          sourceMap: transformResult.sourceMap,
           timestamp: Date.now(),
         },
       );
     }
 
-    // Create module (store AST, serializer will generate code)
+    // Create module (store AST, serializer will generate code + source map)
+    // Metro-compatible: Transform phase only stores AST, no source map
+    // Source maps are generated later in graphToSerializerModules() using generate()
     const module: GraphModule = {
       path: filePath,
       code,
       transformedAst: transformResult.ast,
       dependencies: resolvedDependencies,
       originalDependencies,
-      sourceMap: transformResult.sourceMap,
     };
 
     modules.set(filePath, module);
@@ -361,6 +360,97 @@ export function buildInverseDependencies(graph: Map<string, GraphModule>): void 
 }
 
 /**
+ * Wrap AST with __d() call (Metro-compatible)
+ * This wraps the program body in a function expression and calls __d() with it.
+ * Source: Metro's JsFileWrapping.wrapModule
+ *
+ * Metro wraps AST with __d(factory) ONLY - no moduleId, dependencies, or verboseName.
+ * These are added later by the serializer using addParamsToDefineCall (string manipulation).
+ * This ensures source maps remain accurate since addParamsToDefineCall only appends to the end.
+ */
+function wrapAstWithDefine(
+  ast: any,
+  t: typeof import('@babel/types'),
+  globalPrefix: string = '',
+): any {
+  // Get program body
+  const program = ast.type === 'File' ? ast.program : ast;
+
+  // Build function parameters (Metro-compatible)
+  // Metro uses exact parameter names: function(global, _$$_REQUIRE, _$$_IMPORT_DEFAULT, _$$_IMPORT_ALL, module, exports, _dependencyMap)
+  // These names are important for stack trace compatibility
+  const params = [
+    t.identifier('global'),
+    t.identifier('_$$_REQUIRE'),
+    t.identifier('_$$_IMPORT_DEFAULT'),
+    t.identifier('_$$_IMPORT_ALL'),
+    t.identifier('module'),
+    t.identifier('exports'),
+    t.identifier('_dependencyMap'),
+  ];
+
+  // Create function expression from program body
+  const factory = t.functionExpression(
+    undefined, // no name
+    params,
+    t.blockStatement(program.body, program.directives),
+  );
+
+  // Create __d() call with ONLY factory (Metro-compatible)
+  // moduleId, dependencies, verboseName are added later by serializer
+  const defineCall = t.callExpression(t.identifier(`${globalPrefix}__d`), [factory]);
+
+  // Create new File AST with the __d() call
+  return t.file(t.program([t.expressionStatement(defineCall)]));
+}
+
+/**
+ * Metro-compatible: Count lines and add terminating mapping (countLinesAndTerminateMap)
+ * This ensures out-of-bounds lookups hit a null mapping rather than aliasing to wrong source
+ *
+ * From Metro's metro-transform-worker/src/index.js line 744
+ */
+function countLinesAndTerminateMap(
+  code: string,
+  map: ReadonlyArray<[number, number] | [number, number, number, number] | [number, number, number, number, string]>,
+): {
+  lineCount: number;
+  map: Array<[number, number] | [number, number, number, number] | [number, number, number, number, string]>;
+} {
+  // Metro's NEWLINE regex handles all line terminators
+  const NEWLINE = /\r\n?|\n|\u2028|\u2029/g;
+  let lineCount = 1;
+  let lastLineStart = 0;
+
+  // Count lines and keep track of where the last line starts
+  for (const match of code.matchAll(NEWLINE)) {
+    lineCount++;
+    lastLineStart = match.index! + match[0].length;
+  }
+  const lastLineLength = code.length - lastLineStart;
+  const lastLineIndex1Based = lineCount;
+  const lastLineNextColumn0Based = lastLineLength;
+
+  // If there isn't a mapping at one-past-the-last column of the last line,
+  // add one that maps to nothing. This ensures out-of-bounds lookups hit the
+  // null mapping rather than aliasing to whichever mapping happens to be last.
+  // ASSUMPTION: Mappings are generated in order of increasing line and column.
+  const lastMapping = map[map.length - 1];
+  const terminatingMapping: [number, number] = [lastLineIndex1Based, lastLineNextColumn0Based];
+  if (
+    !lastMapping ||
+    lastMapping[0] !== terminatingMapping[0] ||
+    lastMapping[1] !== terminatingMapping[1]
+  ) {
+    return {
+      lineCount,
+      map: [...map, terminatingMapping],
+    };
+  }
+  return { lineCount, map: [...map] };
+}
+
+/**
  * Convert graph modules to serializer modules
  * Now accepts ordered modules array instead of Map to ensure consistent ordering
  * In production builds, excludes dev-only modules like openURLInBrowser (Metro-compatible)
@@ -370,6 +460,10 @@ export async function graphToSerializerModules(
   config: ResolvedConfig,
 ): Promise<Module[]> {
   const generator = await import('@babel/generator');
+  const babelTypes = await import('@babel/types');
+  // Import metro-source-map utilities for Metro-compatible source map generation
+  const metroSourceMap = await import('metro-source-map');
+  const { toSegmentTuple } = metroSourceMap;
 
   // In production builds, exclude dev-only modules (Metro-compatible)
   // Metro excludes openURLInBrowser and other dev tools in production builds
@@ -393,41 +487,65 @@ export async function graphToSerializerModules(
 
   return Promise.all(
     filteredModules.map(async (m) => {
-      // Generate code from AST (Metro-compatible: serializer generates code from AST)
-      // @babel/generator can handle File node directly (it uses program property)
+      // Metro-compatible: Generate code + source map from AST (like Metro's transformJS)
+      // Metro's transformJS uses generate() with sourceMaps: true to create source map
+      // This is the correct way to generate source maps: AST → code + source map
+      // The source map maps from generated code back to original source code
       let code = '';
       let sourceMap: string | undefined;
 
       if (m.transformedAst) {
         // If AST is File node, generator handles it directly
         // If AST is Program node, wrap it in File node for consistency
-        const astToGenerate =
-          m.transformedAst.type === 'File'
-            ? m.transformedAst
-            : { type: 'File', program: m.transformedAst, comments: [], tokens: [] };
+        let astToGenerate = m.transformedAst;
 
-        // Generate code WITH source maps for DevTools support
-        // This is critical for React Native DevTools to show correct source locations
-        // IMPORTANT: Pass original source code as 3rd parameter for accurate source map generation
+        // Metro-compatible: Wrap AST with __d() BEFORE code generation
+        // This ensures source maps are for the wrapped code, not unwrapped code
+        // Metro's JsFileWrapping.wrapModule does this in the transformer
+        // The moduleId, dependencies, and verboseName are added later by serializer
+        astToGenerate = wrapAstWithDefine(astToGenerate, babelTypes);
+
+        // Metro-compatible: Generate code + source map from WRAPPED AST
+        // Metro's transformJS (line 461-474) uses generate() with sourceMaps: true
+        // Then converts rawMappings to Metro format using toSegmentTuple
+        // This ensures accurate source mapping: original code → transformed AST → wrapped code
         const generated = generator.default(
           astToGenerate,
           {
             comments: true,
             filename: m.path,
-            sourceMaps: config.dev, // Generate source maps in dev mode
+            sourceMaps: config.dev, // Generate source map in dev mode (Metro-compatible)
             sourceFileName: m.path, // Use full path for source map
           },
-          m.code, // Original source code - required for source map generation
+          m.code, // Original source code - required for accurate source map generation
         );
         code = generated.code;
 
-        // Include generated source map if available
-        if (generated.map && config.dev) {
+        // Metro-compatible: Use rawMappings directly (like Metro's transformJS line 474)
+        // Metro uses: result.rawMappings ? result.rawMappings.map(toSegmentTuple) : []
+        // rawMappings is an array of BabelSourceMapSegment objects with { generated, original, name }
+        // toSegmentTuple converts them to Metro format: [line, column, sourceLine, sourceColumn, name?]
+        // Note: rawMappings is not in TypeScript types but is available at runtime
+        const generatedWithRawMappings = generated as typeof generated & { rawMappings?: any[] };
+        if (config.dev && generatedWithRawMappings.rawMappings) {
+          // Convert rawMappings to Metro format using toSegmentTuple (Metro-compatible)
+          const metroMappings = generatedWithRawMappings.rawMappings.map((mapping: any) =>
+            toSegmentTuple(mapping),
+          );
+          // Metro-compatible: Add terminating mapping using countLinesAndTerminateMap
+          // This ensures out-of-bounds lookups hit null mapping (Metro's transformJS line 482)
+          const { lineCount, map: terminatedMap } = countLinesAndTerminateMap(code, metroMappings);
+          // Store as JSON with rawMappings and lineCount so generateSourceMap uses them directly
+          sourceMap = JSON.stringify({ rawMappings: terminatedMap, lineCount });
+        } else if (config.dev && generated.map) {
+          // Fallback: Store Babel source map if rawMappings not available
           sourceMap = JSON.stringify(generated.map);
         }
       } else {
         // Fallback for modules without AST (should not happen)
         code = m.code;
+        // No source map for modules without AST
+        sourceMap = undefined;
       }
 
       return {
@@ -436,7 +554,7 @@ export async function graphToSerializerModules(
         dependencies: m.dependencies,
         originalDependencies: m.originalDependencies,
         type: 'js/module' as const,
-        map: sourceMap || m.sourceMap, // Use generated source map, fallback to transformer's
+        map: sourceMap, // Source map from AST → code generation (Metro-compatible)
       };
     }),
   );
