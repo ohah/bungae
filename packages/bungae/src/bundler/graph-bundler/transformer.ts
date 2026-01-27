@@ -3,8 +3,9 @@
  * Uses Babel with @react-native/babel-preset (Metro-compatible)
  */
 
-import type { File as BabelAST } from '@babel/types';
 import { extname } from 'path';
+
+import type { File as BabelAST } from '@babel/types';
 
 import type { ResolvedConfig } from '../../config/types';
 

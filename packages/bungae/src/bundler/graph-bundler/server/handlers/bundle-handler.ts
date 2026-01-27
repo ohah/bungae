@@ -4,11 +4,12 @@
 
 import type { IncomingMessage, ServerResponse } from 'http';
 
+import * as jscSafeUrl from 'jsc-safe-url';
+
 import type { ResolvedConfig } from '../../../../config/types';
 import { buildWithGraph } from '../../build/index';
 import { getTerminalReporter } from '../../terminal-reporter';
 import type { BuildResult } from '../../types';
-import * as jscSafeUrl from 'jsc-safe-url';
 
 /**
  * Handle bundle request
@@ -45,7 +46,9 @@ export async function handleBundleRequest(
     // sourcePaths: Use client's request value (Metro-compatible)
     // 'absolute' = /Users/.../App.tsx format (Metro default)
     // 'url-server' = [metro-project]/App.tsx format
-    const requestSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as 'absolute' | 'url-server';
+    const requestSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as
+      | 'absolute'
+      | 'url-server';
     // Note: lazy, shallow, unstable_transformProfile are not yet implemented
     // app parameter is informational only (not used in bundle generation)
 
@@ -67,7 +70,7 @@ export async function handleBundleRequest(
     // Construct URLs for sourceMappingURL and sourceURL (Metro-compatible)
     // Use Host header from request, fallback to localhost:port
     const host = req.headers.host || `localhost:${port}`;
-    
+
     // Metro-compatible: sourceURL uses jscSafeUrl.toJscSafeUrl() to convert the full request URL
     // Metro's parseBundleOptionsFromBundleRequestUrl.js line 87-89:
     //   const sourceUrl = jscSafeUrl.toJscSafeUrl(
@@ -81,7 +84,7 @@ export async function handleBundleRequest(
     const protocolPart = 'http://';
     const fullUrl = protocolPart + host + url.pathname + url.search + (url.hash || '');
     const bundleUrl = jscSafeUrl.toJscSafeUrl(fullUrl);
-    
+
     // Metro-compatible: Use .map extension (not .bundle.map)
     // Metro uses index.map, not index.bundle.map
     // This matches Metro's sourceMappingURL format: index.bundle → index.map

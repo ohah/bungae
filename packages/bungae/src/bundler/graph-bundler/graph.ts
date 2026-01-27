@@ -412,10 +412,14 @@ function wrapAstWithDefine(
  */
 function countLinesAndTerminateMap(
   code: string,
-  map: ReadonlyArray<[number, number] | [number, number, number, number] | [number, number, number, number, string]>,
+  map: ReadonlyArray<
+    [number, number] | [number, number, number, number] | [number, number, number, number, string]
+  >,
 ): {
   lineCount: number;
-  map: Array<[number, number] | [number, number, number, number] | [number, number, number, number, string]>;
+  map: Array<
+    [number, number] | [number, number, number, number] | [number, number, number, number, string]
+  >;
 } {
   // Metro's NEWLINE regex handles all line terminators
   const NEWLINE = /\r\n?|\n|\u2028|\u2029/g;
