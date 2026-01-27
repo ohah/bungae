@@ -294,6 +294,127 @@ console.log(greet('World'));
       expect(result.code).toContain('Hello');
       expect(result.code).toContain('1.0.0');
     });
+
+    test('should replace __DEV__ with true in development builds', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+if (__DEV__) {
+  console.log('development mode');
+}
+console.log('always');
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // __DEV__ should be replaced with true, but the if block should remain
+      // (dead code elimination is not applied in dev builds)
+      expect(result.code).toContain('development mode');
+      expect(result.code).toContain('always');
+    });
+
+    test('should replace __DEV__ with false and eliminate dead code in production builds', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+if (__DEV__) {
+  console.log('development mode');
+}
+console.log('always');
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // __DEV__ should be replaced with false and the if block should be eliminated
+      expect(result.code).not.toContain('development mode');
+      expect(result.code).toContain('always');
+    });
+
+    test('should eliminate __DEV__ && expression in production builds', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+__DEV__ && console.log('dev only');
+console.log('always');
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // __DEV__ && expression should be simplified and the console.log should be eliminated
+      expect(result.code).not.toContain('dev only');
+      expect(result.code).toContain('always');
+    });
+
+    test('should replace process.env.NODE_ENV with production in production builds', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `
+if (process.env.NODE_ENV === 'development') {
+  console.log('development');
+} else {
+  console.log('production');
+}
+`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: false,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // process.env.NODE_ENV should be replaced with 'production'
+      // and the development branch should be eliminated
+      expect(result.code).not.toContain('development');
+      expect(result.code).toContain('production');
+    });
   });
 
   describe('Dependency Resolution', () => {
