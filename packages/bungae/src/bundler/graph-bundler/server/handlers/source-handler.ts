@@ -113,6 +113,8 @@ export async function handleSourceFileRequest(
   // Metro uses: res.setHeader('Content-Type', mimeType); const stream = fs.createReadStream(filePath); stream.pipe(res);
   // Metro does NOT add charset or other headers for source files
   res.setHeader('Content-Type', mimeType);
+  // Add CORS headers for DevTools access (Metro-compatible)
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const stream = createReadStream(normalizedFilePath);
   stream.pipe(res);
   stream.on('error', (error: NodeJS.ErrnoException) => {
