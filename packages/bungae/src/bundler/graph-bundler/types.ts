@@ -2,13 +2,15 @@
  * Type definitions for Graph Bundler
  */
 
+import type { File as BabelAST } from '@babel/types';
+
 /**
  * Module in the dependency graph
  */
 export interface GraphModule {
   path: string;
   code: string;
-  transformedAst: any; // Metro-compatible: transformer returns AST, serializer generates code
+  transformedAst: BabelAST; // Metro-compatible: transformer returns AST, serializer generates code
   dependencies: string[];
   originalDependencies: string[];
   inverseDependencies?: string[]; // Cached inverse dependencies for efficient HMR
