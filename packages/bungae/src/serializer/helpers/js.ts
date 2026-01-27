@@ -127,14 +127,15 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
   // So we don't need to manually convert imports or strip types here.
 
   // Convert require paths to dependencyMap lookups
-  // Metro converts require("./Bar") to require(dependencyMap[0])
+  // Metro converts require("./Bar") to _$$_REQUIRE(dependencyMap[0])
   // Use original dependency paths (as they appear in source code) for conversion
+  // Metro uses _$$_REQUIRE as the parameter name for stack trace compatibility
   const dependencyPaths = module.originalDependencies || module.dependencies;
   const convertedCode = convertRequirePaths(
     module.code,
     dependencyPaths,
-    'require', // require parameter name
-    'dependencyMap', // dependencyMap parameter name
+    '_$$_REQUIRE', // Metro-compatible: use _$$_REQUIRE for stack trace compatibility
+    '_dependencyMap', // Metro-compatible: use _dependencyMap for stack trace compatibility
   );
 
   // Step 2: Wrap in function and add __d() call
