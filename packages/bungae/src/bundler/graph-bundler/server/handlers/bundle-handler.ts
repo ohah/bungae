@@ -8,6 +8,7 @@ import type { ResolvedConfig } from '../../../../config/types';
 import { buildWithGraph } from '../../build/index';
 import { getTerminalReporter } from '../../terminal-reporter';
 import type { BuildResult } from '../../types';
+import * as jscSafeUrl from 'jsc-safe-url';
 
 /**
  * Handle bundle request
@@ -41,7 +42,10 @@ export async function handleBundleRequest(
     const requestExcludeSource = getBoolParam('excludeSource', false);
     const requestModulesOnly = getBoolParam('modulesOnly', false);
     const requestRunModule = getBoolParam('runModule', true);
-    const requestSourcePaths = url.searchParams.get('sourcePaths') || 'url-server';
+    // sourcePaths: Use client's request value (Metro-compatible)
+    // 'absolute' = /Users/.../App.tsx format (Metro default)
+    // 'url-server' = [metro-project]/App.tsx format
+    const requestSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as 'absolute' | 'url-server';
     // Note: lazy, shallow, unstable_transformProfile are not yet implemented
     // app parameter is informational only (not used in bundle generation)
 
@@ -60,11 +64,30 @@ export async function handleBundleRequest(
     const acceptHeader = req.headers.accept || '';
     const supportsMultipart = acceptHeader === 'multipart/mixed';
 
-    // Construct URLs for sourceMappingURL and sourceURL
-    const bundleUrl = `http://localhost:${port}${url.pathname}${url.search}`;
-    // Handle both .bundle and .bundle.js extensions
+    // Construct URLs for sourceMappingURL and sourceURL (Metro-compatible)
+    // Use Host header from request, fallback to localhost:port
+    const host = req.headers.host || `localhost:${port}`;
+    
+    // Metro-compatible: sourceURL uses jscSafeUrl.toJscSafeUrl() to convert the full request URL
+    // Metro's parseBundleOptionsFromBundleRequestUrl.js line 87-89:
+    //   const sourceUrl = jscSafeUrl.toJscSafeUrl(
+    //     protocolPart + host + requestPathname + search + hash,
+    //   );
+    // This converts the full request URL (with all query parameters) to JSC-safe format
+    // Example: 'http://localhost:8081/index.bundle?platform=ios&dev=true'
+    // Note: We need to use the full URL with all parameters, not a shortened format
+    // IMPORTANT: jscSafeUrl.toJscSafeUrl() is required for Chrome DevTools to properly match source maps
+    // Metro uses: import * as jscSafeUrl from 'jsc-safe-url';
+    const protocolPart = 'http://';
+    const fullUrl = protocolPart + host + url.pathname + url.search + (url.hash || '');
+    const bundleUrl = jscSafeUrl.toJscSafeUrl(fullUrl);
+    
+    // Metro-compatible: Use .map extension (not .bundle.map)
+    // Metro uses index.map, not index.bundle.map
+    // This matches Metro's sourceMappingURL format: index.bundle → index.map
+    // sourceMappingURL includes all parameters (Metro-compatible)
     const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
-    const mapUrl = `http://localhost:${port}${mapPathname}${url.search}`;
+    const mapUrl = `http://${host}${mapPathname}${url.search}`;
 
     // Extract bundle name for Metro-compatible source map folder structure
     // e.g., '/index.bundle' -> 'index.bundle', '/index.bundle.js' -> 'index.bundle'
@@ -104,20 +127,19 @@ export async function handleBundleRequest(
     // Check cache with parameter-based key
     const cachedBuild = cachedBuilds.get(bundleCacheKey);
     if (cachedBuild) {
-      let bundleWithRefs = cachedBuild.code;
-      // Metro-compatible: sourceMappingURL comes before sourceURL
-      if (cachedBuild.map) {
-        bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
-      }
-      bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
+      // Metro-compatible: sourceURL and sourceMappingURL are already in bundle.post via getAppendScripts
+      // No need to add them again here
+      const bundleWithRefs = cachedBuild.code;
 
       if (supportsMultipart) {
         createMultipartResponse(bundleWithRefs, cachedBuild.graph?.size || 0);
       } else {
         res.writeHead(200, {
-          'Content-Type': 'application/javascript',
+          'Content-Type': 'application/javascript; charset=UTF-8', // Metro-compatible: always include charset
           'Cache-Control': 'no-cache',
           'X-React-Native-Project-Root': config.root,
+          // Metro-compatible: set Content-Location header when sourceUrl is available
+          ...(bundleUrl ? { 'Content-Location': bundleUrl } : {}),
         });
         res.end(bundleWithRefs);
       }
@@ -131,20 +153,19 @@ export async function handleBundleRequest(
       // Note: Build is already cached by the original request that started it
       // We don't need to cache it again here
 
-      let bundleWithRefs = build.code;
-      // Metro-compatible: sourceMappingURL comes before sourceURL
-      if (build.map) {
-        bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
-      }
-      bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
+      // Metro-compatible: sourceURL and sourceMappingURL are already in bundle.post via getAppendScripts
+      // No need to add them again here
+      const bundleWithRefs = build.code;
 
       if (supportsMultipart) {
         createMultipartResponse(bundleWithRefs, build.graph?.size || 0);
       } else {
         res.writeHead(200, {
-          'Content-Type': 'application/javascript',
+          'Content-Type': 'application/javascript; charset=UTF-8', // Metro-compatible: always include charset
           'Cache-Control': 'no-cache',
           'X-React-Native-Project-Root': config.root,
+          // Metro-compatible: set Content-Location header when sourceUrl is available
+          ...(bundleUrl ? { 'Content-Location': bundleUrl } : {}),
         });
         res.end(bundleWithRefs);
       }
@@ -179,6 +200,9 @@ export async function handleBundleRequest(
       try {
         // Set buildingPlatforms before starting build to prevent race conditions
         // If multiple requests arrive concurrently, they will all wait for the same promise
+        // Metro-compatible: pass sourceUrl and sourceMapUrl to buildWithGraph
+        // These are added to bundle.post via getAppendScripts, ensuring they're part of the bundle structure
+        // This is important for source map line number accuracy
         const buildPromise = buildWithGraph(
           platformConfig,
           (transformedFileCount, totalFileCount) => {
@@ -224,7 +248,9 @@ export async function handleBundleRequest(
             modulesOnly: requestModulesOnly,
             runModule: requestRunModule,
             bundleName,
-            sourcePaths: requestSourcePaths === 'url-server' ? 'url-server' : 'absolute',
+            sourcePaths: requestSourcePaths, // Use client's request value (Metro-compatible)
+            sourceUrl: bundleUrl, // Metro-compatible: passed to getAppendScripts
+            sourceMapUrl: mapUrl, // Metro-compatible: passed to getAppendScripts
           },
         );
 
@@ -253,11 +279,9 @@ export async function handleBundleRequest(
           JSON.stringify({ done: totalCount, total: totalCount });
         res.write(finalProgressChunk);
 
-        let bundleWithRefs = build.code;
-        bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
-        if (build.map) {
-          bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
-        }
+        // Metro-compatible: sourceURL and sourceMappingURL are already in bundle.post via getAppendScripts
+        // No need to add them again here
+        const bundleWithRefs = build.code;
 
         const bundleBytes = Buffer.byteLength(bundleWithRefs);
         const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -297,7 +321,9 @@ export async function handleBundleRequest(
             modulesOnly: requestModulesOnly,
             runModule: requestRunModule,
             bundleName,
-            sourcePaths: requestSourcePaths === 'url-server' ? 'url-server' : 'absolute',
+            sourcePaths: requestSourcePaths, // Use client's request value (Metro-compatible)
+            sourceUrl: bundleUrl, // Metro-compatible: passed to getAppendScripts
+            sourceMapUrl: mapUrl, // Metro-compatible: passed to getAppendScripts
           },
         );
         buildingPlatforms.set(bundleCacheKey, buildPromise);
@@ -310,16 +336,16 @@ export async function handleBundleRequest(
 
         saveBuildStateForHMR(requestPlatform, build);
 
-        let bundleWithRefs = build.code;
-        bundleWithRefs += `\n//# sourceURL=${bundleUrl}`;
-        if (build.map) {
-          bundleWithRefs += `\n//# sourceMappingURL=${mapUrl}`;
-        }
+        // Metro-compatible: sourceURL and sourceMappingURL are already in bundle.post via getAppendScripts
+        // No need to add them again here
+        const bundleWithRefs = build.code;
 
         res.writeHead(200, {
-          'Content-Type': 'application/javascript',
+          'Content-Type': 'application/javascript; charset=UTF-8', // Metro-compatible: always include charset
           'Cache-Control': 'no-cache',
           'X-React-Native-Project-Root': config.root,
+          // Metro-compatible: set Content-Location header when sourceUrl is available
+          ...(bundleUrl ? { 'Content-Location': bundleUrl } : {}),
         });
         res.end(bundleWithRefs);
       } catch (error) {
