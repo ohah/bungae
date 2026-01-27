@@ -136,6 +136,29 @@ export class TerminalReporter {
   }
 
   /**
+   * Log source map request (Metro-compatible)
+   * Example: MAP ./index.js
+   */
+  logMapRequest(entryFile: string): void {
+    // Normalize entry file path for display
+    let localPath: string;
+    try {
+      localPath = relative('.', entryFile);
+      // If relative path is too long or goes up too many levels, use basename
+      if (localPath.startsWith('../') || localPath.length > 50) {
+        localPath = basename(entryFile);
+      }
+    } catch {
+      localPath = entryFile;
+    }
+
+    // Format: MAP ./index.js (Metro-compatible)
+    const badge = colors.green + colors.bold + ' MAP ' + colors.reset;
+    const filePath = colors.bold + `./${localPath}` + colors.reset;
+    console.log(badge + filePath);
+  }
+
+  /**
    * Mark bundle as failed
    */
   bundleFailed(buildID: string): void {

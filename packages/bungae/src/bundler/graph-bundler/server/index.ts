@@ -4,7 +4,6 @@
  */
 
 import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http';
-import { resolve } from 'path';
 import type { Duplex } from 'stream';
 
 // Import React Native CLI server API for message socket (reload/devMenu)
@@ -20,6 +19,7 @@ import { setupTerminalActions } from '../terminal-actions';
 import type { BuildResult, HMRErrorMessage, PlatformBuildState } from '../types';
 import { printBanner } from '../utils';
 import { loadDevMiddleware, type DevMiddleware } from './dev-middleware';
+import { buildSourceRequestRoutingMap } from '../build/utils';
 import { handleAssetRequest } from './handlers/asset-handler';
 import { handleBundleRequest } from './handlers/bundle-handler';
 import { sendIndexPage } from './handlers/index-handler';
@@ -233,7 +233,10 @@ export async function serveWithGraph(
     }
 
     // Source map request
-    if (url.pathname.endsWith('.map')) {
+    // Metro-compatible: Support both .map and .bundle.map extensions
+    // Metro uses index.map, but React Native DevTools may request index.bundle.map
+    // Handle both formats for maximum compatibility
+    if (url.pathname.endsWith('.map') || url.pathname.endsWith('.bundle.map')) {
       await handleSourceMapRequest(res, url, config, platform, cachedBuilds);
       return;
     }
@@ -253,23 +256,24 @@ export async function serveWithGraph(
     }
 
     // Build source request routing map (Metro-compatible)
-    const sourceRequestRoutingMap: Array<[string, string]> = [
-      ['/[metro-project]/', resolve(config.root)],
-    ];
-    for (let i = 0; i < config.resolver.nodeModulesPaths.length; i++) {
-      const nodeModulesPath = config.resolver.nodeModulesPaths[i];
-      if (nodeModulesPath) {
-        const absolutePath = resolve(config.root, nodeModulesPath);
-        sourceRequestRoutingMap.push([`/[metro-watchFolders]/${i}/`, absolutePath]);
-      }
+    // Use the same function as source map generation to ensure consistency
+    const sourceRequestRoutingMap = buildSourceRequestRoutingMap(config);
+
+    // Decode URL pathname for matching (handles %5B → [ and %5D → ])
+    // DevTools sends URL-encoded paths like /%5Bmetro-project%5D/App.tsx
+    let decodedPathname: string;
+    try {
+      decodedPathname = decodeURIComponent(url.pathname);
+    } catch {
+      decodedPathname = url.pathname;
     }
 
     // Check if request matches any source routing prefix
     // Note: Query parameters are ignored for source file requests (Metro-compatible)
     let handled = false;
     for (const [pathnamePrefix, normalizedRootDir] of sourceRequestRoutingMap) {
-      if (url.pathname.startsWith(pathnamePrefix)) {
-        const relativeFilePathname = url.pathname.slice(pathnamePrefix.length);
+      if (decodedPathname.startsWith(pathnamePrefix)) {
+        const relativeFilePathname = decodedPathname.slice(pathnamePrefix.length);
         await handleSourceFileRequest(res, relativeFilePathname, normalizedRootDir, config);
         handled = true;
         break;

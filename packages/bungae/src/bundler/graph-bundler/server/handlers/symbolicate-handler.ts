@@ -50,7 +50,17 @@ export async function handleSymbolicate(
       }
     }
 
-    const cachedBuild = cachedBuilds.get(mapPlatform);
+    // Find cached build for the platform
+    // Note: Cache keys use composite format like "ios:true:false:false:false:true:url-server"
+    // We need to find a key that starts with the platform name
+    let cachedBuild: BuildResult | undefined;
+    for (const [key, build] of cachedBuilds) {
+      if (key.startsWith(`${mapPlatform}:`)) {
+        cachedBuild = build;
+        break;
+      }
+    }
+
     if (!cachedBuild?.map) {
       sendJson(res, 200, {
         stack: stack.map((frame) => ({ ...frame })),
@@ -60,6 +70,8 @@ export async function handleSymbolicate(
     }
 
     // Reuse cached Consumer
+    // IMPORTANT: Clear cached consumer if the source map might have changed
+    // This ensures we always use the latest source map data
     let consumer = sourceMapConsumers.get(mapPlatform);
     if (!consumer) {
       const metroSourceMap = await import('metro-source-map');
@@ -85,22 +97,28 @@ export async function handleSymbolicate(
           return { ...frame };
         }
 
-        // Handle Metro-style source paths like [metro-project]/App.tsx
+        // Handle Metro-style source paths like /[metro-project]/App.tsx
         // Convert to actual file path for symbolication
+        // Ensure source is a string for comparison
+        const sourceStr = String(originalPos.source);
         let sourcePath: string;
-        if (originalPos.source.startsWith('[metro-project]/')) {
-          // Remove [metro-project]/ prefix and resolve from project root
-          const relativePath = originalPos.source.slice('[metro-project]/'.length);
+
+        if (sourceStr.startsWith('/[metro-project]/')) {
+          const relativePath = sourceStr.slice('/[metro-project]/'.length);
           sourcePath = resolve(config.root, relativePath);
-        } else if (originalPos.source.startsWith('[metro-watchFolders]/')) {
-          // Handle [metro-watchFolders]/{i}/ paths
-          // For now, try to resolve from project root (can be improved)
-          const relativePath = originalPos.source.replace(/^\[metro-watchFolders\]\/\d+\//, '');
+        } else if (sourceStr.startsWith('[metro-project]/')) {
+          const relativePath = sourceStr.slice('[metro-project]/'.length);
           sourcePath = resolve(config.root, relativePath);
-        } else if (originalPos.source.startsWith('/')) {
-          sourcePath = originalPos.source;
+        } else if (sourceStr.startsWith('/[metro-watchFolders]/')) {
+          const relativePath = sourceStr.replace(/^\/\[metro-watchFolders\]\/\d+\//, '');
+          sourcePath = resolve(config.root, relativePath);
+        } else if (sourceStr.startsWith('[metro-watchFolders]/')) {
+          const relativePath = sourceStr.replace(/^\[metro-watchFolders\]\/\d+\//, '');
+          sourcePath = resolve(config.root, relativePath);
+        } else if (sourceStr.startsWith('/')) {
+          sourcePath = sourceStr;
         } else {
-          sourcePath = resolve(config.root, originalPos.source);
+          sourcePath = resolve(config.root, sourceStr);
         }
 
         const originalLine =

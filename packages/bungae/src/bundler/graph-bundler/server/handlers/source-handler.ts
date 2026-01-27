@@ -2,13 +2,13 @@
  * Source file and source map request handlers
  */
 
-import { existsSync, readFile } from 'fs';
+import { existsSync, createReadStream } from 'fs';
 import type { ServerResponse } from 'http';
 import { extname, resolve } from 'path';
-import { promisify } from 'util';
 
 import type { ResolvedConfig } from '../../../../config/types';
 import { buildWithGraph } from '../../build/index';
+import { getTerminalReporter } from '../../terminal-reporter';
 import type { BuildResult } from '../../types';
 import { sendText } from '../utils';
 
@@ -108,18 +108,22 @@ export async function handleSourceFileRequest(
 
   const mimeType = mimeTypes[ext] || 'text/plain';
 
-  try {
-    const content = await promisify(readFile)(normalizedFilePath, 'utf-8');
-    res.writeHead(200, {
-      'Content-Type': mimeType,
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-cache',
-    });
-    res.end(content);
-  } catch (error) {
-    console.error(`Error reading source file ${normalizedFilePath}:`, error);
-    sendText(res, 500, 'Internal Server Error');
-  }
+  // Metro-compatible: Use streaming (fs.createReadStream) instead of reading entire file
+  // This matches Metro's implementation exactly to fix "Cannot read properties of undefined (reading 'stream')" error
+  // Metro uses: res.setHeader('Content-Type', mimeType); const stream = fs.createReadStream(filePath); stream.pipe(res);
+  // Metro does NOT add charset or other headers for source files
+  res.setHeader('Content-Type', mimeType);
+  const stream = createReadStream(normalizedFilePath);
+  stream.pipe(res);
+  stream.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'ENOENT') {
+      res.writeHead(404);
+      res.end();
+    } else {
+      res.writeHead(500);
+      res.end();
+    }
+  });
 }
 
 /**
@@ -133,6 +137,10 @@ export async function handleSourceMapRequest(
   platform: string,
   cachedBuilds: Map<string, BuildResult>,
 ): Promise<void> {
+  // Log source map request (Metro-compatible)
+  const reporter = getTerminalReporter();
+  reporter.logMapRequest(config.entry);
+
   try {
     // Metro-compatible: Parse same parameters as bundle request
     const getBoolParam = (param: string, defaultValue: boolean): boolean => {
@@ -151,11 +159,25 @@ export async function handleSourceMapRequest(
     const mapExcludeSource = getBoolParam('excludeSource', false);
     const mapModulesOnly = getBoolParam('modulesOnly', false);
     const mapRunModule = getBoolParam('runModule', true);
-    const mapSourcePaths = url.searchParams.get('sourcePaths') || 'url-server';
+    // sourcePaths: Use client's request value (Metro-compatible)
+    // 'absolute' = /Users/.../App.tsx format (Metro default)
+    // 'url-server' = [metro-project]/App.tsx format
+    const mapSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as 'absolute' | 'url-server';
 
     // Extract bundle name from pathname
-    const bundleNameMatch = url.pathname.match(/\/([^/]+\.bundle)(?:\.js)?$/);
-    const bundleName = bundleNameMatch ? bundleNameMatch[1] : undefined;
+    // Metro-compatible: Handle both .map and .bundle.map extensions
+    // For .bundle.map, extract bundle name by removing .map suffix
+    // For .map, extract bundle name by converting .map to .bundle
+    let bundleName: string | undefined;
+    if (url.pathname.endsWith('.bundle.map')) {
+      // index.bundle.map → index.bundle
+      const bundleNameMatch = url.pathname.match(/\/([^/]+\.bundle)\.map$/);
+      bundleName = bundleNameMatch ? bundleNameMatch[1] : undefined;
+    } else if (url.pathname.endsWith('.map')) {
+      // index.map → index.bundle
+      const bundleNameMatch = url.pathname.match(/\/([^/]+)\.map$/);
+      bundleName = bundleNameMatch ? `${bundleNameMatch[1]}.bundle` : undefined;
+    }
 
     // Create cache key that includes all relevant build parameters
     // This ensures we don't serve stale source maps with different parameters
@@ -166,8 +188,9 @@ export async function handleSourceMapRequest(
     if (cachedBuild?.map) {
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': 'devtools://devtools', // Metro-compatible: Use devtools://devtools instead of *
         'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff', // Metro-compatible: Add security header
       });
       res.end(cachedBuild.map);
       return;
@@ -191,7 +214,7 @@ export async function handleSourceMapRequest(
       modulesOnly: mapModulesOnly,
       runModule: mapRunModule,
       bundleName,
-      sourcePaths: mapSourcePaths === 'url-server' ? 'url-server' : 'absolute',
+      sourcePaths: mapSourcePaths, // Use client's request value (Metro-compatible)
     });
 
     // Cache the build with the parameter-based key
@@ -202,14 +225,16 @@ export async function handleSourceMapRequest(
     if (build.map) {
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': 'devtools://devtools', // Metro-compatible: Use devtools://devtools instead of *
         'Cache-Control': 'no-cache',
+        'X-Content-Type-Options': 'nosniff', // Metro-compatible: Add security header
       });
       res.end(build.map);
     } else {
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': 'devtools://devtools', // Metro-compatible: Use devtools://devtools instead of *
+        'X-Content-Type-Options': 'nosniff', // Metro-compatible: Add security header
       });
       res.end('{}');
     }
@@ -217,7 +242,8 @@ export async function handleSourceMapRequest(
     console.error('Source map generation failed:', error);
     res.writeHead(200, {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': 'devtools://devtools', // Metro-compatible: Use devtools://devtools instead of *
+      'X-Content-Type-Options': 'nosniff', // Metro-compatible: Add security header
     });
     res.end('{}');
   }

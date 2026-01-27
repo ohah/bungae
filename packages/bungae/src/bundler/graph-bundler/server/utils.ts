@@ -3,14 +3,19 @@
  */
 
 import type { IncomingMessage, ServerResponse } from 'http';
+import * as jscSafeUrl from 'jsc-safe-url';
 
 /**
  * Parse URL from incoming request
+ * Metro-compatible: Converts jscSafeUrl format (//&) back to normal URL format
  */
 export function parseRequestUrl(req: IncomingMessage, hostname: string, port: number): URL {
   const protocol = 'http';
   const host = req.headers.host || `${hostname}:${port}`;
-  return new URL(req.url || '/', `${protocol}://${host}`);
+  // Metro-compatible: Convert jscSafeUrl format to normal URL
+  // jscSafeUrl uses //& instead of ? for query parameters (for JSC compatibility)
+  const normalUrl = jscSafeUrl.toNormalUrl(req.url || '/');
+  return new URL(normalUrl, `${protocol}://${host}`);
 }
 
 /**
