@@ -87,9 +87,12 @@ export async function transformWithBabel(
       highlightCode: true,
       sourceType: 'module',
       plugins: [
+        // Metro-compatible: inline constants (__DEV__, process.env.NODE_ENV, Platform.OS)
+        // This is similar to Metro's inline-plugin.js
         [
           require.resolve('babel-plugin-transform-define'),
           {
+            __DEV__: options.dev, // Metro-compatible: replace __DEV__ with boolean
             'Platform.OS': options.platform,
             'process.env.NODE_ENV': JSON.stringify(options.dev ? 'development' : 'production'),
           },
@@ -101,6 +104,15 @@ export async function transformWithBabel(
             useBuiltIns: true,
           },
         ],
+        // Metro-compatible: dead code elimination in production builds
+        // This removes `if (false) { ... }` blocks after __DEV__ is replaced with false
+        // babel-plugin-minify-simplify also handles `false && expression` patterns
+        ...(options.dev
+          ? []
+          : [
+              require.resolve('babel-plugin-minify-simplify'),
+              [require.resolve('babel-plugin-minify-dead-code-elimination'), { keepFnName: true }],
+            ]),
       ],
     };
 
