@@ -930,8 +930,8 @@ console.log('Entry module', x); // Line 4`,
       console.log(`[SourceMap Test] sources: ${JSON.stringify(sourceMap.sources)}`);
 
       // Find the entry module in sources
-      const entrySourceIndex = sourceMap.sources.findIndex((s: string) =>
-        s.includes('index.js') && !s.includes('__prelude__'),
+      const entrySourceIndex = sourceMap.sources.findIndex(
+        (s: string) => s.includes('index.js') && !s.includes('__prelude__'),
       );
       expect(entrySourceIndex).toBeGreaterThanOrEqual(0);
       console.log(`[SourceMap Test] Entry file source index: ${entrySourceIndex}`);
@@ -976,10 +976,19 @@ console.log('Entry module', x); // Line 4`,
       // Find the first mapping for our entry file
       let firstMappingForEntry: { line: number; column: number } | null = null;
       // Also collect all mappings to understand the structure
-      const mappingsForEntry: { genLine: number; genCol: number; srcLine: number; srcCol: number }[] = [];
+      const mappingsForEntry: {
+        genLine: number;
+        genCol: number;
+        srcLine: number;
+        srcCol: number;
+      }[] = [];
 
       consumer.eachMapping((mapping) => {
-        if (mapping.source && mapping.source.includes('index.js') && !mapping.source.includes('__prelude__')) {
+        if (
+          mapping.source &&
+          mapping.source.includes('index.js') &&
+          !mapping.source.includes('__prelude__')
+        ) {
           mappingsForEntry.push({
             genLine: mapping.generatedLine,
             genCol: mapping.generatedColumn,
@@ -1121,7 +1130,9 @@ console.log(a, b); // Line 4`,
         // Print first few mappings
         sortedMappings.slice(0, 3).forEach((m) => {
           const bundleLine = bundleLines[m.genLine - 1] || '';
-          console.log(`    gen(${m.genLine}) -> src(${m.srcLine}): ${bundleLine.substring(0, 60)}...`);
+          console.log(
+            `    gen(${m.genLine}) -> src(${m.srcLine}): ${bundleLine.substring(0, 60)}...`,
+          );
         });
       }
 
@@ -1137,7 +1148,9 @@ console.log(a, b); // Line 4`,
       const moduleALine2Mapping = moduleAMappings.find((m) => m.srcLine === 2);
       if (moduleALine2Mapping) {
         const bundleLine = bundleLines[moduleALine2Mapping.genLine - 1] || '';
-        console.log(`[MultiModule Test] moduleA srcLine 2 -> genLine ${moduleALine2Mapping.genLine}: ${bundleLine}`);
+        console.log(
+          `[MultiModule Test] moduleA srcLine 2 -> genLine ${moduleALine2Mapping.genLine}: ${bundleLine}`,
+        );
         expect(bundleLine).toContain('moduleA');
       }
 
@@ -1145,7 +1158,9 @@ console.log(a, b); // Line 4`,
       const moduleBLine2Mapping = moduleBMappings.find((m) => m.srcLine === 2);
       if (moduleBLine2Mapping) {
         const bundleLine = bundleLines[moduleBLine2Mapping.genLine - 1] || '';
-        console.log(`[MultiModule Test] moduleB srcLine 2 -> genLine ${moduleBLine2Mapping.genLine}: ${bundleLine}`);
+        console.log(
+          `[MultiModule Test] moduleB srcLine 2 -> genLine ${moduleBLine2Mapping.genLine}: ${bundleLine}`,
+        );
         expect(bundleLine).toContain('moduleB');
       }
 
@@ -1185,7 +1200,8 @@ console.log(x);`,
       );
 
       // Build the graph to get the rawMappings
-      const { buildGraph, graphToSerializerModules, reorderGraph } = await import('../graph-bundler/graph');
+      const { buildGraph, graphToSerializerModules, reorderGraph } =
+        await import('../graph-bundler/graph');
       const { resolve } = await import('path');
 
       const entryPath = resolve(config.root, config.entry);
@@ -1220,7 +1236,9 @@ console.log(x);`,
         if (firstMapping && firstMapping.length >= 4) {
           const firstGenLine = firstMapping[0];
           const firstSrcLine = firstMapping[2];
-          console.log(`[RawMappings Test] First mapping: gen line ${firstGenLine} -> src line ${firstSrcLine}`);
+          console.log(
+            `[RawMappings Test] First mapping: gen line ${firstGenLine} -> src line ${firstSrcLine}`,
+          );
           // Source line should be 1 (first line of original source)
           expect(firstSrcLine).toBe(1);
           // Generated line should be > 1 due to wrapper
@@ -1292,7 +1310,10 @@ console.log(x);`,
       let firstNonPreludeMappingSource: string | null = null;
       consumer.eachMapping((mapping) => {
         if (mapping.source && mapping.source !== '__prelude__') {
-          if (firstNonPreludeMappingLine === null || mapping.generatedLine < firstNonPreludeMappingLine) {
+          if (
+            firstNonPreludeMappingLine === null ||
+            mapping.generatedLine < firstNonPreludeMappingLine
+          ) {
             firstNonPreludeMappingLine = mapping.generatedLine;
             firstNonPreludeMappingSource = mapping.source;
           }

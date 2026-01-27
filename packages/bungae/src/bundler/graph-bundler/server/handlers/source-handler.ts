@@ -162,7 +162,9 @@ export async function handleSourceMapRequest(
     // sourcePaths: Use client's request value (Metro-compatible)
     // 'absolute' = /Users/.../App.tsx format (Metro default)
     // 'url-server' = [metro-project]/App.tsx format
-    const mapSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as 'absolute' | 'url-server';
+    const mapSourcePaths = (url.searchParams.get('sourcePaths') || 'absolute') as
+      | 'absolute'
+      | 'url-server';
 
     // Extract bundle name from pathname
     // Metro-compatible: Handle both .map and .bundle.map extensions
