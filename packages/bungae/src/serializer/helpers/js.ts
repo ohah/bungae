@@ -8,16 +8,25 @@ import { addParamsToDefineCall } from './addParamsToDefineCall';
 import { convertRequirePaths } from './convertRequirePaths';
 
 /**
+ * Result of transforming script code
+ */
+export interface TransformScriptResult {
+  code: string;
+  map: any | null; // Babel source map object
+}
+
+/**
  * Transform script code (Flow -> JS) using Babel
  * Script modules like polyfills need to be transformed but not wrapped in __d()
  * Metro transforms polyfills with the same babel preset as regular modules
  * Reads babel.config.js from project root and merges with default settings (Metro-compatible)
+ * Returns both transformed code and source map for accurate debugging
  */
-async function transformScriptCode(
+export async function transformScriptCode(
   code: string,
   filePath: string,
   projectRoot: string,
-): Promise<string> {
+): Promise<TransformScriptResult> {
   try {
     const babel = await import('@babel/core');
     const hermesParser = await import('hermes-parser');
@@ -42,8 +51,8 @@ async function transformScriptCode(
           },
         });
       } catch {
-        // If parsing fails, return code as-is
-        return code;
+        // If parsing fails, return code as-is with no map
+        return { code, map: null };
       }
     }
 
@@ -59,6 +68,14 @@ async function transformScriptCode(
       filename: filePath,
       highlightCode: true,
       sourceType: 'script',
+      // Metro-compatible: Don't compact script modules (polyfills) to preserve line numbers
+      // This is critical for accurate source map debugging - DevTools needs to map
+      // nativeLoggingHook calls in console.js back to original source lines
+      compact: false,
+      retainLines: true, // Preserve original line structure
+      // Generate source map for accurate debugging (Metro-compatible)
+      sourceMaps: true,
+      sourceFileName: filePath,
       // Metro doesn't set presets/plugins here - Babel reads babel.config.js automatically
       // No additional plugins for script modules
     };
@@ -66,29 +83,44 @@ async function transformScriptCode(
     // Metro: Transform AST with Babel (Babel reads babel.config.js automatically from cwd)
     const result = await babel.transformFromAstAsync(sourceAst, code, babelConfig);
 
-    return result?.code || code;
+    return {
+      code: result?.code || code,
+      map: result?.map || null,
+    };
   } catch (error) {
-    // If transformation fails, return code as-is
+    // If transformation fails, return code as-is with no map
     console.warn(`Failed to transform script ${filePath}:`, error);
-    return code;
+    return { code, map: null };
   }
 }
 
 /**
- * Wrap module code with __d() call
+ * Result of wrapping a module
  */
-export async function wrapModule(module: Module, options: SerializerOptions): Promise<string> {
+export interface WrapModuleResult {
+  code: string;
+  map: any | null; // Babel source map for script modules
+}
+
+/**
+ * Wrap module code with __d() call
+ * Returns both code and source map (for script modules)
+ */
+export async function wrapModule(
+  module: Module,
+  options: SerializerOptions,
+): Promise<WrapModuleResult> {
   // Script modules (type: 'js/script' or 'js/script/virtual') run as-is without __d() wrapping
   // This is Metro-compatible behavior - check module.type field
   if (isScriptModule(module)) {
     // Virtual script (prelude) doesn't need transformation
     if (module.type === 'js/script/virtual') {
-      return module.code;
+      return { code: module.code, map: null };
     }
 
     // Script modules (polyfills, metro-runtime) need Flow transformation like Metro does
     // Metro transforms all modules including polyfills through its transform pipeline
-    const transformedCode = await transformScriptCode(
+    const transformResult = await transformScriptCode(
       module.code,
       module.path,
       options.projectRoot,
@@ -101,20 +133,26 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
       "'undefined'!=typeof globalThis?globalThis:'undefined'!=typeof global?global:'undefined'!=typeof window?window:this";
 
     // Check if already wrapped in IIFE
-    const trimmedCode = transformedCode.trim();
+    const trimmedCode = transformResult.code.trim();
     const isAlreadyIIFE =
       trimmedCode.startsWith('(function') || trimmedCode.startsWith('!(function');
 
     if (isAlreadyIIFE) {
       // Already IIFE, just call it with global object
       const codeWithoutSemicolon = trimmedCode.replace(/;?\s*$/, '');
-      return `${codeWithoutSemicolon}(${globalThisFallback});`;
+      return {
+        code: `${codeWithoutSemicolon}(${globalThisFallback});`,
+        map: transformResult.map,
+      };
     }
 
     // Wrap all polyfills (metro-runtime/require.js, console.js, error-guard.js) in IIFE
     // Metro uses JsFileWrapping.wrapPolyfill() which wraps code in:
     // (function(global) { ... })(globalThis || global || window || this)
-    return `(function (global) {\n${transformedCode}\n})(${globalThisFallback});`;
+    return {
+      code: `(function (global) {\n${transformResult.code}\n})(${globalThisFallback});`,
+      map: transformResult.map,
+    };
   }
 
   // For regular modules, wrap code in function and add __d() call
@@ -142,7 +180,9 @@ export async function wrapModule(module: Module, options: SerializerOptions): Pr
   // Pass all module paths to getModuleParams for validation
   const allModulePaths = (options as { allModulePaths?: Set<string> }).allModulePaths;
   const params = await getModuleParams(module, options, allModulePaths);
-  return addParamsToDefineCall(convertedCode, options.globalPrefix, ...params);
+  const wrappedCode = addParamsToDefineCall(convertedCode, options.globalPrefix, ...params);
+  // Regular modules don't have a separate script source map
+  return { code: wrappedCode, map: null };
 }
 
 /**

@@ -7,12 +7,19 @@ import type { SerializerOptions } from '../types';
 import { isJsModule, wrapModule } from './js';
 
 /**
+ * Processed module result with optional source map
+ * [Module, code, sourceMap]
+ */
+export type ProcessedModule = [Module, string, any | null];
+
+/**
  * Process modules and convert to __d() format
+ * Returns [Module, code, sourceMap] tuples
  */
 export async function processModules(
   modules: ReadonlyArray<Module>,
   options: SerializerOptions,
-): Promise<ReadonlyArray<[Module, string]>> {
+): Promise<ReadonlyArray<ProcessedModule>> {
   const filter = options.processModuleFilter || (() => true);
 
   // Collect all module paths for dependency validation
@@ -29,7 +36,7 @@ export async function processModules(
       // Check if it's a script module (source-map, source-url comments)
       // These have special paths that indicate they're scripts, not modules
       if (module.path.startsWith('source-') || module.path.startsWith('require-')) {
-        return [module, module.code] as [Module, string];
+        return [module, module.code, null] as ProcessedModule;
       }
 
       if (!filter(module)) {
@@ -40,13 +47,14 @@ export async function processModules(
       // If it's not a JS module by extension, we still wrap it
       // (Metro handles modules without extensions as JS modules)
       if (isJsModule(module) || !module.path.includes('.')) {
-        return [module, await wrapModule(module, optionsWithPaths)] as [Module, string];
+        const result = await wrapModule(module, optionsWithPaths);
+        return [module, result.code, result.map] as ProcessedModule;
       }
 
       // For truly non-JS modules (like JSON), return as-is
-      return [module, module.code] as [Module, string];
+      return [module, module.code, null] as ProcessedModule;
     }),
   );
 
-  return results.filter((r): r is [Module, string] => r !== null);
+  return results.filter((r): r is ProcessedModule => r !== null);
 }

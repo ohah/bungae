@@ -59,8 +59,8 @@ describe('Serializer Helpers', () => {
 
       const result = await wrapModule(module, createOptions());
 
-      expect(result).toContain('__d');
-      expect(result).toContain('0'); // moduleId
+      expect(result.code).toContain('__d');
+      expect(result.code).toContain('0'); // moduleId
     });
 
     test('should include dependencies in __d() call', async () => {
@@ -72,7 +72,7 @@ describe('Serializer Helpers', () => {
 
       const result = await wrapModule(module, createOptions());
 
-      expect(result).toContain('1'); // dependency moduleId
+      expect(result.code).toContain('1'); // dependency moduleId
     });
 
     test('should include verbose name in dev mode', async () => {
@@ -84,7 +84,7 @@ describe('Serializer Helpers', () => {
 
       const result = await wrapModule(module, createOptions());
 
-      expect(result).toContain('src/module.js');
+      expect(result.code).toContain('src/module.js');
     });
   });
 
@@ -285,7 +285,7 @@ describe('Serializer Helpers', () => {
 
       const result = await wrapModule(module, createOptions());
 
-      expect(result).toBe('var __DEV__=true;');
+      expect(result.code).toBe('var __DEV__=true;');
     });
 
     test('should wrap script modules in IIFE with global parameter', async () => {
@@ -299,10 +299,10 @@ describe('Serializer Helpers', () => {
       const result = await wrapModule(module, createOptions());
 
       // Should be wrapped in IIFE
-      expect(result).toContain('(function (global)');
-      expect(result).toContain('globalThis');
+      expect(result.code).toContain('(function (global)');
+      expect(result.code).toContain('globalThis');
       // Should contain the original code
-      expect(result).toContain('ErrorUtils');
+      expect(result.code).toContain('ErrorUtils');
     });
 
     test('should handle metro-runtime polyfill that is already wrapped', async () => {
@@ -316,8 +316,8 @@ describe('Serializer Helpers', () => {
       const result = await wrapModule(module, createOptions());
 
       // Should call the existing IIFE with globalThis fallback
-      expect(result).toContain('globalThis');
-      expect(result).toContain('global.__r');
+      expect(result.code).toContain('globalThis');
+      expect(result.code).toContain('global.__r');
     });
   });
 
@@ -360,7 +360,8 @@ describe('Serializer Helpers', () => {
       expect(firstResult).not.toBeNull();
       expect(firstResult).not.toBeUndefined();
       // TypeScript doesn't narrow the type after destructuring, so we assert
-      const resultTuple = firstResult as [Module, string];
+      // ProcessedModule is [Module, string, any | null]
+      const resultTuple = firstResult as [Module, string, any | null];
       const module: Module = resultTuple[0];
       const code: string = resultTuple[1];
       const expectedModule = modules[0];
