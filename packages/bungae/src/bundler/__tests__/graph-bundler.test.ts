@@ -980,7 +980,9 @@ console.log(config.name);
       }
     });
 
-    test('should not include __prelude__ in x_google_ignoreList even when shouldAddToIgnoreList returns true', async () => {
+    test('should include __prelude__ in x_google_ignoreList when shouldAddToIgnoreList returns true (Metro-compatible)', async () => {
+      // Metro behavior: __prelude__ is ALWAYS ignored (see Metro's _shouldAddModuleToIgnoreList)
+      // Metro's default shouldAddToIgnoreList includes __prelude__ path check
       const entryFile = join(testDir, 'index.js');
       writeFileSync(entryFile, "console.log('prelude test');", 'utf-8');
 
@@ -1003,11 +1005,11 @@ console.log(config.name);
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.x_google_ignoreList).toBeDefined();
 
-      // __prelude__ is at index 0 and should have isIgnored: false
-      // So it should NOT be in the ignore list
-      expect(sourceMap.x_google_ignoreList).not.toContain(0);
+      // __prelude__ (index 0) should be in ignore list when shouldAddToIgnoreList returns true
+      // This matches Metro's behavior where __prelude__ is always considered for ignoring
+      expect(sourceMap.x_google_ignoreList).toContain(0);
 
-      // But other modules (like index.js) should be in ignore list
+      // Other modules (like index.js) should also be in ignore list
       const entryIndex = sourceMap.sources.findIndex(
         (s: string) => s.includes('index.js') && !s.includes('__prelude__'),
       );
