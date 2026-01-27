@@ -249,13 +249,25 @@ export async function generateSourceMap(
           });
         }
 
+        // Check if prependModule should be added to ignore list (Metro-compatible)
+        // Metro's default: __prelude__ is always ignored, other polyfills check isThirdPartyModule
+        const prependIsIgnored = config.serializer?.shouldAddToIgnoreList
+          ? config.serializer.shouldAddToIgnoreList({
+              path: originalModule.path,
+              code: transformedCode,
+              dependencies: [],
+              type: originalModule.type as 'js/module',
+            })
+          : originalModule.type === 'js/script/virtual' || // __prelude__ always ignored
+            /(?:^|[/\\])node_modules[/\\]/.test(originalModule.path); // node_modules ignored by default
+
         metroModules.push({
           map: rawMappings,
           functionMap: null,
           path: sourcePath,
           source: originalModule.code, // Original source code for sourcesContent
           code: transformedCode,
-          isIgnored: true, // Mark as ignored (third-party/polyfill)
+          isIgnored: prependIsIgnored,
           lineCount: moduleLines,
         });
       }
