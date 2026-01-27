@@ -282,13 +282,12 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
    - 기본값: `node_modules/` 경로 파일 제외
    - 구현 위치: `graph-bundler/build/sourcemap.ts`
 
-#### ⚠️ 진행 중인 기능
+#### ✅ Source Map 정확도 (완료)
 
-1. **Source Map 정확도** ⚠️
-   - 소스맵 생성은 구현됨
-   - DevTools console.log 소스 위치 추론이 정확하지 않음
-   - Metro와 동일한 정확도 달성 필요
-   - 구현 위치: `graph-bundler/build/sourcemap.ts`
+- DevTools console.log가 사용자 코드 위치 (예: `App.tsx:60`)를 올바르게 표시
+- `x_google_ignoreList`가 정상 작동하여 console.js 등 폴리필 건너뜀
+- vlq 패키지로 Babel 소스맵 직접 VLQ 디코딩 (Metro 동일)
+- 구현 위치: `graph-bundler/build/sourcemap.ts`
 
 ### Phase 3: 최적화 ✅ 완료
 
@@ -311,7 +310,6 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 
 ### Phase 4: 고급 기능 (미구현)
 
-- [ ] **Source Map 정확도 개선** - DevTools console.log 소스 위치 추론 정확도
 - [ ] **RAM Bundle** - iOS/Android 최적화 번들 형식
 - [ ] **플러그인 시스템** - 사용자 확장
 - [ ] **require.context** - 동적 require 패턴
