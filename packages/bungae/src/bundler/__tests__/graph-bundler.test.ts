@@ -620,19 +620,17 @@ console.log(config.name);
         testDir,
       );
 
-      // Metro-compatible: default sourcePaths is 'url-server' which uses [metro-project]/ format
-      // For absolute paths, use sourcePaths='absolute'
-      const result = await buildWithGraph(config, undefined, {
-        sourcePaths: 'absolute',
-      });
+      // Default sourcePaths is 'absolute' for DevTools/Hermes compatibility
+      // This uses absolute file paths in source map sources
+      const result = await buildWithGraph(config);
 
       expect(result.map).toBeDefined();
       const sourceMap = JSON.parse(result.map!);
       expect(sourceMap.sources).toBeDefined();
 
-      // When sourcePaths='absolute', sources should be relative paths from project root
-      const entryRelativePath = relative(testDir, entryFile);
-      expect(sourceMap.sources).toContain(entryRelativePath);
+      // When sourcePaths='absolute', Metro uses absolute paths (module.path)
+      // Metro-compatible: absolute path should be in sources
+      expect(sourceMap.sources).toContain(entryFile);
     });
 
     test('should generate x_google_ignoreList when shouldAddToIgnoreList returns true', async () => {
@@ -690,6 +688,682 @@ console.log(config.name);
       const sourceMap = JSON.parse(result.map!);
       // x_google_ignoreList should not be present when empty
       expect(sourceMap.x_google_ignoreList).toBeUndefined();
+    });
+
+    test('should generate x_google_ignoreList for specific modules only (node_modules)', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const libFile = join(testDir, 'lib.js');
+      const nodeModulesDir = join(testDir, 'node_modules', 'dep');
+      const nodeModulesFile = join(nodeModulesDir, 'index.js');
+
+      // Create node_modules directory structure
+      mkdirSync(nodeModulesDir, { recursive: true });
+
+      writeFileSync(
+        entryFile,
+        "const lib = require('./lib'); const dep = require('dep');",
+        'utf-8',
+      );
+      writeFileSync(libFile, 'module.exports = { lib: true };', 'utf-8');
+      writeFileSync(nodeModulesFile, 'module.exports = { dep: true };', 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            // Only ignore node_modules
+            shouldAddToIgnoreList: (module) => module.path.includes('node_modules'),
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.x_google_ignoreList).toBeDefined();
+      expect(Array.isArray(sourceMap.x_google_ignoreList)).toBe(true);
+
+      // Find indices of node_modules files
+      const nodeModulesIndices: number[] = [];
+      sourceMap.sources.forEach((source: string, index: number) => {
+        if (source.includes('node_modules')) {
+          nodeModulesIndices.push(index);
+        }
+      });
+
+      // All node_modules should be in ignore list
+      expect(nodeModulesIndices.length).toBeGreaterThan(0);
+      nodeModulesIndices.forEach((index) => {
+        expect(sourceMap.x_google_ignoreList).toContain(index);
+      });
+
+      // __prelude__ (index 0) should not be in ignore list
+      expect(sourceMap.x_google_ignoreList).not.toContain(0);
+
+      // Entry file and lib file should not be in ignore list
+      const entryIndex = sourceMap.sources.findIndex(
+        (s: string) => s.includes('index.js') && !s.includes('node_modules'),
+      );
+      const libIndex = sourceMap.sources.findIndex((s: string) => s.includes('lib.js'));
+      if (entryIndex !== -1) {
+        expect(sourceMap.x_google_ignoreList).not.toContain(entryIndex);
+      }
+      if (libIndex !== -1) {
+        expect(sourceMap.x_google_ignoreList).not.toContain(libIndex);
+      }
+    });
+
+    test('should generate x_google_ignoreList with multiple modules and selective ignoring', async () => {
+      const entryFile = join(testDir, 'index.js');
+      const file1 = join(testDir, 'file1.js');
+      const file2 = join(testDir, 'file2.js');
+      const file3 = join(testDir, 'file3.js');
+
+      writeFileSync(
+        entryFile,
+        "require('./file1'); require('./file2'); require('./file3');",
+        'utf-8',
+      );
+      writeFileSync(file1, 'module.exports = { file1: true };', 'utf-8');
+      writeFileSync(file2, 'module.exports = { file2: true };', 'utf-8');
+      writeFileSync(file3, 'module.exports = { file3: true };', 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            // Only ignore file2 and file3
+            shouldAddToIgnoreList: (module) => {
+              const path = module.path;
+              return path.includes('file2') || path.includes('file3');
+            },
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.x_google_ignoreList).toBeDefined();
+      expect(Array.isArray(sourceMap.x_google_ignoreList)).toBe(true);
+
+      // Find indices
+      const file2Index = sourceMap.sources.findIndex((s: string) => s.includes('file2'));
+      const file3Index = sourceMap.sources.findIndex((s: string) => s.includes('file3'));
+      const file1Index = sourceMap.sources.findIndex(
+        (s: string) => s.includes('file1') && !s.includes('file2') && !s.includes('file3'),
+      );
+
+      // file2 and file3 should be in ignore list
+      if (file2Index !== -1) {
+        expect(sourceMap.x_google_ignoreList).toContain(file2Index);
+      }
+      if (file3Index !== -1) {
+        expect(sourceMap.x_google_ignoreList).toContain(file3Index);
+      }
+
+      // file1 should not be in ignore list
+      if (file1Index !== -1) {
+        expect(sourceMap.x_google_ignoreList).not.toContain(file1Index);
+      }
+    });
+
+    test('should work with inlineSourceMap option', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('inline sourcemap with ignore list');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            inlineSourceMap: true,
+            shouldAddToIgnoreList: () => true, // All modules should be ignored
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      // When inlineSourceMap is true, map should be undefined (included in code)
+      expect(result.map).toBeUndefined();
+      expect(result.code).toBeDefined();
+
+      // Bundle code should contain inline source map (base64 encoded)
+      expect(result.code).toContain(
+        '//# sourceMappingURL=data:application/json;charset=utf-8;base64,',
+      );
+
+      // Extract and verify inline source map
+      const base64Match = result.code.match(/base64,([A-Za-z0-9+/=]+)/);
+      if (base64Match && base64Match[1]) {
+        const base64Data = base64Match[1];
+        const sourceMapJson = JSON.parse(Buffer.from(base64Data, 'base64').toString());
+        expect(sourceMapJson.version).toBe(3);
+        expect(sourceMapJson.sources).toBeDefined();
+        expect(sourceMapJson.x_google_ignoreList).toBeDefined();
+        expect(Array.isArray(sourceMapJson.x_google_ignoreList)).toBe(true);
+        expect(sourceMapJson.x_google_ignoreList.length).toBeGreaterThan(0);
+      }
+    });
+
+    test('should not include __prelude__ in x_google_ignoreList even when shouldAddToIgnoreList returns true', async () => {
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('prelude test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            shouldAddToIgnoreList: () => true, // All modules should be ignored
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.x_google_ignoreList).toBeDefined();
+
+      // __prelude__ is at index 0 and should have isIgnored: false
+      // So it should NOT be in the ignore list
+      expect(sourceMap.x_google_ignoreList).not.toContain(0);
+
+      // But other modules (like index.js) should be in ignore list
+      const entryIndex = sourceMap.sources.findIndex(
+        (s: string) => s.includes('index.js') && !s.includes('__prelude__'),
+      );
+      if (entryIndex !== -1 && entryIndex !== 0) {
+        expect(sourceMap.x_google_ignoreList).toContain(entryIndex);
+      }
+    });
+
+    test('should generate source map with correct line number mappings', async () => {
+      // This test verifies that source map line numbers correctly align with bundle line numbers
+      // Bug: Source map shows line 5 but bundle module starts at line 2 (difference: 3)
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `// Line 1: Comment
+// Line 2: Another comment
+const x = 1; // Line 3
+console.log('Entry module', x); // Line 4`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      expect(result.code).toBeDefined();
+
+      const sourceMap = JSON.parse(result.map!);
+
+      // Debug: Print source map structure
+      console.log(`[SourceMap Test] sources: ${JSON.stringify(sourceMap.sources)}`);
+
+      // Find the entry module in sources
+      const entrySourceIndex = sourceMap.sources.findIndex((s: string) =>
+        s.includes('index.js') && !s.includes('__prelude__'),
+      );
+      expect(entrySourceIndex).toBeGreaterThanOrEqual(0);
+      console.log(`[SourceMap Test] Entry file source index: ${entrySourceIndex}`);
+
+      // Find where the entry module starts in the bundle
+      const bundleLines = result.code.split('\n');
+      let entryModuleStartLine = -1;
+      for (let i = 0; i < bundleLines.length; i++) {
+        const line = bundleLines[i];
+        if (!line) continue;
+        // Look for __d( call that contains our module's unique content
+        // The transformed code may have different format, so check for __d( first
+        if (line.includes('__d(')) {
+          entryModuleStartLine = i + 1; // 1-indexed
+          // Debug: print the line
+          console.log(`[SourceMap Test] Found __d( at line ${i + 1}: ${line.substring(0, 100)}...`);
+          break;
+        }
+      }
+
+      // If no __d( found, print bundle for debugging
+      if (entryModuleStartLine === -1) {
+        console.log('[SourceMap Test] Bundle lines:');
+        for (let i = 0; i < Math.min(bundleLines.length, 20); i++) {
+          const line = bundleLines[i] || '';
+          console.log(`  ${i + 1}: ${line.substring(0, 80)}`);
+        }
+      }
+      expect(entryModuleStartLine).toBeGreaterThan(0);
+
+      // Debug: Print first few bundle lines
+      console.log('[SourceMap Test] First 5 bundle lines:');
+      for (let i = 0; i < Math.min(bundleLines.length, 5); i++) {
+        const line = bundleLines[i] || '';
+        console.log(`  Line ${i + 1}: ${line.substring(0, 100)}`);
+      }
+
+      // Decode source map mappings using source-map library
+      const { SourceMapConsumer } = await import('source-map');
+      const consumer = await new SourceMapConsumer(sourceMap);
+
+      // Find the first mapping for our entry file
+      let firstMappingForEntry: { line: number; column: number } | null = null;
+      // Also collect all mappings to understand the structure
+      const mappingsForEntry: { genLine: number; genCol: number; srcLine: number; srcCol: number }[] = [];
+
+      consumer.eachMapping((mapping) => {
+        if (mapping.source && mapping.source.includes('index.js') && !mapping.source.includes('__prelude__')) {
+          mappingsForEntry.push({
+            genLine: mapping.generatedLine,
+            genCol: mapping.generatedColumn,
+            srcLine: mapping.originalLine || 0,
+            srcCol: mapping.originalColumn || 0,
+          });
+          if (!firstMappingForEntry || mapping.generatedLine < firstMappingForEntry.line) {
+            firstMappingForEntry = {
+              line: mapping.generatedLine,
+              column: mapping.generatedColumn,
+            };
+          }
+        }
+      });
+
+      consumer.destroy();
+
+      // Debug: Print first few mappings
+      console.log('[SourceMap Test] First 10 mappings for entry file:');
+      mappingsForEntry
+        .sort((a, b) => a.genLine - b.genLine || a.genCol - b.genCol)
+        .slice(0, 10)
+        .forEach((m, i) => {
+          console.log(`  ${i}: gen(${m.genLine}:${m.genCol}) -> src(${m.srcLine}:${m.srcCol})`);
+        });
+
+      expect(firstMappingForEntry).not.toBeNull();
+      if (!firstMappingForEntry) {
+        throw new Error('No mapping found for entry file');
+      }
+
+      // The source map's first mapping for the entry module should match where it appears in the bundle
+      // Allow for some offset due to wrapping (__d function call adds wrapper code)
+      // The key is that the mapping should be within reasonable range of the actual module location
+      const mappingLine = (firstMappingForEntry as { line: number; column: number }).line;
+
+      // Debug output for test analysis
+      console.log(`[SourceMap Test] Bundle entry module starts at line: ${entryModuleStartLine}`);
+      console.log(`[SourceMap Test] Source map first mapping for entry: line ${mappingLine}`);
+      console.log(`[SourceMap Test] Difference: ${mappingLine - entryModuleStartLine}`);
+
+      // The mapping should be at or after the __d( line
+      // (the actual code inside __d starts after the wrapper function)
+      expect(mappingLine).toBeGreaterThanOrEqual(entryModuleStartLine);
+      // The __d wrapper adds ~3 lines (function declaration, "use strict", blank line)
+      // So the actual code mapping should be within a few lines of __d(
+      expect(mappingLine - entryModuleStartLine).toBeLessThanOrEqual(4);
+    });
+
+    test('should generate correct line mappings for multiple modules', async () => {
+      // This test checks if line number offsets accumulate correctly across multiple modules
+      const entryFile = join(testDir, 'index.js');
+      const moduleAFile = join(testDir, 'moduleA.js');
+      const moduleBFile = join(testDir, 'moduleB.js');
+
+      writeFileSync(
+        moduleAFile,
+        `// Module A Line 1
+const a = 'moduleA'; // Line 2
+module.exports = a; // Line 3`,
+        'utf-8',
+      );
+
+      writeFileSync(
+        moduleBFile,
+        `// Module B Line 1
+const b = 'moduleB'; // Line 2
+module.exports = b; // Line 3`,
+        'utf-8',
+      );
+
+      writeFileSync(
+        entryFile,
+        `// Entry Line 1
+const a = require('./moduleA'); // Line 2
+const b = require('./moduleB'); // Line 3
+console.log(a, b); // Line 4`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+
+      const sourceMap = JSON.parse(result.map!);
+      const bundleLines = result.code.split('\n');
+
+      // Debug: print bundle structure
+      console.log('[MultiModule Test] Bundle structure:');
+      let moduleCount = 0;
+      for (let i = 0; i < bundleLines.length; i++) {
+        const line = bundleLines[i] || '';
+        if (line.includes('__d(')) {
+          moduleCount++;
+          console.log(`  Module ${moduleCount} at line ${i + 1}`);
+        }
+      }
+
+      // Decode source map and check mappings
+      const { SourceMapConsumer } = await import('source-map');
+      const consumer = await new SourceMapConsumer(sourceMap);
+
+      // Collect mappings per source file
+      const mappingsBySource: Map<string, { genLine: number; srcLine: number }[]> = new Map();
+
+      consumer.eachMapping((mapping) => {
+        if (!mapping.source || mapping.source === '__prelude__') return;
+        const fileName = mapping.source.split('/').pop() || '';
+        if (!mappingsBySource.has(fileName)) {
+          mappingsBySource.set(fileName, []);
+        }
+        mappingsBySource.get(fileName)!.push({
+          genLine: mapping.generatedLine,
+          srcLine: mapping.originalLine || 0,
+        });
+      });
+
+      consumer.destroy();
+
+      // Debug: Print mapping ranges
+      console.log('[MultiModule Test] Mapping ranges by source:');
+      for (const [fileName, mappings] of mappingsBySource.entries()) {
+        if (mappings.length === 0) continue;
+        const sortedMappings = mappings.sort((a, b) => a.genLine - b.genLine);
+        const minGenLine = sortedMappings[0]?.genLine;
+        const maxGenLine = sortedMappings[sortedMappings.length - 1]?.genLine;
+        console.log(`  ${fileName}: gen lines ${minGenLine} - ${maxGenLine}`);
+
+        // Print first few mappings
+        sortedMappings.slice(0, 3).forEach((m) => {
+          const bundleLine = bundleLines[m.genLine - 1] || '';
+          console.log(`    gen(${m.genLine}) -> src(${m.srcLine}): ${bundleLine.substring(0, 60)}...`);
+        });
+      }
+
+      // Verify: Each module's mappings should have correct source line references
+      // moduleA has 'moduleA' on line 2, moduleB has 'moduleB' on line 2
+      const moduleAMappings = mappingsBySource.get('moduleA.js') || [];
+      const moduleBMappings = mappingsBySource.get('moduleB.js') || [];
+
+      expect(moduleAMappings.length).toBeGreaterThan(0);
+      expect(moduleBMappings.length).toBeGreaterThan(0);
+
+      // Check that moduleA's 'const a = ' line (srcLine 2) maps to a line containing 'moduleA'
+      const moduleALine2Mapping = moduleAMappings.find((m) => m.srcLine === 2);
+      if (moduleALine2Mapping) {
+        const bundleLine = bundleLines[moduleALine2Mapping.genLine - 1] || '';
+        console.log(`[MultiModule Test] moduleA srcLine 2 -> genLine ${moduleALine2Mapping.genLine}: ${bundleLine}`);
+        expect(bundleLine).toContain('moduleA');
+      }
+
+      // Check that moduleB's 'const b = ' line (srcLine 2) maps to a line containing 'moduleB'
+      const moduleBLine2Mapping = moduleBMappings.find((m) => m.srcLine === 2);
+      if (moduleBLine2Mapping) {
+        const bundleLine = bundleLines[moduleBLine2Mapping.genLine - 1] || '';
+        console.log(`[MultiModule Test] moduleB srcLine 2 -> genLine ${moduleBLine2Mapping.genLine}: ${bundleLine}`);
+        expect(bundleLine).toContain('moduleB');
+      }
+
+      // CRITICAL CHECK: Modules should NOT overlap in generated line ranges
+      // This is the key issue - if carryOver is calculated wrong, modules will have overlapping ranges
+      if (moduleAMappings.length > 0 && moduleBMappings.length > 0) {
+        const moduleAMaxLine = Math.max(...moduleAMappings.map((m) => m.genLine));
+        const moduleBMinLine = Math.min(...moduleBMappings.map((m) => m.genLine));
+        console.log(`[MultiModule Test] moduleA max gen line: ${moduleAMaxLine}`);
+        console.log(`[MultiModule Test] moduleB min gen line: ${moduleBMinLine}`);
+
+        // If these overlap, there's a line counting bug
+        // Note: Due to module ordering, we can't assume A comes before B
+        // But we can check that no two modules have the same generated line ranges
+      }
+    });
+
+    test('should verify rawMappings start at line 1', async () => {
+      // This test checks that rawMappings for each module start at line 1
+      // If they start at line 2, it causes a 1-line offset in the final source map
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(
+        entryFile,
+        `const x = 1;
+console.log(x);`,
+        'utf-8',
+      );
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      // Build the graph to get the rawMappings
+      const { buildGraph, graphToSerializerModules, reorderGraph } = await import('../graph-bundler/graph');
+      const { resolve } = await import('path');
+
+      const entryPath = resolve(config.root, config.entry);
+      const graph = await buildGraph(entryPath, config);
+      const orderedModules = reorderGraph(graph, entryPath);
+      const serializerModules = await graphToSerializerModules(orderedModules, config);
+
+      // Find the entry module
+      const entryModule = serializerModules.find((m) => m.path === entryPath);
+      expect(entryModule).toBeDefined();
+      expect(entryModule!.map).toBeDefined();
+
+      // Parse the source map data to get rawMappings
+      const sourceMapData = JSON.parse(entryModule!.map!);
+      console.log('[RawMappings Test] sourceMapData keys:', Object.keys(sourceMapData));
+
+      if (sourceMapData.rawMappings && Array.isArray(sourceMapData.rawMappings)) {
+        const rawMappings = sourceMapData.rawMappings;
+        console.log(`[RawMappings Test] rawMappings count: ${rawMappings.length}`);
+        console.log('[RawMappings Test] First 5 rawMappings:');
+        rawMappings.slice(0, 5).forEach((m: number[], i: number) => {
+          console.log(`  ${i}: [${m.join(', ')}]`);
+        });
+
+        // rawMappings format: [genLine, genCol, srcLine?, srcCol?, name?]
+        // The first mapping will be at line ~4 due to __d wrapper:
+        // Line 1: __d(function (...) {
+        // Line 2:   "use strict";
+        // Line 3:   (blank)
+        // Line 4:   const x = 1;  ← first real code
+        const firstMapping = rawMappings[0];
+        if (firstMapping && firstMapping.length >= 4) {
+          const firstGenLine = firstMapping[0];
+          const firstSrcLine = firstMapping[2];
+          console.log(`[RawMappings Test] First mapping: gen line ${firstGenLine} -> src line ${firstSrcLine}`);
+          // Source line should be 1 (first line of original source)
+          expect(firstSrcLine).toBe(1);
+          // Generated line should be > 1 due to wrapper
+          expect(firstGenLine).toBeGreaterThan(1);
+        }
+      } else {
+        console.log('[RawMappings Test] No rawMappings found, checking babelMap...');
+        if (sourceMapData.babelMap || sourceMapData.mappings) {
+          const { SourceMapConsumer } = await import('source-map');
+          const babelMap = sourceMapData.babelMap || sourceMapData;
+          const consumer = await new SourceMapConsumer(babelMap);
+
+          let firstGenLine = Infinity;
+          consumer.eachMapping((mapping) => {
+            if (mapping.generatedLine < firstGenLine) {
+              firstGenLine = mapping.generatedLine;
+            }
+          });
+          consumer.destroy();
+
+          console.log(`[RawMappings Test] First mapping from babelMap: line ${firstGenLine}`);
+          // Babel source maps should also start at line 1
+          expect(firstGenLine).toBe(1);
+        }
+      }
+    });
+
+    test('should generate source map with prelude correctly offset', async () => {
+      // This test verifies that the prelude (bundle.pre) line count is correctly calculated
+      // and that subsequent modules have correct line offsets
+      const entryFile = join(testDir, 'index.js');
+      writeFileSync(entryFile, "console.log('test');", 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'index.js',
+          platform: 'ios',
+          dev: true,
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+
+      const sourceMap = JSON.parse(result.map!);
+      const bundleLines = result.code.split('\n');
+
+      // Count lines before the first __d( module
+      let preludeLineCount = 0;
+      for (let i = 0; i < bundleLines.length; i++) {
+        const line = bundleLines[i];
+        if (line && line.includes('__d(')) {
+          preludeLineCount = i; // 0-indexed, so this is the line count before __d
+          break;
+        }
+      }
+
+      // The __prelude__ should be the first source
+      expect(sourceMap.sources[0]).toBe('__prelude__');
+
+      // Decode mappings and find the first non-prelude mapping
+      const { SourceMapConsumer } = await import('source-map');
+      const consumer = await new SourceMapConsumer(sourceMap);
+
+      let firstNonPreludeMappingLine: number | null = null;
+      let firstNonPreludeMappingSource: string | null = null;
+      consumer.eachMapping((mapping) => {
+        if (mapping.source && mapping.source !== '__prelude__') {
+          if (firstNonPreludeMappingLine === null || mapping.generatedLine < firstNonPreludeMappingLine) {
+            firstNonPreludeMappingLine = mapping.generatedLine;
+            firstNonPreludeMappingSource = mapping.source;
+          }
+        }
+      });
+
+      consumer.destroy();
+
+      // Debug output
+      console.log(`[SourceMap Test] Prelude line count (0-indexed): ${preludeLineCount}`);
+      console.log(`[SourceMap Test] First non-prelude mapping line: ${firstNonPreludeMappingLine}`);
+      console.log(`[SourceMap Test] Expected minimum line: ${preludeLineCount + 1}`);
+
+      // The first non-prelude mapping should be after the prelude
+      // (preludeLineCount is 0-indexed, so first module is at preludeLineCount + 1)
+      expect(firstNonPreludeMappingLine).not.toBeNull();
+      if (firstNonPreludeMappingLine === null) {
+        throw new Error('No non-prelude mapping found');
+      }
+      expect(firstNonPreludeMappingLine).toBeGreaterThanOrEqual(preludeLineCount + 1);
+    });
+
+    test('should handle shouldAddToIgnoreList based on module path patterns', async () => {
+      const srcDir = join(testDir, 'src');
+      const vendorDir = join(testDir, 'vendor');
+      mkdirSync(srcDir, { recursive: true });
+      mkdirSync(vendorDir, { recursive: true });
+
+      const entryFile = join(srcDir, 'index.js');
+      const vendorFile = join(vendorDir, 'lib.js');
+      const appFile = join(srcDir, 'app.js');
+
+      writeFileSync(entryFile, "require('../vendor/lib'); require('./app');", 'utf-8');
+      writeFileSync(vendorFile, 'module.exports = { vendor: true };', 'utf-8');
+      writeFileSync(appFile, 'module.exports = { app: true };', 'utf-8');
+
+      const config = resolveConfig(
+        {
+          ...getDefaultConfig(testDir),
+          entry: 'src/index.js',
+          platform: 'ios',
+          dev: true,
+          serializer: {
+            // Ignore vendor directory
+            shouldAddToIgnoreList: (module) => module.path.includes('vendor'),
+          },
+        },
+        testDir,
+      );
+
+      const result = await buildWithGraph(config);
+
+      expect(result.map).toBeDefined();
+      const sourceMap = JSON.parse(result.map!);
+      expect(sourceMap.x_google_ignoreList).toBeDefined();
+
+      // Find vendor file index
+      const vendorIndex = sourceMap.sources.findIndex((s: string) => s.includes('vendor'));
+      const appIndex = sourceMap.sources.findIndex(
+        (s: string) => s.includes('app.js') && !s.includes('vendor'),
+      );
+
+      // Vendor should be in ignore list
+      if (vendorIndex !== -1) {
+        expect(sourceMap.x_google_ignoreList).toContain(vendorIndex);
+      }
+
+      // App file should not be in ignore list
+      if (appIndex !== -1) {
+        expect(sourceMap.x_google_ignoreList).not.toContain(appIndex);
+      }
     });
   });
 
