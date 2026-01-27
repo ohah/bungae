@@ -517,7 +517,9 @@ export async function graphToSerializerModules(
           astToGenerate,
           {
             comments: true,
+            compact: false, // Metro-compatible: unstable_compactOutput default is false
             filename: m.path,
+            retainLines: false, // Metro-compatible: Don't retain original line structure
             sourceMaps: config.dev, // Generate source map in dev mode (Metro-compatible)
             sourceFileName: m.path, // Use full path for source map
           },

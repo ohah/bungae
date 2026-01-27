@@ -269,6 +269,7 @@ export async function buildWithGraph(
     map = await generateSourceMap({
       config,
       bundle,
+      prependModules, // Metro-compatible: register each prependModule individually
       bundleName,
       excludeSource,
       sourcePaths,

@@ -104,7 +104,7 @@ export async function createHMRUpdateMessage(
       }
 
       // Wrap with __d() for Metro compatibility (Metro's prepareModule)
-      let wrappedCode = await wrapModule(serializerModule, {
+      const wrapResult = await wrapModule(serializerModule, {
         createModuleId,
         getRunModuleStatement,
         dev: platformConfig.dev ?? true,
@@ -115,6 +115,7 @@ export async function createHMRUpdateMessage(
         includeAsyncPaths: false,
         allModulePaths,
       } as any);
+      let wrappedCode = wrapResult.code;
 
       // Get inverse dependencies map for this module and all its ancestors (Metro-compatible)
       // Metro's prepareModule: Build a map of moduleId -> [parentModuleIds] for the entire chain
@@ -178,7 +179,7 @@ export async function createHMRUpdateMessage(
       }
 
       // Wrap with __d() for Metro compatibility (Metro's prepareModule)
-      let wrappedCode = await wrapModule(serializerModule, {
+      const wrapResult2 = await wrapModule(serializerModule, {
         createModuleId,
         getRunModuleStatement,
         dev: platformConfig.dev ?? true,
@@ -189,6 +190,7 @@ export async function createHMRUpdateMessage(
         includeAsyncPaths: false,
         allModulePaths,
       } as any);
+      let wrappedCode = wrapResult2.code;
 
       // Get inverse dependencies map for this module and all its ancestors (Metro-compatible)
       // Metro's prepareModule: Build a map of moduleId -> [parentModuleIds] for the entire chain
