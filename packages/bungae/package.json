@@ -77,6 +77,7 @@
     "bunup": "^0.16.20",
     "flow-parser": "^0.297.0",
     "hermes-parser": "^0.33.3",
+    "jsc-safe-url": "^0.2.2",
     "metro-runtime": "^0.83.3",
     "metro-source-map": "^0.83.3",
     "oxc-parser": "^0.108.0",
