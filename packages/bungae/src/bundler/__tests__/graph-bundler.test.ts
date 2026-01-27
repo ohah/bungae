@@ -8,7 +8,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
 import { createRequire } from 'module';
 import { tmpdir } from 'os';
-import { join, relative } from 'path';
+import { join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { resolveConfig, getDefaultConfig } from '../../config';
@@ -98,8 +98,7 @@ describe('Graph Bundler', () => {
 
       const result = await buildWithGraph(config);
 
-      // Should have bundle comment
-      expect(result.code).toContain('// Bungae Bundle (Graph Mode)');
+      // Metro-compatible: no bundle header comment (Metro's bundleToString doesn't add one)
 
       // Should have prelude variables
       expect(result.code).toContain('__BUNDLE_START_TIME__');
@@ -1307,7 +1306,6 @@ console.log(x);`,
       const consumer = await new SourceMapConsumer(sourceMap);
 
       let firstNonPreludeMappingLine: number | null = null;
-      let firstNonPreludeMappingSource: string | null = null;
       consumer.eachMapping((mapping) => {
         if (mapping.source && mapping.source !== '__prelude__') {
           if (
@@ -1315,7 +1313,6 @@ console.log(x);`,
             mapping.generatedLine < firstNonPreludeMappingLine
           ) {
             firstNonPreludeMappingLine = mapping.generatedLine;
-            firstNonPreludeMappingSource = mapping.source;
           }
         }
       });
