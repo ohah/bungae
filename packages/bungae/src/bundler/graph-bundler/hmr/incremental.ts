@@ -166,7 +166,7 @@ export async function incrementalBuild(
       const module: GraphModule = {
         path: filePath,
         code: assetCode,
-        transformedAst: assetAst,
+        transformedAst: assetAst!,
         dependencies: resolvedAssetRegistry ? [resolvedAssetRegistry] : [],
         originalDependencies: assetDeps.length > 0 ? assetDeps : [assetRegistryPath],
       };
@@ -202,7 +202,7 @@ export async function incrementalBuild(
       const module: GraphModule = {
         path: filePath,
         code,
-        transformedAst: transformResult?.ast || null,
+        transformedAst: transformResult!.ast,
         dependencies: [],
         originalDependencies: [],
       };
