@@ -46,7 +46,7 @@ jobs:
         run: bun install
 
       - name: Build Bungae
-        run: bun run build
+        run: bun packages/bungae/cli/build.ts
 
       - name: Install ExampleApp dependencies
         run: |
