@@ -74,19 +74,6 @@ jobs:
             --output markdown \
             --output-file benchmark-results.md
 
-      - name: Read benchmark results
-        id: read-results
-        run: |
-          if [ -f benchmark-results.md ]; then
-            # Use random delimiter to avoid conflicts with file content
-            DELIMITER=$(openssl rand -hex 16)
-            echo "results<<${DELIMITER}" >> $GITHUB_OUTPUT
-            cat benchmark-results.md >> $GITHUB_OUTPUT
-            echo "${DELIMITER}" >> $GITHUB_OUTPUT
-          else
-            echo "results=Benchmark results not available" >> $GITHUB_OUTPUT
-          fi
-
       - name: Find existing comment
         if: github.event_name == 'pull_request'
         uses: peter-evans/find-comment@v3
@@ -97,12 +84,12 @@ jobs:
           body-includes: '## ⚡ Benchmark Results'
 
       - name: Create or update comment
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && hashFiles('benchmark-results.md') != ''
         uses: peter-evans/create-or-update-comment@v4
         with:
           comment-id: ${{ steps.find-comment.outputs.comment-id }}
           issue-number: ${{ github.event.pull_request.number }}
-          body: ${{ steps.read-results.outputs.results }}
+          body-path: benchmark-results.md
           edit-mode: replace
 
       - name: Upload benchmark results
