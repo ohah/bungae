@@ -50,8 +50,8 @@
     }
   },
   "scripts": {
-    "dev": "bunup --watch",
-    "build": "bun run scripts/build.ts",
+    "dev": "bunx bunup --watch",
+    "build": "bunx bunup && chmod +x dist/cli.cjs || true",
     "test": "bun test",
     "typecheck": "tsc --noEmit"
   },
