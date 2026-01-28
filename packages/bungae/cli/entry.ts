@@ -56,7 +56,7 @@ if (!bunPath) {
 
 // Get the actual CLI implementation path
 // Use .cjs extension since we're running with Bun and want CommonJS
-const cliImplPath = join(currentDir, 'cli-impl.cjs');
+const cliImplPath = join(currentDir, 'main.cjs');
 
 // Spawn bun with the actual CLI implementation
 const result = spawnSync(bunPath, [cliImplPath, ...process.argv.slice(2)], {

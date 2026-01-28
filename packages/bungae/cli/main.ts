@@ -8,9 +8,9 @@
 import { resolve, dirname } from 'path';
 import { parseArgs } from 'util';
 
-import { loadConfig, resolveConfig } from './config';
-import type { BungaeConfig } from './config/types';
-import { VERSION, build, serve } from './index.ts';
+import { loadConfig, resolveConfig } from '../src/config';
+import type { BungaeConfig } from '../src/config/types';
+import { VERSION, build, serve } from '../src/index.ts';
 
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
