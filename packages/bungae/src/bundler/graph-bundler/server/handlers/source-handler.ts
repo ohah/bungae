@@ -168,21 +168,6 @@ export async function handleSourceMapRequest(
       | 'absolute'
       | 'url-server';
 
-    // Extract bundle name from pathname
-    // Metro-compatible: Handle both .map and .bundle.map extensions
-    // For .bundle.map, extract bundle name by removing .map suffix
-    // For .map, extract bundle name by converting .map to .bundle
-    let bundleName: string | undefined;
-    if (url.pathname.endsWith('.bundle.map')) {
-      // index.bundle.map → index.bundle
-      const bundleNameMatch = url.pathname.match(/\/([^/]+\.bundle)\.map$/);
-      bundleName = bundleNameMatch ? bundleNameMatch[1] : undefined;
-    } else if (url.pathname.endsWith('.map')) {
-      // index.map → index.bundle
-      const bundleNameMatch = url.pathname.match(/\/([^/]+)\.map$/);
-      bundleName = bundleNameMatch ? `${bundleNameMatch[1]}.bundle` : undefined;
-    }
-
     // Create cache key that includes all relevant build parameters
     // This ensures we don't serve stale source maps with different parameters
     const cacheKey = `${mapPlatform}:${mapDev}:${mapMinify}:${mapExcludeSource}:${mapModulesOnly}:${mapRunModule}:${mapSourcePaths}`;
@@ -217,7 +202,6 @@ export async function handleSourceMapRequest(
       excludeSource: mapExcludeSource,
       modulesOnly: mapModulesOnly,
       runModule: mapRunModule,
-      bundleName,
       sourcePaths: mapSourcePaths, // Use client's request value (Metro-compatible)
     });
 

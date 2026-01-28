@@ -35,8 +35,6 @@ export interface BuildOptions {
   modulesOnly?: boolean;
   /** Run module after loading (Metro-compatible) */
   runModule?: boolean;
-  /** Bundle name for source map folder structure (e.g., 'index.bundle') */
-  bundleName?: string;
   /** Source paths mode: 'absolute' or 'url-server' (Metro-compatible) */
   sourcePaths?: 'absolute' | 'url-server';
   /** Source URL for bundle (Metro-compatible: passed to getAppendScripts) */
@@ -54,7 +52,6 @@ export async function buildWithGraph(
     excludeSource = false,
     modulesOnly = false,
     runModule = true,
-    bundleName,
     sourcePaths = 'absolute', // Default to absolute for DevTools/Hermes compatibility
     sourceUrl,
     sourceMapUrl,
@@ -270,7 +267,6 @@ export async function buildWithGraph(
       config,
       bundle,
       prependModules, // Metro-compatible: register each prependModule individually
-      bundleName,
       excludeSource,
       sourcePaths,
       moduleIdToPath,
@@ -287,7 +283,7 @@ export async function buildWithGraph(
       const minifyResult = await minifyCode(code, {
         minifier: config.transformer.minifier,
         sourceMap: map,
-        fileName: bundleName || 'bundle.js',
+        fileName: 'bundle.js',
       });
       code = minifyResult.code;
       if (minifyResult.map) {

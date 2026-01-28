@@ -111,7 +111,6 @@ export interface GenerateSourceMapOptions {
   };
   /** Prepended modules (prelude, metro-runtime, polyfills) - original modules */
   prependModules?: ReadonlyArray<Module>;
-  bundleName?: string;
   excludeSource: boolean;
   sourcePaths: 'absolute' | 'url-server';
   moduleIdToPath: Map<number | string, string>;
@@ -130,7 +129,6 @@ export async function generateSourceMap(
     config,
     bundle,
     prependModules,
-    bundleName,
     excludeSource,
     sourcePaths,
     moduleIdToPath,
