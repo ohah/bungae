@@ -5,8 +5,8 @@
  * Uses Metro's programmatic API to run builds
  */
 
-import { execSync, spawn } from 'child_process';
-import { existsSync, rmSync, statSync } from 'fs';
+import { spawn } from 'child_process';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'fs';
 import { join } from 'path';
 
 import type { BenchmarkResult } from './types';
@@ -41,10 +41,10 @@ export async function runMetroBenchmark(options: MetroBenchmarkOptions): Promise
     platform === 'ios' ? 'ios/benchmark.jsbundle' : 'android/app/src/main/assets/benchmark.bundle',
   );
 
-  // Ensure output directory exists
+  // Ensure output directory exists (use mkdirSync to avoid shell injection)
   const outputDir = join(outputFile, '..');
   if (!existsSync(outputDir)) {
-    execSync(`mkdir -p "${outputDir}"`);
+    mkdirSync(outputDir, { recursive: true });
   }
 
   // Clear Metro cache if requested
@@ -173,26 +173,42 @@ async function runMetroBuild(
 
 /**
  * Clear Metro cache
+ * Uses safe file operations to avoid shell injection vulnerabilities
  */
 function clearMetroCache(projectRoot: string): void {
-  const cacheDirs = [
+  // Direct paths (no wildcards)
+  const directPaths = [
     join(projectRoot, 'node_modules/.cache/metro'),
     join(projectRoot, '.metro-cache'),
-    '/tmp/metro-*',
-    '/tmp/haste-map-*',
   ];
 
-  for (const cacheDir of cacheDirs) {
+  for (const cacheDir of directPaths) {
     try {
-      if (cacheDir.includes('*')) {
-        // Use shell glob for wildcard paths
-        execSync(`rm -rf ${cacheDir}`, { stdio: 'ignore' });
-      } else if (existsSync(cacheDir)) {
+      if (existsSync(cacheDir)) {
         rmSync(cacheDir, { recursive: true, force: true });
       }
     } catch {
       // Ignore errors (cache might not exist)
     }
+  }
+
+  // Handle /tmp wildcard patterns safely by listing directory
+  try {
+    const tmpDir = '/tmp';
+    if (existsSync(tmpDir)) {
+      const entries = readdirSync(tmpDir);
+      for (const entry of entries) {
+        if (entry.startsWith('metro-') || entry.startsWith('haste-map-')) {
+          try {
+            rmSync(join(tmpDir, entry), { recursive: true, force: true });
+          } catch {
+            // Ignore individual deletion errors
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore errors reading /tmp
   }
 }
 
