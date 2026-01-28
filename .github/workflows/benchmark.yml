@@ -1,0 +1,121 @@
+name: Benchmark
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'packages/**'
+      - 'examples/**'
+      - '.github/workflows/benchmark.yml'
+  workflow_dispatch:
+    inputs:
+      compare_with_metro:
+        description: 'Compare with Metro'
+        required: false
+        default: false
+        type: boolean
+      runs:
+        description: 'Number of measurement runs'
+        required: false
+        default: '3'
+        type: string
+      warmup:
+        description: 'Number of warmup runs'
+        required: false
+        default: '1'
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  benchmark:
+    name: Run Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build Bungae
+        run: bun run build
+
+      - name: Install ExampleApp dependencies
+        run: |
+          cd examples/ExampleApp
+          bun install
+
+      - name: Run Bungae benchmark
+        id: bungae-benchmark
+        run: |
+          bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+            --bungae-only \
+            --runs ${{ inputs.runs || '3' }} \
+            --warmup ${{ inputs.warmup || '1' }} \
+            --output markdown \
+            --output-file benchmark-results.md
+
+      - name: Run Metro comparison benchmark
+        if: github.event.inputs.compare_with_metro == 'true' || github.event_name == 'pull_request'
+        id: metro-benchmark
+        continue-on-error: true
+        run: |
+          bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+            --runs ${{ inputs.runs || '3' }} \
+            --warmup ${{ inputs.warmup || '1' }} \
+            --output markdown \
+            --output-file benchmark-results.md
+
+      - name: Read benchmark results
+        id: read-results
+        run: |
+          if [ -f benchmark-results.md ]; then
+            # Use EOF delimiter for multiline output
+            echo "results<<EOF" >> $GITHUB_OUTPUT
+            cat benchmark-results.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "results=Benchmark results not available" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Find existing comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/find-comment@v3
+        id: find-comment
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          comment-author: 'github-actions[bot]'
+          body-includes: '## ⚡ Benchmark Results'
+
+      - name: Create or update comment
+        if: github.event_name == 'pull_request'
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ steps.find-comment.outputs.comment-id }}
+          issue-number: ${{ github.event.pull_request.number }}
+          body: ${{ steps.read-results.outputs.results }}
+          edit-mode: replace
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.md
+          retention-days: 30
+
+      - name: Check performance regression
+        run: |
+          # Extract speedup values and check for regression
+          if grep -q "⚠️" benchmark-results.md 2>/dev/null; then
+            echo "⚠️ Performance regression detected!"
+            exit 1
+          fi
+          echo "✅ No performance regression detected"

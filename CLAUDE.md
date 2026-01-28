@@ -73,7 +73,7 @@ Phase 4: Bun 네이티브
 ### Serialization (번들 직렬화)
 
 - Plain Bundle (기본)
-- RAM Bundle (Indexed/File) - iOS/Android 최적화
+- RAM Bundle (Indexed/File) - 레거시 최적화, Hermes 사용 시 불필요
 
 ## Bun API 활용
 
@@ -310,12 +310,31 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 
 ### Phase 4: 고급 기능 (미구현)
 
-- [ ] **RAM Bundle** - iOS/Android 최적화 번들 형식
-- [ ] **플러그인 시스템** - 사용자 확장
-- [ ] **require.context** - 동적 require 패턴
-- [ ] **Lazy/Async 모듈** - code splitting (`import()` 번들 분리)
-- [ ] **순환 참조 GC** - Bacon-Rajan 알고리즘
-- [ ] **롤백 시스템** - 빌드 에러 시 이전 상태 복원
+#### Metro에 있는 기능
+
+| 기능                | 설명                                                          | 우선순위 | 비고                                               |
+| ------------------- | ------------------------------------------------------------- | -------- | -------------------------------------------------- |
+| **require.context** | 동적 require 패턴 (`sync`, `eager`, `lazy`, `lazy-once` 모드) | 중간     | Metro 실험적 기능 (`unstable_allowRequireContext`) |
+| **RAM Bundle**      | iOS/Android 최적화 번들 형식 (Indexed/File)                   | **낮음** | Hermes가 대체함. 레거시 호환용으로만 필요          |
+
+#### Metro에 없거나 부분적인 기능
+
+| 기능                | 설명                               | Metro 상태                             | Bungae 구현 여부 |
+| ------------------- | ---------------------------------- | -------------------------------------- | ---------------- |
+| **플러그인 시스템** | 사용자 확장 (커스텀 트랜스포머 등) | Babel 플러그인만 지원                  | 검토 필요        |
+| **Code Splitting**  | `import()` 별도 chunk 분리         | 단일 번들만 지원 (lazy loading은 있음) | 검토 필요        |
+| **순환 참조 GC**    | Bacon-Rajan 알고리즘               | 없음 (감지만 함)                       | 구현 안 함       |
+| **롤백 시스템**     | 빌드 에러 시 이전 상태 복원        | 부분적 (그래프 빌드 중 롤백만)         | 검토 필요        |
+
+#### RAM Bundle 참고사항
+
+RAM Bundle은 **Hermes 이전 시대의 최적화 기법**입니다:
+
+- **2019년 이전**: JSC 엔진 사용 → 전체 번들 파싱 필요 → RAM Bundle로 lazy loading
+- **2019년 이후**: Hermes 엔진 기본 → 바이트코드 사전 컴파일 + lazy compilation 내장
+
+React Native 공식 문서에서도 "If you are using Hermes, you should not need to use RAM bundles"라고 명시합니다.
+현재 대부분의 RN 앱이 Hermes를 사용하므로 RAM Bundle의 실제 수요는 거의 없습니다.
 
 ## Metro 호환성 및 제외된 기능
 
