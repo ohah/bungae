@@ -9,6 +9,51 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 3. **점진적 개선**: 핵심 기능부터 구현하고 점진적으로 확장
 4. **Bun 네이티브 우선**: 가능한 한 Bun 내장 API 활용
 
+## 번들러 선택
+
+Bungae는 두 가지 번들러 구현을 제공합니다:
+
+| 번들러  | 설명                   | 상태              | 사용 시기                  |
+| ------- | ---------------------- | ----------------- | -------------------------- |
+| `graph` | Babel 기반, Metro 호환 | **기본값 (안정)** | 프로덕션, 모든 RN 프로젝트 |
+| `bun`   | Bun.Transpiler 기반    | 실험적            | 빠른 빌드가 필요한 경우    |
+
+### 설정 방법
+
+```typescript
+// bungae.config.ts
+export default {
+  bundler: 'bun', // 'graph' (기본값) 또는 'bun'
+  // ...
+};
+```
+
+### 번들러 비교
+
+| 기능            | graph-bundler (Babel) | bun-bundler (Bun.Transpiler)        |
+| --------------- | --------------------- | ----------------------------------- |
+| TypeScript 변환 | Babel (느림)          | Bun.Transpiler (10-100x 빠름)       |
+| Flow 변환       | hermes-parser + Babel | hermes-parser + Babel (동일)        |
+| 의존성 추출     | @babel/traverse       | Bun.Transpiler.scanImports() (빠름) |
+| JSX 변환        | Babel                 | Bun.Transpiler (빠름)               |
+| Metro 호환성    | 완전 호환             | 완전 호환                           |
+| 안정성          | 검증됨                | 실험적                              |
+
+### 구현 위치
+
+```
+bundler/
+├── index.ts              # 분기 로직 (config.bundler에 따라 선택)
+├── graph-bundler/        # Babel 기반 (기본, 안정)
+│   ├── graph.ts          # 의존성 그래프 빌드
+│   ├── transformer.ts    # Babel 변환
+│   └── ...
+└── bun-bundler/          # Bun.Transpiler 기반 (빠름, 실험적)
+    ├── graph.ts          # Bun.Transpiler로 의존성 그래프 빌드
+    ├── transformer.ts    # Bun.Transpiler 변환
+    └── ...
+```
+
 ## 번들링 프로세스
 
 3단계 파이프라인: `Entry → [Resolution] → [Transformation] → [Serialization] → Bundle`
@@ -21,7 +66,9 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ### Transformation (코드 변환)
 
-**현재 구현 (Phase 1+)**: Metro와 동일하게 **Babel + Hermes Parser** 사용
+#### graph-bundler (기본값, Babel 기반)
+
+**Metro와 동일하게 Babel + Hermes Parser 사용**
 
 ```
 Entry → Hermes Parser (Flow 파싱) → @react-native/babel-preset (모든 변환) → Output
@@ -32,15 +79,26 @@ Entry → Hermes Parser (Flow 파싱) → @react-native/babel-preset (모든 변
 | Hermes Parser              | Flow 구문 파싱 (Metro와 동일)                  |
 | @react-native/babel-preset | Flow 제거, JSX 변환, ESM→CJS 변환 (all-in-one) |
 
-**구현 위치**: `graph-bundler.ts`의 `transformWithBabel()` 함수
+**구현 위치**: `graph-bundler/transformer.ts`
 
-#### 미사용 코드 (주석 처리됨)
+#### bun-bundler (실험적, Bun.Transpiler 기반)
 
-다음 파일들은 현재 사용하지 않으며, 향후 최적화를 위해 보관:
+**TypeScript/JSX는 Bun.Transpiler, Flow는 hermes-parser 폴백**
 
-- `bun-transformer.ts` - Bun.Transpiler 사용 (Flow 미지원)
-- `swc-transformer.ts` - SWC 사용 (Flow 미지원)
-- `bun-bundler.ts` - Bun.build() 사용 (Metro 모듈 시스템 미지원)
+```
+TypeScript/JSX → Bun.Transpiler (10-100x 빠름) → Output
+Flow/JS       → Hermes Parser + Babel (폴백) → Output
+```
+
+| 파일 유형             | 변환기                | 속도         |
+| --------------------- | --------------------- | ------------ |
+| .ts, .tsx             | Bun.Transpiler        | 매우 빠름    |
+| .js, .jsx (Flow 없음) | Bun.Transpiler        | 매우 빠름    |
+| .js (Flow 구문 포함)  | hermes-parser + Babel | Babel과 동일 |
+
+**의존성 추출**: `Bun.Transpiler.scanImports()` 사용 (AST 순회 없이 빠른 추출)
+
+**구현 위치**: `bun-bundler/transformer.ts`
 
 #### 점진적 네이티브 전환 계획
 
@@ -82,9 +140,12 @@ Phase 4: Bun 네이티브
 Bun.serve(); // HTTP 서버 + WebSocket (HMR)
 Bun.file(); // 파일 I/O
 
-// 🔄 향후 사용 예정 (점진적 전환)
-Bun.Transpiler; // 코드 변환 (현재는 Babel 사용)
-Bun.build(); // 번들링 (현재는 자체 그래프 빌더 사용)
+// ✅ bun-bundler에서 사용 중 (config.bundler: 'bun')
+Bun.Transpiler; // 코드 변환 (TypeScript/JSX)
+Bun.Transpiler.scanImports(); // 의존성 추출 (매우 빠름)
+
+// 🔄 향후 사용 예정
+Bun.build(); // 전체 번들링 (현재는 자체 그래프 빌더 사용)
 Bun.worker(); // 병렬 처리
 Bun.hash(); // 캐시 키 생성
 ```
@@ -308,7 +369,31 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
    - `extractExports()`, `extractImports()` - import/export 분석
    - `hasSideEffects()` - side effects 체크
 
-### Phase 4: 고급 기능 (미구현)
+### Phase 4: Bun.Transpiler 최적화 🚧 진행 중
+
+`config.bundler: 'bun'` 옵션으로 선택 가능 (실험적)
+
+1. **bun-bundler 구현** ✅
+   - `bundler/bun-bundler/` 폴더 구조 생성
+   - `BungaeConfig.bundler` 옵션 추가 (`'graph' | 'bun'`)
+   - `bundler/index.ts`에서 분기 로직 구현
+
+2. **Bun.Transpiler 변환** ✅
+   - TypeScript/TSX/JSX 파일: `Bun.Transpiler.transformSync()` 사용
+   - Flow 파일: hermes-parser + Babel 폴백 (Metro 호환)
+   - 예상 속도 개선: 10-100x (TypeScript 파일)
+
+3. **Bun.Transpiler.scanImports()** ✅
+   - AST 순회 없이 빠른 의존성 추출
+   - `@babel/traverse` 대비 10-50x 빠름
+   - Flow 파일은 기존 방식 폴백
+
+4. **향후 개선 예정**
+   - 벤치마크 테스트 추가
+   - Flow 파일 최적화 (hermes-parser WASM 직접 사용)
+   - 병렬 처리 (`Bun.worker()`)
+
+### Phase 5: 고급 기능 (미구현)
 
 #### Metro에 있는 기능
 

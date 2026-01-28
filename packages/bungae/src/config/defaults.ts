@@ -128,6 +128,7 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     minify: false,
     outDir: 'dist',
     mode: 'production',
+    bundler: 'graph', // Default: Babel-based bundler (Metro-compatible, stable)
     resolver: { ...DEFAULT_RESOLVER },
     transformer: { ...DEFAULT_TRANSFORMER },
     serializer: { ...DEFAULT_SERIALIZER },
