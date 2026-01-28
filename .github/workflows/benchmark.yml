@@ -48,6 +48,11 @@ jobs:
       - name: Build Bungae
         run: bun packages/bungae/cli/build.ts
 
+      - name: Install ExampleApp dependencies
+        run: |
+          cd examples/ExampleApp
+          bun install
+
       - name: Run Bungae benchmark
         id: bungae-benchmark
         run: |
