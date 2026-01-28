@@ -58,6 +58,12 @@ export function createPhaseTimer(): PhaseTimer {
 
   return {
     start(phaseName: string) {
+      const existing = phases.get(phaseName);
+      if (existing && existing.endTime === undefined) {
+        console.warn(
+          `Phase "${phaseName}" has already been started and not ended; overwriting previous start.`,
+        );
+      }
       phases.set(phaseName, { startTime: performance.now() });
     },
 

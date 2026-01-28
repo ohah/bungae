@@ -69,12 +69,24 @@ function parseArgs(): BenchmarkOptions {
       case '--mode':
         options.modes = [(args[++i] ?? 'dev') as 'dev' | 'release'];
         break;
-      case '--warmup':
-        options.warmupRuns = parseInt(args[++i] ?? '1', 10);
+      case '--warmup': {
+        const warmup = parseInt(args[++i] ?? '1', 10);
+        if (Number.isNaN(warmup) || warmup < 0) {
+          console.error('Error: --warmup must be a valid non-negative integer');
+          process.exit(1);
+        }
+        options.warmupRuns = warmup;
         break;
-      case '--runs':
-        options.measureRuns = parseInt(args[++i] ?? '3', 10);
+      }
+      case '--runs': {
+        const runs = parseInt(args[++i] ?? '3', 10);
+        if (Number.isNaN(runs) || runs < 1) {
+          console.error('Error: --runs must be a valid positive integer');
+          process.exit(1);
+        }
+        options.measureRuns = runs;
         break;
+      }
       case '--help':
         console.log(`
 Bungae Benchmark Runner
@@ -158,10 +170,12 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
             clearCache: true,
           });
 
-          // Calculate comparison
-          const speedup = metroResult.totalTime / bungaeResult.totalTime;
+          // Calculate comparison (handle edge cases for division by zero)
+          const speedup =
+            bungaeResult.totalTime > 0 ? metroResult.totalTime / bungaeResult.totalTime : 0;
           const sizeDiff = metroResult.bundleSize - bungaeResult.bundleSize;
-          const sizeDiffPercent = (sizeDiff / metroResult.bundleSize) * 100;
+          const sizeDiffPercent =
+            metroResult.bundleSize > 0 ? (sizeDiff / metroResult.bundleSize) * 100 : 0;
 
           comparisons.push({
             metro: metroResult,
@@ -252,10 +266,11 @@ function formatConsole(summary: BenchmarkSummary): string {
     lines.push('───────────────────────────────────────────────────────────────');
 
     const totalAvg = summary.bungaePhases.reduce((sum, p) => sum + p.avgDuration, 0);
+    const safeTotalAvg = totalAvg > 0 ? totalAvg : 1; // Prevent division by zero
 
     for (const phase of summary.bungaePhases) {
-      const percent = ((phase.avgDuration / totalAvg) * 100).toFixed(1);
-      const bar = '█'.repeat(Math.round((phase.avgDuration / totalAvg) * 20));
+      const percent = ((phase.avgDuration / safeTotalAvg) * 100).toFixed(1);
+      const bar = '█'.repeat(Math.round((phase.avgDuration / safeTotalAvg) * 20));
       lines.push(
         `  ${phase.name.padEnd(20)} ${phase.avgDuration.toFixed(0).padStart(6)}ms (${percent.padStart(5)}%) ${bar}`,
       );
@@ -306,9 +321,10 @@ function formatMarkdown(summary: BenchmarkSummary): string {
     lines.push('|-------|-----|-----|-----|');
 
     const totalAvg = summary.bungaePhases.reduce((sum, p) => sum + p.avgDuration, 0);
+    const safeTotalAvg = totalAvg > 0 ? totalAvg : 1; // Prevent division by zero
 
     for (const phase of summary.bungaePhases) {
-      const percent = ((phase.avgDuration / totalAvg) * 100).toFixed(1);
+      const percent = ((phase.avgDuration / safeTotalAvg) * 100).toFixed(1);
       lines.push(
         `| ${phase.name} | ${phase.avgDuration.toFixed(0)}ms (${percent}%) | ${phase.minDuration.toFixed(0)}ms | ${phase.maxDuration.toFixed(0)}ms |`,
       );
