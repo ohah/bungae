@@ -3,8 +3,8 @@ import { platform } from 'os';
 import { $ } from 'bun';
 
 async function main() {
-  // Run bunup
-  await $`bunup`;
+  // Run bunup (use bunx to run local package)
+  await $`bunx bunup`;
 
   // Only run chmod on non-Windows platforms
   if (platform() !== 'win32') {
