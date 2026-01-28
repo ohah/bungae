@@ -92,11 +92,6 @@ export async function handleBundleRequest(
     const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
     const mapUrl = `http://${host}${mapPathname}${url.search}`;
 
-    // Extract bundle name for Metro-compatible source map folder structure
-    // e.g., '/index.bundle' -> 'index.bundle', '/index.bundle.js' -> 'index.bundle'
-    const bundleNameMatch = url.pathname.match(/\/([^/]+\.bundle)(?:\.js)?$/);
-    const bundleName = bundleNameMatch ? bundleNameMatch[1] : undefined;
-
     // Helper to create multipart response
     const createMultipartResponse = (bundleCode: string, _moduleCount: number) => {
       const BOUNDARY = '3beqjf3apnqeu3h5jqorms4i';
@@ -250,7 +245,6 @@ export async function handleBundleRequest(
             excludeSource: requestExcludeSource,
             modulesOnly: requestModulesOnly,
             runModule: requestRunModule,
-            bundleName,
             sourcePaths: requestSourcePaths, // Use client's request value (Metro-compatible)
             sourceUrl: bundleUrl, // Metro-compatible: passed to getAppendScripts
             sourceMapUrl: mapUrl, // Metro-compatible: passed to getAppendScripts
@@ -323,7 +317,6 @@ export async function handleBundleRequest(
             excludeSource: requestExcludeSource,
             modulesOnly: requestModulesOnly,
             runModule: requestRunModule,
-            bundleName,
             sourcePaths: requestSourcePaths, // Use client's request value (Metro-compatible)
             sourceUrl: bundleUrl, // Metro-compatible: passed to getAppendScripts
             sourceMapUrl: mapUrl, // Metro-compatible: passed to getAppendScripts
