@@ -17,12 +17,12 @@ on:
       runs:
         description: 'Number of measurement runs'
         required: false
-        default: '3'
+        default: '1'
         type: string
       warmup:
         description: 'Number of warmup runs'
         required: false
-        default: '1'
+        default: '0'
         type: string
 
 permissions:
@@ -58,8 +58,8 @@ jobs:
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --bungae-only \
-            --runs ${{ inputs.runs || '3' }} \
-            --warmup ${{ inputs.warmup || '1' }} \
+            --runs ${{ inputs.runs || '1' }} \
+            --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \
             --output-file benchmark-results.md
 
@@ -69,8 +69,8 @@ jobs:
         continue-on-error: true
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
-            --runs ${{ inputs.runs || '3' }} \
-            --warmup ${{ inputs.warmup || '1' }} \
+            --runs ${{ inputs.runs || '1' }} \
+            --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \
             --output-file benchmark-results.md
 
@@ -78,10 +78,11 @@ jobs:
         id: read-results
         run: |
           if [ -f benchmark-results.md ]; then
-            # Use EOF delimiter for multiline output
-            echo "results<<EOF" >> $GITHUB_OUTPUT
+            # Use random delimiter to avoid conflicts with file content
+            DELIMITER=$(openssl rand -hex 16)
+            echo "results<<${DELIMITER}" >> $GITHUB_OUTPUT
             cat benchmark-results.md >> $GITHUB_OUTPUT
-            echo "EOF" >> $GITHUB_OUTPUT
+            echo "${DELIMITER}" >> $GITHUB_OUTPUT
           else
             echo "results=Benchmark results not available" >> $GITHUB_OUTPUT
           fi
