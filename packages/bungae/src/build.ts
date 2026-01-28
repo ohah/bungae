@@ -5,20 +5,20 @@
 import { writeFileSync, mkdirSync, copyFileSync, existsSync, statSync } from 'fs';
 import { resolve, join, dirname } from 'path';
 
-import { buildWithGraph } from './bundler';
+import { build as buildBundler } from './bundler';
 import type { ResolvedConfig } from './config/types';
 import { VERSION } from './version';
 
 export async function build(config: ResolvedConfig): Promise<void> {
   const { entry, platform, dev, outDir, root } = config;
 
-  console.log(`Building bundle for ${platform}... (Graph bundler)`);
+  console.log(`Building bundle for ${platform}...`);
   console.log(`Entry: ${entry}`);
   console.log(`Output: ${outDir}`);
 
-  // Build using Graph bundler with Metro __d()/__r() module system
+  // Build using bundler based on config.bundler option
   // This ensures correct module execution order for React Native
-  const buildResult = await buildWithGraph(config);
+  const buildResult = await buildBundler(config);
 
   // Extract asset files from the build result for Android/iOS asset copying
   const assetFiles = buildResult.assets || [];

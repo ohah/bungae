@@ -2,10 +2,10 @@
  * Serve command - Start development server
  */
 
-import { serveWithGraph } from './bundler';
+import { serve as serveBundler } from './bundler';
 import type { ResolvedConfig } from './config/types';
 
 export async function serve(config: ResolvedConfig): Promise<void> {
-  // Use Graph bundler for dev server
-  await serveWithGraph(config);
+  // Use bundler based on config.bundler option
+  await serveBundler(config);
 }

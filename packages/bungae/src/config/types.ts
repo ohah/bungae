@@ -5,6 +5,7 @@
 export type Platform = 'ios' | 'android' | 'web';
 export type Mode = 'development' | 'production';
 export type BundleType = 'plain' | 'ram-indexed' | 'ram-file';
+export type BundlerType = 'graph' | 'bun';
 
 /**
  * Resolver configuration
@@ -122,6 +123,13 @@ export interface BungaeConfig {
   outDir?: string;
   /** Mode (development/production) */
   mode?: Mode;
+  /**
+   * Bundler type to use
+   * - 'graph': Babel-based bundler (Metro-compatible, stable)
+   * - 'bun': Bun.Transpiler-based bundler (faster, experimental)
+   * @default 'graph'
+   */
+  bundler?: BundlerType;
   /** Resolver configuration */
   resolver?: ResolverConfig;
   /** Transformer configuration */

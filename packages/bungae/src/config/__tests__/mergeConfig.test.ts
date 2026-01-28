@@ -20,6 +20,7 @@ describe('mergeConfig', () => {
         minify: false,
         outDir: 'dist',
         mode: 'production',
+        bundler: 'graph',
         resolver: {
           sourceExts: [],
           assetExts: [],
