@@ -1,9 +1,9 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build output (root only; bun-bundler/build is source)
 dist/
-build/
+/build/
 out/
 .bungae/
 .bungae-cache/
