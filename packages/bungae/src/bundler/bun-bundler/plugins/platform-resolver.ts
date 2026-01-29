@@ -7,7 +7,7 @@
  * - .native.js, .native.tsx 등 (공통 네이티브)
  */
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 
 import type { BunPlugin } from 'bun';
@@ -121,7 +121,7 @@ function resolveModulePath(
     const pkgJsonPath = join(nodeModulesPath, 'package.json');
     if (existsSync(pkgJsonPath)) {
       try {
-        const pkgJson = JSON.parse(Bun.file(pkgJsonPath).textSync());
+        const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
         const mainField = pkgJson.main || pkgJson.module || 'index.js';
         const mainPath = join(nodeModulesPath, mainField);
 

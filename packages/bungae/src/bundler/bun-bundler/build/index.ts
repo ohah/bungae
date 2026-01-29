@@ -16,7 +16,8 @@ import { resolve } from 'path';
 
 import { transformSync as swcTransformSync } from '@swc/core';
 import type { BunPlugin, BuildOutput } from 'bun';
-import { transformSync, HelperMode } from 'oxc-transform';
+import type { HelperMode } from 'oxc-transform';
+import { transformSync } from 'oxc-transform';
 
 import type { ResolvedConfig } from '../../../config/types';
 
@@ -357,7 +358,6 @@ export async function buildWithGraph(
       entrypoints: [entryPath],
       target: 'browser', // Hermes는 browser 타겟과 호환
       format: 'iife', // IIFE로 출력 (Hermes 스크립트 호환, Scope Hoisting 유지)
-      bundle: true, // 모든 의존성 번들링
       minify: config.minify && !dev,
       sourcemap: dev ? 'inline' : 'none',
       splitting: false, // 단일 번들
@@ -415,7 +415,7 @@ export async function buildWithGraph(
         setPublicClassFields: true,
       },
       helpers: {
-        mode: HelperMode.External, // babelHelpers 전역 객체 사용
+        mode: 1 as unknown as HelperMode, // External - babelHelpers 전역 객체 사용 (const enum)
       },
     });
 
