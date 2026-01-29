@@ -149,7 +149,9 @@ export async function buildWithGraph(
         `Tree shaking removed ${removedModules} unused module(s) in ${Date.now() - treeShakingStartTime}ms`,
       );
     } else {
-      console.log(`Tree shaking completed in ${Date.now() - treeShakingStartTime}ms (no unused modules found)`);
+      console.log(
+        `Tree shaking completed in ${Date.now() - treeShakingStartTime}ms (no unused modules found)`,
+      );
     }
   }
 
@@ -224,20 +226,18 @@ export async function buildWithGraph(
   // Combine bundle parts (Metro-compatible: no header comment)
   // Metro's bundleToString: bundle.pre + modules + bundle.post (no header)
   let code = bundle.pre.length > 0 ? bundle.pre + '\n' : '';
-  const sortedModules = bundle.modules
-    .slice()
-    .sort((a, b) => {
-      const aId = typeof a[0] === 'number' ? a[0] : 0;
-      const bId = typeof b[0] === 'number' ? b[0] : 0;
-      return aId - bId;
-    });
-  
+  const sortedModules = bundle.modules.slice().sort((a, b) => {
+    const aId = typeof a[0] === 'number' ? a[0] : 0;
+    const bId = typeof b[0] === 'number' ? b[0] : 0;
+    return aId - bId;
+  });
+
   for (const [, moduleCode] of sortedModules) {
     if (moduleCode.length > 0) {
       code += moduleCode + '\n';
     }
   }
-  
+
   if (bundle.post.length > 0) {
     code += bundle.post;
   } else {
