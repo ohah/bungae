@@ -2,16 +2,15 @@
  * Build utilities for Graph Bundler
  */
 
-import { resolve, relative } from 'path';
+import { resolve } from 'path';
+
 import type { ResolvedConfig } from '../../../config/types';
 
 /**
  * Metro-compatible: Build source request routing map for getSourceUrl
  * This ensures verboseName matches source map sources path for console logs
  */
-export function buildSourceRequestRoutingMap(
-  config: ResolvedConfig,
-): Array<[string, string]> {
+export function buildSourceRequestRoutingMap(config: ResolvedConfig): Array<[string, string]> {
   // Metro-compatible: Metro uses '/[metro-project]/' (with leading slash)
   // This is important for source map sources path matching
   const sourceRequestRoutingMap: Array<[string, string]> = [
@@ -57,16 +56,14 @@ export function createGetSourceUrl(
       // We need to check both normalizedRootDir + '/' and normalizedRootDir + '\' for cross-platform compatibility
       const normalizedRootDirWithSep = normalizedRootDir + '/';
       const normalizedRootDirWithBackSep = normalizedRootDir + '\\';
-      
+
       if (
         modulePath.startsWith(normalizedRootDirWithSep) ||
         modulePath.startsWith(normalizedRootDirWithBackSep) ||
         modulePath === normalizedRootDir
       ) {
         const relativePath =
-          modulePath === normalizedRootDir
-            ? ''
-            : modulePath.slice(normalizedRootDir.length + 1);
+          modulePath === normalizedRootDir ? '' : modulePath.slice(normalizedRootDir.length + 1);
         // Metro-compatible: split by path.sep, encode each segment, join with '/'
         const relativePathPosix = relativePath
           .split(/[/\\]/)
