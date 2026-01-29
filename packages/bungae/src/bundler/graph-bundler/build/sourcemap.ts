@@ -4,8 +4,10 @@
 
 import { readFileSync } from 'fs';
 import { relative } from 'path';
+
 // @ts-expect-error vlq types don't resolve properly with package.json exports
 import { decode as vlqDecode } from 'vlq';
+
 import type { ResolvedConfig } from '../../../config/types';
 import type { Module } from '../../../serializer/types';
 import type { GraphModule } from '../types';
@@ -41,7 +43,7 @@ function babelSourceMapToRawMappings(sourceMap: any): RawMappingTuple[] {
     const lines = sourceMap.mappings.split(';');
 
     // Track cumulative values (VLQ uses relative values)
-    let sourceIndex = 0;
+    let _sourceIndex = 0;
     let originalLine = 0;
     let originalColumn = 0;
     let nameIndex = 0;
@@ -67,7 +69,7 @@ function babelSourceMapToRawMappings(sourceMap: any): RawMappingTuple[] {
           rawMappings.push([generatedLine + 1, generatedColumn]);
         } else if (decoded.length >= 4) {
           // Has source mapping
-          sourceIndex += decoded[1];
+          _sourceIndex += decoded[1];
           originalLine += decoded[2];
           originalColumn += decoded[3];
 
@@ -84,11 +86,21 @@ function babelSourceMapToRawMappings(sourceMap: any): RawMappingTuple[] {
                 name,
               ]);
             } else {
-              rawMappings.push([generatedLine + 1, generatedColumn, originalLine + 1, originalColumn]);
+              rawMappings.push([
+                generatedLine + 1,
+                generatedColumn,
+                originalLine + 1,
+                originalColumn,
+              ]);
             }
           } else {
             // No name
-            rawMappings.push([generatedLine + 1, generatedColumn, originalLine + 1, originalColumn]);
+            rawMappings.push([
+              generatedLine + 1,
+              generatedColumn,
+              originalLine + 1,
+              originalColumn,
+            ]);
           }
         }
       }
@@ -153,7 +165,7 @@ export async function generateSourceMap(
     // newline = /\r\n?|\n|\u2028|\u2029/g
     // This handles \r\n, \r, \n, and Unicode line separators
     const NEWLINE_REGEX = /\r\n?|\n|\u2028|\u2029/g;
-    const countLines = (str: string): number => (str.match(NEWLINE_REGEX) || []).length + 1;
+    const _countLines = (str: string): number => (str.match(NEWLINE_REGEX) || []).length + 1;
 
     // Prepare modules for fromRawMappings (Metro-compatible format)
     const metroModules: Array<{
@@ -284,13 +296,11 @@ export async function generateSourceMap(
     // CRITICAL: Sort modules in the same order as the actual bundle assembly
     // In build/index.ts, modules are sorted by moduleId before being concatenated
     // We must use the same order for accurate source map carryOver calculation
-    const sortedBundleModules = bundle.modules
-      .slice()
-      .sort((a, b) => {
-        const aId = typeof a[0] === 'number' ? a[0] : 0;
-        const bId = typeof b[0] === 'number' ? b[0] : 0;
-        return aId - bId;
-      });
+    const sortedBundleModules = bundle.modules.slice().sort((a, b) => {
+      const aId = typeof a[0] === 'number' ? a[0] : 0;
+      const bId = typeof b[0] === 'number' ? b[0] : 0;
+      return aId - bId;
+    });
 
     // Process each module in the bundle (in sorted order to match bundle assembly)
     for (const [moduleId, moduleCode] of sortedBundleModules) {
@@ -376,7 +386,7 @@ export async function generateSourceMap(
               rawMappings.push([i + 1, 0, i + 1, 0]);
             }
           }
-        } catch (error) {
+        } catch {
           // If conversion fails, create basic line-by-line mappings
           // Metro includes modules even without source maps
           const moduleLines = moduleCode.split('\n').length;
