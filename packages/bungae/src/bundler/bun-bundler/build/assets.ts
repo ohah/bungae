@@ -1,5 +1,5 @@
 /**
- * Asset extraction for Graph Bundler
+ * Asset extraction for Bun Bundler
  *
  * Metro-compatible: Assets are extracted from modules that are actually included in the bundle.
  * Dead code elimination happens at the transformation phase (babel-plugin-minify-dead-code-elimination),
