@@ -18,7 +18,7 @@ export default defineConfig({
   dev: true,
   minify: false,
   outDir: join(__dirname, '.bungae'),
-  // Bundler type: 'graph' (Babel, stable) or 'bun' (Bun.Transpiler, faster, experimental)
+  // Bundler type: 'graph' (Babel, stable) or 'bun' (Hermes Parser, experimental)
   bundler: 'bun',
   resolver: {
     sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
