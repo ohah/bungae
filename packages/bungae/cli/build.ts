@@ -152,6 +152,22 @@ async function build() {
   // Keep only necessary .d.ts files and create .d.cts copies
   const { existsSync: exists, copyFileSync, readdirSync: readdir, statSync } = await import('fs');
 
+  // Copy graph-bundler runtime (Bungae HMR client) to dist for InitializeCore + HMR-only replacement
+  const runtimeDir = join(DIST, 'runtime');
+  mkdirSync(runtimeDir, { recursive: true });
+  const runtimeSrc = join(
+    ROOT,
+    'src',
+    'bundler',
+    'graph-bundler',
+    'runtime',
+    'bungae-hmr-client.js',
+  );
+  if (existsSync(runtimeSrc)) {
+    copyFileSync(runtimeSrc, join(runtimeDir, 'bungae-hmr-client.js'));
+    console.log('  ✓ Runtime (bungae-hmr-client.js) copied');
+  }
+
   // Copy type declarations from tsc output structure to dist root
   const typeMappings = [
     { from: 'src/index.d.ts', to: 'index.d.ts' },

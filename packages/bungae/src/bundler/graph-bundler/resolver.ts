@@ -3,9 +3,40 @@
  */
 
 import { existsSync } from 'fs';
+import { createRequire } from 'module';
 import { dirname, join, resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 import type { ResolvedConfig } from '../../config/types';
+
+/** React Native HMRClient path pattern - replace with Bungae HMR client in dev (Rollipop-style) */
+const RN_HMR_CLIENT_PATTERN = /[/\\]Libraries[/\\]Utilities[/\\]HMRClient\.js$/;
+
+function getBungaeHMRClientPath(): string {
+  try {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve('bungae/package.json');
+    const pkgDir = dirname(pkgPath);
+    const distPath = join(pkgDir, 'dist', 'runtime', 'bungae-hmr-client.js');
+    if (existsSync(distPath)) {
+      return distPath;
+    }
+    const srcPath = join(
+      pkgDir,
+      'src',
+      'bundler',
+      'graph-bundler',
+      'runtime',
+      'bungae-hmr-client.js',
+    );
+    if (existsSync(srcPath)) {
+      return srcPath;
+    }
+    return distPath;
+  } catch {
+    return join(dirname(fileURLToPath(import.meta.url)), 'runtime', 'bungae-hmr-client.js');
+  }
+}
 
 /**
  * Try to find platform-specific version of a file
@@ -143,7 +174,15 @@ export async function resolveModule(
     if (platform !== 'web') {
       const platformResolved = tryPlatformSpecificFile(resolved, platform, resolver);
       if (platformResolved) {
-        return platformResolved;
+        resolved = platformResolved;
+      }
+    }
+
+    // Rollipop-style: replace react-native HMRClient with Bungae HMR client in dev
+    if (config.dev && RN_HMR_CLIENT_PATTERN.test(resolved) && resolved.includes('react-native')) {
+      const bungaePath = getBungaeHMRClientPath();
+      if (existsSync(bungaePath)) {
+        return bungaePath;
       }
     }
 
