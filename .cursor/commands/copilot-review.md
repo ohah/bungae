@@ -5,6 +5,7 @@ Review Copilot feedback on a branch/PR and apply the suggested changes.
 ## Input
 
 - **Branch/PR link** (optional): User may provide the link (e.g. `https://github.com/owner/repo/pull/123`). If not provided, use GitHub CLI to find the PR for the **current branch**:
+
   ```bash
   gh pr view --json number,url  # from repo root; fails if no PR for current branch
   # or
@@ -12,6 +13,7 @@ Review Copilot feedback on a branch/PR and apply the suggested changes.
   ```
 
   - If exactly one PR exists for the current branch, use that PR. If none or multiple, ask the user for the PR link (or pasted review text).
+
 - **Review text**: User may paste Copilot review text directly; use that as the source of feedback.
 
 ## Steps
