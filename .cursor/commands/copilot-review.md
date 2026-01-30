@@ -2,6 +2,16 @@
 
 Review Copilot feedback on a branch/PR and apply the suggested changes.
 
+## Requesting Copilot review (so feedback exists)
+
+To get Copilot feedback on a PR, request a review first:
+
+1. Open the PR in the browser: `gh pr view --web` (or use the PR link).
+2. In the PR page, use **"Review with Copilot"** (or the Copilot button in the review area), or add **GitHub Copilot** as a reviewer if your repo has the integration.
+3. Wait for Copilot to finish the review; then use this command to apply the feedback (or paste the review text below).
+
+If the user already pasted Copilot review text, skip the above and use that as the source.
+
 ## Input
 
 - **Branch/PR link** (optional): User may provide the link (e.g. `https://github.com/owner/repo/pull/123`). If not provided, use GitHub CLI to find the PR for the **current branch**:
@@ -39,7 +49,8 @@ Review Copilot feedback on a branch/PR and apply the suggested changes.
 
 5. **Update PR content** (after applying Copilot review):
    - Add to `branch-summary.md` (or the PR description source) a short section describing what Copilot suggested and what was applied (e.g. "Copilot review: applied AGENTS.MD casing, frontmatter name/model, Redux export alignment").
-   - If the branch is already pushed and a PR exists, suggest or run `gh pr edit --body-file branch-summary.md` so the PR description reflects the Copilot review work. Do not commit `branch-summary.md`; it is used only for the PR body.
+   - If the branch is already pushed and a PR exists, update the PR body so the description reflects the Copilot review work. Do not commit `branch-summary.md`; it is used only for the PR body.
+   - Preferred: `gh pr edit <PR-number> --body-file branch-summary.md`. If that fails (e.g. GraphQL Projects deprecation), use REST: `BODY=$(cat branch-summary.md) && gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body="$BODY"`.
 
 6. **Resolve review threads** (after applying feedback):
    - For each Copilot comment thread that was addressed, mark the conversation as **resolved** on GitHub so the PR does not show unresolved threads.
@@ -50,5 +61,5 @@ Review Copilot feedback on a branch/PR and apply the suggested changes.
 
 - **PR source**: If the user did not provide a link, first run `gh pr view` (or `gh pr list --head $(git branch --show-current)`) to see if the current branch has a PR; use it when exactly one is found. Ask for the PR link or pasted review text only when no PR is found or the user must specify a different PR.
 - Do not commit automatically; let the user review the diff and run `/commit` if they want to commit.
-- After applying Copilot review, always update the PR content (branch-summary.md) and optionally refresh the PR body with `gh pr edit --body-file branch-summary.md`.
+- After applying Copilot review, always update the PR content (branch-summary.md) and refresh the PR body; use REST PATCH with body file contents if `gh pr edit --body-file` fails (GraphQL deprecation).
 - After applying feedback, resolve the addressed review threads on GitHub (web "Resolve conversation" or `gh api graphql` with `resolveReviewThread` and the thread ID).

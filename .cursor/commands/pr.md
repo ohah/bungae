@@ -10,10 +10,10 @@ Create or update a PR for the current branch. Follow the steps below.
    - Otherwise use the specified base.
 3. **Prepare body**: If `branch-summary.md` exists and fills the required sections (Purpose, Description, How to test, etc., or Title + Work content), use it as the PR body. If sections are missing, fill them before use.
 4. **Create or update PR**:
-   - No open PR → `gh pr create --head <current-branch> --base <base> --title "<title>" --body-file branch-summary.md`
+   - No open PR → `gh pr create --head <current-branch> --base <base> --title "<title>" --body-file branch-summary.md --assignee @me --label <label>` (pick one or more labels from `gh label list`, e.g. enhancement, bug, documentation; multiple `--label <name>` allowed).
    - Open PR exists → Update body (and base via PATCH if base was specified and PR is open).
 5. **Push**: If there are unpushed commits, run `git push origin <current-branch>`.
-6. **Labels**: After creating or updating the PR, check `gh label list` and add labels that match the PR (e.g. feat, fix, docs).
+6. **Labels**: On create, pass `--label <name>` in step 4. On update, add labels via REST (avoids GraphQL Projects deprecation): `echo '["<label>"]' | gh api repos/ohah/bungae/issues/<PR-number>/labels -X POST --input -` (e.g. `echo '["enhancement"]'`). For multiple labels use `["enhancement","documentation"]`.
 
 ## Base branch (apply when user specifies it)
 
@@ -24,11 +24,8 @@ Create or update a PR for the current branch. Follow the steps below.
   - If the PR is **OPEN**, update the base via REST PATCH (include both `body` and `base`).
   - If the PR is **not OPEN** (e.g. CLOSED, MERGED), the base cannot be changed — PATCH the body only.
   ```bash
-  # Example when PR is OPEN
-  gh api repos/ohah/bungae/pulls/<PR-number> \
-    -X PATCH \
-    -f body=@branch-summary.md \
-    -f base="<user-specified-branch>"
+  # Example when PR is OPEN (use file contents for body so description updates correctly)
+  BODY=$(cat branch-summary.md) && gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body="$BODY" -f base="<user-specified-branch>"
   ```
   If the PATCH returns 422 (Unprocessable Entity), **do not** assume the PR is closed; surface the validation error (e.g. invalid base branch, insufficient permissions) and abort instead of silently treating it as a closed-PR case.
 
@@ -38,7 +35,7 @@ Create or update a PR for the current branch. Follow the steps below.
 - Steps:
   1. From the current branch (XXX), create a new branch: `git checkout -b feat/xxx-description` (name it by the work).
   2. If there are uncommitted changes, stage and commit (and push) on the new branch.
-  3. `gh pr create --head <new-branch> --base XXX --title "..." --body-file branch-summary.md --assignee @me`
+  3. `gh pr create --head <new-branch> --base XXX --title "..." --body-file branch-summary.md --assignee @me --label <label>`
   4. Push the new branch: `git push -u origin <new-branch>`
 
 ## gh account and SSH remote for this repo (ohah only)
@@ -63,16 +60,18 @@ This repo (ohah/bungae) uses the **ohah** GitHub account for push and PR.
    - If base is specified → always pass `--base <base>` on create, or include base in PATCH on update (when PR is open).
 
    ```bash
-   gh pr create --head $(git branch --show-current) --base <base> --title "<title>" --body-file branch-summary.md
+   gh label list
+   gh pr create --head $(git branch --show-current) --base <base> --title "<title>" --body-file branch-summary.md --assignee @me --label <label1> [--label <label2> ...]
    ```
 
-   - If a PR already exists → Update body. If base was specified and PR is open, PATCH body and base.
+   (Run `gh label list` first; choose labels that match the PR type, e.g. enhancement, bug, documentation.)
+   - If a PR already exists → Update body. If base was specified and PR is open, PATCH body and base. For body, send file contents (not path): `BODY=$(cat branch-summary.md); gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body="$BODY"`.
 
    ```bash
-   # body only:
-   gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body=@branch-summary.md
+   # body only (use file contents so description updates correctly):
+   BODY=$(cat branch-summary.md) && gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body="$BODY"
    # body + base:
-   gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body=@branch-summary.md -f base="<base>"
+   BODY=$(cat branch-summary.md) && gh api repos/ohah/bungae/pulls/<PR-number> -X PATCH -f body="$BODY" -f base="<base>"
    ```
 
 5. **Push**: After create/update, if there are unpushed commits, push so the PR has the latest commits.
@@ -83,9 +82,13 @@ This repo (ohah/bungae) uses the **ohah** GitHub account for push and PR.
 
 6. **If `gh` is not available**: Install [GitHub CLI](https://cli.github.com/) or open the PR in the browser (repo → Compare & pull request for the branch) and paste the contents of `branch-summary.md` as the description.
 
-7. **Labels**: On create use `--label <name>` (multiple allowed). On update use `gh pr edit <PR-number> --add-label <name>`. Choose labels from `gh label list` that fit the PR (e.g. feat, fix, docs, config).
+7. **Labels**: On create, already passed in step 4 with `--label <name>`. On update, if you need to add labels, use the Issues REST API (avoids `gh pr edit` GraphQL deprecation): `echo '["enhancement"]' | gh api repos/ohah/bungae/issues/<PR-number>/labels -X POST --input -`. Replace `enhancement` with the label name from `gh label list`.
 
-8. **Restore gh account**: If you switched to ohah in step 3, run `gh auth switch --hostname github.com --user <previous-login>` to restore the original gh account.
+8. **Assignee**: On create, already passed in step 4 with `--assignee @me`. On update, to add assignee use: `gh api repos/ohah/bungae/issues/<PR-number> -X PATCH -f assignees='["ohah"]'` (or the desired GitHub username).
+
+9. **Copilot review**: To request GitHub Copilot review, open the PR in the browser (e.g. `gh pr view --web`) and use "Review with Copilot" or add the Copilot app as a reviewer if your repo has it. The agent does not trigger Copilot via API.
+
+10. **Restore gh account**: If you switched to ohah in step 3, run `gh auth switch --hostname github.com --user <previous-login>` to restore the original gh account.
 
 ## PR title rules
 
@@ -108,4 +111,6 @@ If the repo has `.github/PULL_REQUEST_TEMPLATE.md`, align `branch-summary.md` wi
 - **Base**: If the user specifies a base branch, always use it for create/update (and create a new head branch when base and current branch are the same).
 - **Body**: Keep `branch-summary.md` up to date and use it only for the PR description; do not commit it unless the project says otherwise.
 - **Push**: After updating the PR body, push any unpushed commits so the PR reflects the latest code.
-- **Labels**: Use `gh label list` and attach labels that match the PR type (feat, fix, docs, etc.).
+- **Labels**: On create pass `--label <name>`; on update use REST `POST .../issues/<PR-number>/labels` to avoid GraphQL deprecation. Use `gh label list` to pick (e.g. enhancement, bug, documentation).
+- **Assignee**: On create pass `--assignee @me`; on update use REST PATCH with `assignees` if needed.
+- **Copilot review**: Request in the browser via "Review with Copilot" or add Copilot as reviewer; not triggered by the agent via API.
