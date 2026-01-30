@@ -29,24 +29,43 @@ const BABEL_HELPERS = `
 // OXC/Babel Runtime Helpers
 var babelHelpers = {};
 
-// Private field helpers
+// Private field helpers (OXC/Babel external mode)
 babelHelpers.classPrivateFieldInitSpec = function(obj, privateMap, value) {
-  privateMap.set(obj, value);
+  if (privateMap != null && typeof privateMap.set === "function") privateMap.set(obj, value);
 };
 babelHelpers.classPrivateFieldGet2 = function(privateMap, receiver) {
-  return privateMap.get(receiver);
+  return privateMap != null && typeof privateMap.get === "function" ? privateMap.get(receiver) : undefined;
 };
 babelHelpers.classPrivateFieldSet2 = function(privateMap, receiver, value) {
-  privateMap.set(receiver, value);
+  if (privateMap != null && typeof privateMap.set === "function") privateMap.set(receiver, value);
   return value;
 };
 babelHelpers.classPrivateMethodInitSpec = function(obj, privateSet) {
-  privateSet.add(obj);
+  if (privateSet != null && typeof privateSet.add === "function") privateSet.add(obj);
 };
 babelHelpers.assertClassBrand = function(brandOrPrivateSet, receiver, accessKind) {
-  if (typeof brandOrPrivateSet === "function" ? brandOrPrivateSet === receiver : brandOrPrivateSet.has(receiver)) return;
+  if (typeof brandOrPrivateSet === "function" ? brandOrPrivateSet === receiver : (brandOrPrivateSet != null && typeof brandOrPrivateSet.has === "function" && brandOrPrivateSet.has(receiver))) return;
   throw new TypeError("Cannot " + accessKind + " private member");
 };
+// Globals used by some OXC/Babel output for private fields (Hermes compat)
+function _check_private_redeclaration(obj, privateCollection) {
+  if (privateCollection != null && typeof privateCollection.has === "function" && privateCollection.has(obj)) {
+    throw new TypeError("Cannot initialize the same private elements twice on an object");
+  }
+}
+function _class_private_field_init(obj, privateCollection, value) {
+  _check_private_redeclaration(obj, privateCollection);
+  if (privateCollection != null && typeof privateCollection.add === "function") {
+    privateCollection.add(obj);
+  }
+  if (privateCollection != null && typeof privateCollection.set === "function") {
+    privateCollection.set(obj, value);
+  }
+}
+if (typeof globalThis !== "undefined") {
+  globalThis._check_private_redeclaration = _check_private_redeclaration;
+  globalThis._class_private_field_init = _class_private_field_init;
+}
 
 // Object helpers
 babelHelpers.objectSpread2 = function(target) {
@@ -415,7 +434,7 @@ export async function buildWithGraph(
         setPublicClassFields: true,
       },
       helpers: {
-        mode: 1 as unknown as HelperMode, // External - babelHelpers 전역 객체 사용 (const enum)
+        mode: 'External' as HelperMode, // Rust HelperLoaderMode::External (PascalCase)
       },
     });
 
@@ -432,6 +451,13 @@ export async function buildWithGraph(
     console.error('OXC transform failed:', error);
     // OXC 실패 시 원본 코드 유지 (private fields 에러가 발생할 수 있음)
   }
+
+  // Hermes compat: SWC 인라인 헬퍼가 undefined인 privateCollection으로 호출될 수 있음.
+  // privateCollection.has(obj) 호출 전에 방어 코드 삽입 (privateCollection.has is not a function 방지)
+  bundleCode = bundleCode.replace(
+    /privateCollection\.has\s*\(\s*([^)]+)\s*\)/g,
+    '(privateCollection != null && typeof privateCollection.has === "function" ? privateCollection.has($1) : false)',
+  );
 
   // Hermes(현재 ExampleApp 환경)는 class 문법 파싱에 실패할 수 있음.
   // OXC는 최저 target이 es2015라 class를 ES5로 내릴 수 없으므로, 최종 번들을 SWC로 ES5로 downlevel.
