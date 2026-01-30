@@ -9,19 +9,53 @@
 import { basename, dirname, extname, relative } from 'path';
 
 import type { ResolvedConfig } from '../../../config/types';
+import type { CollectedAsset } from '../plugins/asset';
 import type { AssetInfo, GraphModule } from '../types';
 import { getImageSize } from '../utils';
 
 /**
- * Convert collected asset file paths (from Bun.build asset plugin) to Metro-compatible AssetInfo[].
- * Used when building with Bun.build (scope hoisting) which does not produce a module graph.
+ * Build a single AssetInfo from file path and size (shared by assetPathsToAssetInfos and extractAssets).
  */
-export function assetPathsToAssetInfos(config: ResolvedConfig, assetPaths: string[]): AssetInfo[] {
+export function buildAssetInfoFromPath(
+  config: ResolvedConfig,
+  filePath: string,
+  size: { width: number; height: number },
+  scales: number[] = [1],
+): AssetInfo {
   const { root } = config;
-  const assets: AssetInfo[] = [];
-  const seen = new Set<string>();
+  const { width, height } = size;
+  const name = basename(filePath, extname(filePath));
+  const type = extname(filePath).slice(1);
+  const relativePath = relative(root, dirname(filePath));
+  const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+  const httpServerLocation =
+    normalizedRelativePath && normalizedRelativePath !== '.'
+      ? `/assets/${normalizedRelativePath}`
+      : '/assets';
 
-  for (const filePath of assetPaths) {
+  return {
+    filePath,
+    httpServerLocation,
+    name,
+    type,
+    width,
+    height,
+    scales,
+  };
+}
+
+/**
+ * Convert collected assets (from Bun.build asset plugin) to Metro-compatible AssetInfo[].
+ * Uses plugin-provided width/height to avoid re-reading files.
+ */
+export function assetPathsToAssetInfos(
+  config: ResolvedConfig,
+  collected: CollectedAsset[],
+): AssetInfo[] {
+  const seen = new Set<string>();
+  const assets: AssetInfo[] = [];
+
+  for (const { path: filePath, width, height } of collected) {
     if (seen.has(filePath)) continue;
     seen.add(filePath);
 
@@ -31,25 +65,7 @@ export function assetPathsToAssetInfos(config: ResolvedConfig, assetPaths: strin
     });
     if (!isAsset) continue;
 
-    const { width, height } = getImageSize(filePath);
-    const name = basename(filePath, extname(filePath));
-    const type = extname(filePath).slice(1);
-    const relativePath = relative(root, dirname(filePath));
-    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
-    const httpServerLocation =
-      normalizedRelativePath && normalizedRelativePath !== '.'
-        ? `/assets/${normalizedRelativePath}`
-        : '/assets';
-
-    assets.push({
-      filePath,
-      httpServerLocation,
-      name,
-      type,
-      width,
-      height,
-      scales: [1],
-    });
+    assets.push(buildAssetInfoFromPath(config, filePath, { width, height }, [1]));
   }
 
   return assets;
@@ -78,7 +94,6 @@ export interface ExtractAssetsOptions {
  */
 export function extractAssets(options: ExtractAssetsOptions): AssetInfo[] {
   const { config, bundle, moduleIdToPath, graph } = options;
-  const { root } = config;
 
   // Find all modules that are actually required in the bundle
   // Look for __r(moduleId) calls in the bundle code
@@ -222,14 +237,6 @@ export function extractAssets(options: ExtractAssetsOptions): AssetInfo[] {
     if (isAsset) {
       const graphModule = graph.get(modulePath);
       const { width, height } = getImageSize(modulePath);
-      const name = basename(modulePath, extname(modulePath));
-      const type = extname(modulePath).slice(1);
-      const relativePath = relative(root, dirname(modulePath));
-      const normalizedRelativePath = relativePath.replace(/\\/g, '/');
-      const httpServerLocation =
-        normalizedRelativePath && normalizedRelativePath !== '.'
-          ? `/assets/${normalizedRelativePath}`
-          : '/assets';
 
       // Extract scales from asset code
       let scales = [1];
@@ -254,15 +261,7 @@ export function extractAssets(options: ExtractAssetsOptions): AssetInfo[] {
         // Use default [1]
       }
 
-      assets.push({
-        filePath: modulePath,
-        httpServerLocation,
-        name,
-        type,
-        width,
-        height,
-        scales,
-      });
+      assets.push(buildAssetInfoFromPath(config, modulePath, { width, height }, scales));
     }
   }
 

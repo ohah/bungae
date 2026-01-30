@@ -140,7 +140,7 @@ babelHelpers.asyncToGenerator = function(fn) {
   };
 };
 `;
-import { assetPlugin } from '../plugins/asset';
+import { assetPlugin, type CollectedAsset } from '../plugins/asset';
 import { flowStripPlugin } from '../plugins/flow-strip';
 import { platformResolverPlugin } from '../plugins/platform-resolver';
 import type { BuildResult } from '../types';
@@ -355,8 +355,8 @@ export async function buildWithGraph(
 
   console.log(`\r\x1b[K info Building with Bun.build (Scope Hoisting)...`);
 
-  // 에셋 경로 수집 (빌드 결과의 assets 생성용)
-  const collectedAssetPaths: string[] = [];
+  // 에셋 경로·크기 수집 (빌드 결과의 assets 생성용; 플러그인에서 한 번만 읽음)
+  const collectedAssets: CollectedAsset[] = [];
 
   // 플러그인 설정
   const plugins: BunPlugin[] = [
@@ -364,7 +364,7 @@ export async function buildWithGraph(
     assetPlugin({
       root: config.root,
       assetExts: config.resolver.assetExts,
-      collectedAssetPaths,
+      collectedAssets,
     }),
     // 2. 플랫폼별 모듈 해석
     platformResolverPlugin({
@@ -528,8 +528,8 @@ export async function buildWithGraph(
     }
   }
 
-  // 에셋 목록 생성 (플러그인에서 수집한 경로 → Metro 호환 AssetInfo[])
-  const assets = assetPathsToAssetInfos(config, collectedAssetPaths);
+  // 에셋 목록 생성 (플러그인에서 수집한 경로·크기 → Metro 호환 AssetInfo[])
+  const assets = assetPathsToAssetInfos(config, collectedAssets);
 
   // BuildResult 반환 (Metro-compatible interface)
   // Note: Scope Hoisting 방식에서는 graph와 createModuleId가 없음

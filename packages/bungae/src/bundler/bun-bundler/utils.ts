@@ -124,9 +124,14 @@ export function getImageSize(filePath: string): { width: number; height: number 
 
 /**
  * Generate asset module code that registers the asset with AssetRegistry
+ * @param size - optional; if provided avoids re-reading file (e.g. when plugin already read it)
  */
-export function generateAssetModuleCode(assetPath: string, projectRoot: string): string {
-  const { width, height } = getImageSize(assetPath);
+export function generateAssetModuleCode(
+  assetPath: string,
+  projectRoot: string,
+  size?: { width: number; height: number },
+): string {
+  const { width, height } = size ?? getImageSize(assetPath);
   const name = basename(assetPath, extname(assetPath));
   const type = extname(assetPath).slice(1); // Remove the dot
   const relativePath = relative(projectRoot, dirname(assetPath));
