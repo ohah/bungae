@@ -12,6 +12,49 @@ import type { ResolvedConfig } from '../../../config/types';
 import type { AssetInfo, GraphModule } from '../types';
 import { getImageSize } from '../utils';
 
+/**
+ * Convert collected asset file paths (from Bun.build asset plugin) to Metro-compatible AssetInfo[].
+ * Used when building with Bun.build (scope hoisting) which does not produce a module graph.
+ */
+export function assetPathsToAssetInfos(config: ResolvedConfig, assetPaths: string[]): AssetInfo[] {
+  const { root } = config;
+  const assets: AssetInfo[] = [];
+  const seen = new Set<string>();
+
+  for (const filePath of assetPaths) {
+    if (seen.has(filePath)) continue;
+    seen.add(filePath);
+
+    const isAsset = config.resolver.assetExts.some((ext) => {
+      const normalizedExt = ext.startsWith('.') ? ext : `.${ext}`;
+      return filePath.endsWith(normalizedExt);
+    });
+    if (!isAsset) continue;
+
+    const { width, height } = getImageSize(filePath);
+    const name = basename(filePath, extname(filePath));
+    const type = extname(filePath).slice(1);
+    const relativePath = relative(root, dirname(filePath));
+    const normalizedRelativePath = relativePath.replace(/\\/g, '/');
+    const httpServerLocation =
+      normalizedRelativePath && normalizedRelativePath !== '.'
+        ? `/assets/${normalizedRelativePath}`
+        : '/assets';
+
+    assets.push({
+      filePath,
+      httpServerLocation,
+      name,
+      type,
+      width,
+      height,
+      scales: [1],
+    });
+  }
+
+  return assets;
+}
+
 export interface ExtractAssetsOptions {
   config: ResolvedConfig;
   bundle: {
