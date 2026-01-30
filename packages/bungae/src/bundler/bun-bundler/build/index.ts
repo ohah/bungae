@@ -140,9 +140,11 @@ babelHelpers.asyncToGenerator = function(fn) {
   };
 };
 `;
+import { assetPlugin } from '../plugins/asset';
 import { flowStripPlugin } from '../plugins/flow-strip';
 import { platformResolverPlugin } from '../plugins/platform-resolver';
 import type { BuildResult } from '../types';
+import { assetPathsToAssetInfos } from './assets';
 
 /**
  * Build options (Metro-compatible interface)
@@ -353,15 +355,24 @@ export async function buildWithGraph(
 
   console.log(`\r\x1b[K info Building with Bun.build (Scope Hoisting)...`);
 
+  // 에셋 경로 수집 (빌드 결과의 assets 생성용)
+  const collectedAssetPaths: string[] = [];
+
   // 플러그인 설정
   const plugins: BunPlugin[] = [
-    // 1. 플랫폼별 모듈 해석
+    // 1. 에셋 → Metro 호환 registerAsset JS 모듈 (먼저 등록해 .png 등 로드 시 우리가 처리)
+    assetPlugin({
+      root: config.root,
+      assetExts: config.resolver.assetExts,
+      collectedAssetPaths,
+    }),
+    // 2. 플랫폼별 모듈 해석
     platformResolverPlugin({
       platform: config.platform as 'ios' | 'android',
       root: config.root,
       nodeModulesPaths: config.resolver.nodeModulesPaths,
     }),
-    // 2. Flow 타입 제거 (Flow 파일만 Babel로 처리)
+    // 3. Flow 타입 제거 (Flow 파일만 Babel로 처리)
     flowStripPlugin({
       dev: config.dev,
       flowOnly: true,
@@ -517,12 +528,15 @@ export async function buildWithGraph(
     }
   }
 
+  // 에셋 목록 생성 (플러그인에서 수집한 경로 → Metro 호환 AssetInfo[])
+  const assets = assetPathsToAssetInfos(config, collectedAssetPaths);
+
   // BuildResult 반환 (Metro-compatible interface)
   // Note: Scope Hoisting 방식에서는 graph와 createModuleId가 없음
   return {
     code: finalCode,
     map,
-    assets: [], // TODO: Asset 추출 구현
+    assets,
     // graph와 createModuleId는 HMR에 필요하지만 scope hoisting에서는 다른 방식 필요
   };
 }
