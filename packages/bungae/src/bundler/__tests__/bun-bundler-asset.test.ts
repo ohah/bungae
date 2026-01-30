@@ -56,7 +56,7 @@ describe('bun-bundler assetPathsToAssetInfos', () => {
       { ...getDefaultConfig(testDir), entry: 'index.js', platform: 'ios' },
       testDir,
     );
-    const infos = assetPathsToAssetInfos(config, [iconPath]);
+    const infos = assetPathsToAssetInfos(config, [{ path: iconPath, width: 1, height: 1 }]);
 
     expect(infos).toHaveLength(1);
     expect(infos[0]).toMatchObject({
@@ -80,7 +80,11 @@ describe('bun-bundler assetPathsToAssetInfos', () => {
       { ...getDefaultConfig(testDir), entry: 'index.js', platform: 'ios' },
       testDir,
     );
-    const infos = assetPathsToAssetInfos(config, [iconPath, iconPath]);
+    const collected = [
+      { path: iconPath, width: 1, height: 1 },
+      { path: iconPath, width: 1, height: 1 },
+    ];
+    const infos = assetPathsToAssetInfos(config, collected);
 
     expect(infos).toHaveLength(1);
   });
@@ -93,7 +97,7 @@ describe('bun-bundler assetPathsToAssetInfos', () => {
       { ...getDefaultConfig(testDir), entry: 'index.js', platform: 'ios' },
       testDir,
     );
-    const infos = assetPathsToAssetInfos(config, [jsPath]);
+    const infos = assetPathsToAssetInfos(config, [{ path: jsPath, width: 0, height: 0 }]);
 
     expect(infos).toHaveLength(0);
   });
