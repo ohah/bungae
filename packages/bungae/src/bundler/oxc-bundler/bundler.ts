@@ -23,6 +23,7 @@ import {
   jsonPlugin,
   assetPlugin,
   preludePlugin,
+  hermesCompatPlugin,
 } from './plugins';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
 
@@ -77,6 +78,7 @@ export async function buildWithOxc(
       assetPlugin(config),
       jsonPlugin(),
       platformResolverPlugin(config),
+      hermesCompatPlugin(),
     ],
   });
 

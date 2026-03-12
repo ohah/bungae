@@ -1,42 +1,33 @@
 /**
- * DevEngine Wrapper for Rolldown
+ * Dev Build Engine for OXC Bundler
  *
- * Wraps Rolldown's experimental DevEngine API to provide:
- * - Incremental builds with file watching
- * - HMR update generation and lifecycle management
- * - Bundle caching (in-memory)
- * - Event-based architecture for server integration
+ * Uses Phase 1's buildWithOxc() for bundling + file watcher for change detection.
+ * On file change: full rebuild → cache → notify HMR clients (full reload).
+ *
+ * Why not Rolldown's experimental DevEngine (dev() API):
+ * - DevEngine injects its own runtime with private class fields (#private)
+ * - Hermes does not support private properties → runtime crash
+ * - devMode.implement requires pre-compiled JS runtime file
+ * - Until Rolldown targets Hermes-compatible output, we use full rebuild approach
+ *
+ * Trade-off: Full reload instead of patch HMR (no component state preservation).
+ * In practice, Rolldown rebuild takes ~1s which is acceptable for dev.
+ *
+ * Future: When Rolldown supports Hermes-compatible devMode output,
+ * switch to dev() API for true patch HMR with React Refresh.
  */
 
 import EventEmitter from 'node:events';
-import { resolve } from 'node:path';
-
-import type { InputOptions, OutputOptions } from 'rolldown';
+import { watch, type FSWatcher } from 'node:fs';
 
 import type { ResolvedConfig } from '../../../config/types';
-import {
-  platformResolverPlugin,
-  buildExtensions,
-  flowStripPlugin,
-  assetPlugin,
-  preludePlugin,
-  jsonPlugin,
-} from '../plugins';
+import { buildWithOxc } from '../bundler';
 
 export interface DevEngineEventMap {
   buildStart: [];
   buildDone: [{ code: string; map?: string }];
   buildFailed: [Error];
-  hmrUpdates: [HmrUpdate[]];
   watchChange: [string];
-}
-
-export interface HmrUpdate {
-  clientId: string;
-  update:
-    | { type: 'Patch'; code: string; filename: string; sourcemap?: string }
-    | { type: 'FullReload'; reason?: string }
-    | { type: 'Noop' };
 }
 
 export interface DevEngineOptions {
@@ -50,137 +41,109 @@ interface CachedBundle {
 }
 
 export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
-  private devEngine: any = null;
   private cachedBundle: CachedBundle | null = null;
   private buildError: Error | null = null;
-  private state: 'idle' | 'initializing' | 'ready' = 'idle';
+  private state: 'idle' | 'building' | 'ready' = 'idle';
   private initPromise: Promise<void> | null = null;
+  private watcher: FSWatcher | null = null;
+  private rebuildTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly config: ResolvedConfig,
-    private readonly options: DevEngineOptions,
+    private readonly _options: DevEngineOptions,
   ) {
     super();
   }
 
   /**
-   * Initialize and start the DevEngine
+   * Initial build + start file watching
    */
   async start(): Promise<void> {
     if (this.state !== 'idle') return;
-    this.state = 'initializing';
 
-    this.initPromise = this.initialize();
+    this.initPromise = this.build();
     await this.initPromise;
-  }
 
-  private async initialize(): Promise<void> {
-    // Dynamic import for rolldown/experimental (NAPI, Node.js only)
-    const { dev } = await import('rolldown/experimental');
-
-    const entryPath = resolve(this.config.root, this.config.entry);
-    const extensions = buildExtensions(this.config.platform, this.config.resolver.sourceExts);
-
-    // Resolve prelude modules
-    const preludeModules = this.resolvePreludeModules();
-
-    const inputOptions: InputOptions = {
-      input: entryPath,
-      platform: 'neutral',
-      cwd: this.config.root,
-
-      resolve: {
-        extensions,
-        mainFields: ['react-native', 'browser', 'main', 'module'],
-        conditionNames: ['react-native', 'import', 'require', 'default'],
-      },
-
-      treeshake: false, // Always off in dev mode
-
-      plugins: [
-        preludePlugin(this.config, { preludeModules }),
-        flowStripPlugin(this.config),
-        assetPlugin(this.config),
-        jsonPlugin(),
-        platformResolverPlugin(this.config),
-      ],
-
-      // Note: experimental.devMode requires a pre-compiled JS runtime file.
-      // HMR is handled at the server level for now (full rebuild + WebSocket push).
-      // TODO: Pre-compile runtime.ts → runtime.js for Rolldown devMode integration
-    };
-
-    const outputOptions: OutputOptions = {
-      format: 'esm',
-      strictExecutionOrder: true,
-      sourcemap: true,
-      minify: false,
-    };
-
-    const devEngine = await dev(inputOptions, outputOptions, {
-      onHmrUpdates: (errorOrResult) => {
-        if (errorOrResult instanceof Error) {
-          this.buildError = errorOrResult;
-          this.emit('buildFailed', errorOrResult);
-        } else {
-          this.emit('hmrUpdates', errorOrResult.updates as HmrUpdate[]);
-          for (const file of errorOrResult.changedFiles) {
-            this.emit('watchChange', file);
-          }
-        }
-      },
-
-      onOutput: (errorOrResult) => {
-        if (errorOrResult instanceof Error) {
-          this.buildError = errorOrResult;
-          this.emit('buildFailed', errorOrResult);
-        } else {
-          const chunk = errorOrResult.output[0];
-          if (chunk && chunk.type === 'chunk') {
-            this.cachedBundle = {
-              code: chunk.code,
-              map: chunk.map?.toString(),
-            };
-            this.buildError = null;
-            this.emit('buildDone', this.cachedBundle);
-          }
-        }
-      },
-
-      rebuildStrategy: 'auto',
-    });
-
-    await devEngine.run();
-    this.devEngine = devEngine;
-    this.state = 'ready';
+    this.startWatching();
   }
 
   /**
-   * Wait for initialization to complete
+   * Run a full build with buildWithOxc()
    */
-  async ensureReady(): Promise<void> {
-    if (this.state === 'ready') return;
-    if (this.initPromise) await this.initPromise;
+  private async build(): Promise<void> {
+    this.state = 'building';
+    this.emit('buildStart');
+
+    try {
+      const result = await buildWithOxc(this.config, undefined, {
+        sourcemap: true,
+        minify: false,
+        hermes: false, // Dev mode: no Hermes compilation
+      });
+
+      this.cachedBundle = {
+        code: result.code,
+        map: result.map,
+      };
+      this.buildError = null;
+      this.state = 'ready';
+      this.emit('buildDone', this.cachedBundle);
+    } catch (error: any) {
+      this.buildError = error;
+      this.state = 'ready'; // Still "ready" - can serve error to clients
+      this.emit('buildFailed', error);
+    }
   }
 
   /**
-   * Get the current bundle (waits for latest build if stale)
+   * Start watching source files for changes
+   */
+  private startWatching(): void {
+    // Watch project root recursively
+    try {
+      this.watcher = watch(this.config.root, { recursive: true }, (_event, filename) => {
+        if (!filename) return;
+
+        // Filter: only source files
+        if (!this.isSourceFile(filename)) return;
+
+        // Ignore common non-source dirs
+        if (this.shouldIgnore(filename)) return;
+
+        this.emit('watchChange', filename);
+        this.scheduleRebuild();
+      });
+    } catch (error) {
+      console.warn('[OXC] File watcher failed to start:', error);
+    }
+  }
+
+  /**
+   * Debounced rebuild (300ms)
+   */
+  private scheduleRebuild(): void {
+    if (this.rebuildTimer) {
+      clearTimeout(this.rebuildTimer);
+    }
+
+    this.rebuildTimer = setTimeout(async () => {
+      this.rebuildTimer = null;
+      console.log('[OXC] File changed, rebuilding...');
+      await this.build();
+    }, 300);
+  }
+
+  /**
+   * Get the current bundle
    */
   async getBundle(): Promise<CachedBundle> {
-    await this.ensureReady();
-
-    if (!this.devEngine) {
-      throw new Error('DevEngine not initialized');
+    // Wait for initial build
+    if (this.initPromise) {
+      await this.initPromise;
     }
 
-    const state = await this.devEngine.getBundleState();
-
-    if (state.lastFullBuildFailed) {
-      throw this.buildError || new Error('Build failed');
-    }
-
-    if (state.hasStaleOutput || !this.cachedBundle) {
-      await this.devEngine.ensureLatestBuildOutput();
+    if (this.buildError) {
+      throw this.buildError;
     }
 
     if (!this.cachedBundle) {
@@ -191,46 +154,45 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
   }
 
   /**
-   * Register modules for a connected client
+   * Register modules for a client (no-op in rebuild mode)
    */
-  async registerModules(clientId: string, modules: string[]): Promise<void> {
-    await this.ensureReady();
-    if (this.devEngine) {
-      await this.devEngine.registerModules(clientId, modules);
-    }
+  async registerModules(_clientId: string, _modules: string[]): Promise<void> {
+    // No-op: full rebuild mode doesn't track per-client modules
   }
 
   /**
-   * Remove a disconnected client
+   * Remove a client (no-op in rebuild mode)
    */
-  async removeClient(clientId: string): Promise<void> {
-    if (this.devEngine) {
-      await this.devEngine.removeClient(clientId);
-    }
+  async removeClient(_clientId: string): Promise<void> {
+    // No-op
   }
 
   /**
-   * Shut down the DevEngine
+   * Shut down
    */
   async close(): Promise<void> {
-    if (this.devEngine) {
-      await this.devEngine.close();
-      this.devEngine = null;
+    if (this.rebuildTimer) {
+      clearTimeout(this.rebuildTimer);
+    }
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
     }
     this.state = 'idle';
     this.removeAllListeners();
   }
 
-  private resolvePreludeModules(): string[] {
-    if (!this.config.serializer?.getModulesRunBeforeMainModule) return [];
-    try {
-      const entryPath = resolve(this.config.root, this.config.entry);
-      return this.config.serializer.getModulesRunBeforeMainModule(entryPath, {
-        projectRoot: this.config.root,
-        nodeModulesPaths: this.config.resolver.nodeModulesPaths,
-      });
-    } catch {
-      return [];
-    }
+  private isSourceFile(filename: string): boolean {
+    return /\.(js|jsx|ts|tsx|json|mjs|cjs)$/.test(filename);
+  }
+
+  private shouldIgnore(filename: string): boolean {
+    return (
+      filename.includes('node_modules') ||
+      filename.includes('.git') ||
+      filename.includes('.bungae-cache') ||
+      filename.includes('dist/') ||
+      filename.includes('build/')
+    );
   }
 }
