@@ -74,30 +74,5 @@ process.env = process.env || {};
 process.env.NODE_ENV = ${JSON.stringify(dev ? 'development' : 'production')};
 globalThis.__DEV__ = __DEV__;
 globalThis.process = process;
-
-// ErrorUtils polyfill (Metro includes this as a polyfill before any module code)
-if (!global.ErrorUtils) {
-  var _inGuard = 0;
-  var _globalHandler = global.RN$useAlwaysAvailableJSErrorHandling === true
-    ? global.RN$handleException
-    : function (e) { throw e; };
-  global.ErrorUtils = {
-    setGlobalHandler: function (fun) { _globalHandler = fun; },
-    getGlobalHandler: function () { return _globalHandler; },
-    reportError: function (error) { _globalHandler && _globalHandler(error, false); },
-    reportFatalError: function (error) { _globalHandler && _globalHandler(error, true); },
-    applyWithGuard: function (fun, context, args) {
-      try { _inGuard++; return fun.apply(context, args); }
-      catch (e) { global.ErrorUtils.reportError(e); }
-      finally { _inGuard--; }
-      return null;
-    },
-    inGuard: function () { return !!_inGuard; },
-    guard: function (fun, name, context) {
-      if (typeof fun !== 'function') return null;
-      return function guarded() { return global.ErrorUtils.applyWithGuard(fun, context || this, arguments); };
-    }
-  };
-}
 `.trim();
 }
