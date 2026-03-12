@@ -11,6 +11,18 @@ describe('containsFlowSyntax', () => {
     expect(containsFlowSyntax('// @flow\nconst x = 1;')).toBe(true);
   });
 
+  it('should detect @flow strict-local in JSDoc block', () => {
+    expect(
+      containsFlowSyntax('/**\n * @flow strict-local\n */\nconst x = 1;'),
+    ).toBe(true);
+  });
+
+  it('should detect @flow strict in JSDoc block', () => {
+    expect(
+      containsFlowSyntax('/**\n * @flow strict\n */'),
+    ).toBe(true);
+  });
+
   it('should detect opaque type keyword', () => {
     expect(containsFlowSyntax('opaque type ID = string;')).toBe(true);
   });
