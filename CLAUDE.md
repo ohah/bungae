@@ -11,19 +11,20 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ## 번들러 선택
 
-Bungae는 두 가지 번들러 구현을 제공합니다:
+Bungae는 세 가지 번들러 구현을 제공합니다:
 
-| 번들러  | 설명                   | 상태              | 사용 시기                  |
-| ------- | ---------------------- | ----------------- | -------------------------- |
-| `graph` | Babel 기반, Metro 호환 | **기본값 (안정)** | 프로덕션, 모든 RN 프로젝트 |
-| `bun`   | Bun.Transpiler 기반    | 실험적            | 빠른 빌드가 필요한 경우    |
+| 번들러  | 설명                      | 상태              | 사용 시기                  |
+| ------- | ------------------------- | ----------------- | -------------------------- |
+| `graph` | Babel 기반, Metro 호환    | **기본값 (안정)** | 프로덕션, 모든 RN 프로젝트 |
+| `bun`   | Bun.Transpiler 기반       | 실험적            | 빠른 빌드가 필요한 경우    |
+| `oxc`   | Rolldown 기반, ESM 번들링 | 실험적            | ESM 번들링, 빠른 빌드      |
 
 ### 설정 방법
 
 ```typescript
 // bungae.config.ts
 export default {
-  bundler: 'bun', // 'graph' (기본값) 또는 'bun'
+  bundler: 'oxc', // 'graph' (기본값) 또는 'bun' 또는 'oxc'
   // ...
 };
 ```
@@ -392,6 +393,47 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
    - 벤치마크 테스트 추가
    - Flow 파일 최적화 (hermes-parser WASM 직접 사용)
    - 병렬 처리 (`Bun.worker()`)
+
+### OXC 번들러 (Rolldown 기반) 🚧 진행 중
+
+`config.bundler: 'oxc'` 옵션으로 선택 가능 (실험적)
+
+Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리 CJS 래핑 없이 ESM 모듈 그대로 번들링합니다.
+
+#### Phase 1: 핵심 번들링 ✅
+
+- Rolldown `strictExecutionOrder`로 ESM 모듈 실행 순서 보장
+- 플러그인: flow-strip, asset, json, platform-resolver, prelude, hermes-compat
+- Hermes 바이트코드 컴파일 지원
+- 구현 위치: `bundler/oxc-bundler/`
+
+#### Phase 2: 개발 환경 ✅
+
+- **개발 서버**: HTTP + WebSocket HMR
+- **HMR**: Full rebuild 방식 (buildWithOxc + fs.watch → hmr:reload)
+- **터미널 단축키**: graph-bundler 재사용
+
+#### Hermes 호환성: hermes-compat 플러그인
+
+Hermes 엔진은 ES2020 대부분을 지원하지만 **private class fields (`#field`)를 지원하지 않음**.
+Rolldown의 DevEngine runtime이 `#private`를 사용하므로 직접 사용 불가.
+
+**해결책**: `hermes-compat` 플러그인 (SWC `renderChunk`)
+- 최종 출력 청크에서 `#private` → WeakMap 폴리필로 변환
+- ES2020 타겟으로 SWC transform
+- `#` 문자가 없으면 빠르게 skip (성능 최적화)
+- 구현 위치: `oxc-bundler/plugins/hermes-compat.ts`
+
+#### Rolldown DevEngine 제한사항
+
+Rolldown의 실험적 `dev()` API (DevEngine)를 사용하지 않는 이유:
+
+1. **Private fields 문제**: DevEngine runtime에 `#private` class fields 포함 → Hermes 크래시
+2. **`devMode.implement` 제약**: 사전 컴파일된 JS 파일 경로만 허용 (TS 불가)
+3. **hermes-compat으로 해결 가능성**: `renderChunk`에서 `#private` 제거 가능하나, DevEngine의 `dev()` API가 `renderChunk`를 실행하는지 미확인
+
+**현재 접근**: `buildWithOxc()` + `fs.watch()` (전체 리빌드 HMR, ~1초)
+**향후**: Rolldown이 Hermes 호환 출력을 지원하면 `dev()` API로 전환하여 패치 HMR 구현
 
 ### Phase 5: 고급 기능 (미구현)
 
