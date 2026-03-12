@@ -2,9 +2,9 @@
  * Bundler module - Exports bundling functions
  *
  * Three bundler implementations:
- * - graph-bundler: Babel-based, Metro-compatible, stable (default)
+ * - oxc-bundler: Rolldown-based, ESM with strictExecutionOrder, v2 (default)
+ * - graph-bundler: Babel-based, Metro-compatible, stable
  * - bun-bundler: Bun.Transpiler-based, faster, experimental
- * - oxc-bundler: Rolldown-based, ESM with strictExecutionOrder, v2
  *
  * Select bundler via config.bundler: 'graph' | 'bun' | 'oxc'
  */
@@ -52,18 +52,12 @@ export async function build(
   onProgress?: (transformedFileCount: number, totalFileCount: number) => void,
   options?: import('./graph-bundler').BuildOptions,
 ): Promise<import('./graph-bundler').BuildResult> {
-  const bundlerType = config.bundler || 'graph';
+  const bundlerType = config.bundler || 'oxc';
   logBundlerSelection(bundlerType);
 
-  if (bundlerType === 'oxc') {
-    const { buildWithOxc } = await import('./oxc-bundler');
-    const result = await buildWithOxc(config, onProgress);
-    // Adapt OxcBuildResult to BuildResult interface
-    return {
-      code: result.code,
-      map: result.map,
-      assets: [],
-    };
+  if (bundlerType === 'graph') {
+    const { buildWithGraph } = await import('./graph-bundler');
+    return buildWithGraph(config, onProgress, options);
   }
 
   if (bundlerType === 'bun') {
@@ -71,9 +65,15 @@ export async function build(
     return buildWithBunTranspiler(config, onProgress, options);
   }
 
-  // Default: graph bundler (Babel-based)
-  const { buildWithGraph } = await import('./graph-bundler');
-  return buildWithGraph(config, onProgress, options);
+  // Default: oxc bundler (Rolldown, v2)
+  const { buildWithOxc } = await import('./oxc-bundler');
+  const result = await buildWithOxc(config, onProgress);
+  // Adapt OxcBuildResult to BuildResult interface
+  return {
+    code: result.code,
+    map: result.map,
+    assets: [],
+  };
 }
 
 /**
@@ -81,12 +81,12 @@ export async function build(
  * Automatically selects graph-bundler, bun-bundler, or oxc-bundler based on config.bundler
  */
 export async function serve(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
-  const bundlerType = config.bundler || 'graph';
+  const bundlerType = config.bundler || 'oxc';
   logBundlerSelection(bundlerType);
 
-  // OXC bundler dev server (Phase 2 - not yet implemented)
-  if (bundlerType === 'oxc') {
-    throw new Error('oxc-bundler dev server is not yet implemented (Phase 2)');
+  if (bundlerType === 'graph') {
+    const { serveWithGraph } = await import('./graph-bundler');
+    return serveWithGraph(config);
   }
 
   if (bundlerType === 'bun') {
@@ -94,7 +94,6 @@ export async function serve(config: ResolvedConfig): Promise<{ stop: () => Promi
     return serveWithBunTranspiler(config);
   }
 
-  // Default: graph bundler (Babel-based)
-  const { serveWithGraph } = await import('./graph-bundler');
-  return serveWithGraph(config);
+  // Default: oxc bundler dev server (Phase 2 - not yet implemented)
+  throw new Error('oxc-bundler dev server is not yet implemented (Phase 2)');
 }
