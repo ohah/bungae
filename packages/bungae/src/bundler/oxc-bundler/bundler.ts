@@ -24,6 +24,7 @@ import {
   assetPlugin,
   preludePlugin,
   hermesCompatPlugin,
+  generatePreludeCode,
 } from './plugins';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
 
@@ -101,8 +102,10 @@ export async function buildWithOxc(
   }
 
   // Prepend React Native globals (must be before any module code)
-  // `global` is used extensively by RN but doesn't exist in Hermes
-  let code = `var global = globalThis;\n` + mainChunk.code;
+  // Rolldown places entry code at the END of the bundle, but RN modules
+  // reference these globals immediately. Prepend them to ensure availability.
+  const prelude = generatePreludeCode(config.dev, config.platform);
+  let code = `var global = globalThis;\n${prelude}\n` + mainChunk.code;
   let map = mainChunk.map?.toString();
 
   // Handle inline source map
