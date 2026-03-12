@@ -5,16 +5,16 @@
  * On file change: full rebuild → cache → notify HMR clients (full reload).
  *
  * Why not Rolldown's experimental DevEngine (dev() API):
- * - DevEngine injects its own runtime with private class fields (#private)
- * - Hermes does not support private properties → runtime crash
- * - devMode.implement requires pre-compiled JS runtime file
- * - Until Rolldown targets Hermes-compatible output, we use full rebuild approach
+ * - devMode.implement requires pre-compiled JS file path (TS not supported)
+ * - #private class fields issue is solved by hermes-compat plugin (SWC renderChunk)
+ * - However, dev() API's renderChunk hook support is unconfirmed
+ * - Once confirmed, can switch to dev() API for true patch HMR
  *
  * Trade-off: Full reload instead of patch HMR (no component state preservation).
  * In practice, Rolldown rebuild takes ~1s which is acceptable for dev.
  *
- * Future: When Rolldown supports Hermes-compatible devMode output,
- * switch to dev() API for true patch HMR with React Refresh.
+ * Future: If dev() API supports renderChunk, switch to it for patch HMR
+ * with React Refresh and component state preservation.
  */
 
 import EventEmitter from 'node:events';

@@ -413,27 +413,27 @@ Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리
 - **HMR**: Full rebuild 방식 (buildWithOxc + fs.watch → hmr:reload)
 - **터미널 단축키**: graph-bundler 재사용
 
-#### Hermes 호환성: hermes-compat 플러그인
+#### Hermes 호환성: hermes-compat 플러그인 ✅ 해결됨
 
 Hermes 엔진은 ES2020 대부분을 지원하지만 **private class fields (`#field`)를 지원하지 않음**.
-Rolldown의 DevEngine runtime이 `#private`를 사용하므로 직접 사용 불가.
+`hermes-compat` 플러그인으로 SWC `renderChunk`를 통해 이 문제를 해결:
 
-**해결책**: `hermes-compat` 플러그인 (SWC `renderChunk`)
-- 최종 출력 청크에서 `#private` → WeakMap 폴리필로 변환
-- ES2020 타겟으로 SWC transform
+- 최종 출력 청크에서 `#private` → WeakMap 폴리필로 자동 변환
+- ES2020 타겟으로 SWC transform (Hermes가 지원하는 수준으로 다운레벨)
 - `#` 문자가 없으면 빠르게 skip (성능 최적화)
+- Rolldown DevEngine runtime, node_modules, 사용자 코드 등 모든 소스의 `#private`를 처리
 - 구현 위치: `oxc-bundler/plugins/hermes-compat.ts`
 
-#### Rolldown DevEngine 제한사항
+#### Rolldown DevEngine 사용하지 않는 이유
 
-Rolldown의 실험적 `dev()` API (DevEngine)를 사용하지 않는 이유:
+Rolldown의 실험적 `dev()` API (DevEngine)를 현재 사용하지 않는 이유:
 
-1. **Private fields 문제**: DevEngine runtime에 `#private` class fields 포함 → Hermes 크래시
-2. **`devMode.implement` 제약**: 사전 컴파일된 JS 파일 경로만 허용 (TS 불가)
-3. **hermes-compat으로 해결 가능성**: `renderChunk`에서 `#private` 제거 가능하나, DevEngine의 `dev()` API가 `renderChunk`를 실행하는지 미확인
+1. **`devMode.implement` 제약**: 사전 컴파일된 JS 파일 경로만 허용 (TS 파일 불가, 경로가 정규식 리터럴로 파싱됨)
+2. **`renderChunk` 실행 여부 미확인**: `dev()` API가 `renderChunk` 훅을 실행하는지 확인 필요 — 실행된다면 hermes-compat으로 `#private` 문제 해결 가능
+3. **Private fields 문제는 해결됨**: hermes-compat 플러그인이 `#private` → WeakMap 변환을 처리하므로, DevEngine의 `renderChunk` 지원 여부만 확인하면 전환 가능
 
 **현재 접근**: `buildWithOxc()` + `fs.watch()` (전체 리빌드 HMR, ~1초)
-**향후**: Rolldown이 Hermes 호환 출력을 지원하면 `dev()` API로 전환하여 패치 HMR 구현
+**향후**: DevEngine `dev()` API가 `renderChunk`를 지원하면 전환하여 패치 HMR 구현
 
 ### Phase 5: 고급 기능 (미구현)
 
