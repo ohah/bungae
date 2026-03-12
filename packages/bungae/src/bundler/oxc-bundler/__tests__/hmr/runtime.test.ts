@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'fs';
 
+import { transformSync } from 'rolldown/experimental';
+
 describe('HMR Runtime', () => {
   it('should export a valid TypeScript source file', () => {
     const source = readFileSync(
@@ -54,21 +56,17 @@ describe('HMR Runtime', () => {
     expect(source).toContain('globalEvalWithSourceUrl');
   });
 
-  it('should be compilable with Bun.Transpiler', () => {
+  it('should be compilable with Rolldown transformSync', () => {
     const source = readFileSync(
       require.resolve('../../hmr/runtime'),
       'utf-8',
     );
-    const transpiler = new Bun.Transpiler({
-      loader: 'ts',
-      target: 'browser',
-    });
 
-    const result = transpiler.transformSync(source);
-    expect(result).toBeTruthy();
+    const result = transformSync('runtime.ts', source, { sourcemap: false });
+    expect(result.code).toBeTruthy();
     // TypeScript annotations should be stripped
-    expect(result).not.toContain(': string');
+    expect(result.code).not.toContain(': string');
     // Class should still exist
-    expect(result).toContain('ReactNativeDevRuntime');
+    expect(result.code).toContain('ReactNativeDevRuntime');
   });
 });

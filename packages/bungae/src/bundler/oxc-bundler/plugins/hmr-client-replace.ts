@@ -12,6 +12,7 @@
 import { readFileSync } from 'fs';
 
 import type { Plugin } from 'rolldown';
+import { transformSync } from 'rolldown/experimental';
 
 const HMR_CLIENT_PATTERN = /react-native[/\\]Libraries[/\\]Utilities[/\\]HMRClient/;
 
@@ -21,17 +22,15 @@ const HMR_CLIENT_PATTERN = /react-native[/\\]Libraries[/\\]Utilities[/\\]HMRClie
  */
 let compiledClientCode: string | null = null;
 
-async function getCompiledHmrClient(): Promise<string> {
+function getCompiledHmrClient(): string {
   if (compiledClientCode != null) return compiledClientCode;
 
   const clientSource = readFileSync(require.resolve('../hmr/hmr-client'), 'utf-8');
-
-  const transpiler = new Bun.Transpiler({
-    loader: 'ts',
-    target: 'browser',
+  const result = transformSync('hmr-client.ts', clientSource, {
+    sourcemap: false,
   });
 
-  compiledClientCode = transpiler.transformSync(clientSource);
+  compiledClientCode = result.code;
   return compiledClientCode;
 }
 
@@ -45,9 +44,9 @@ export function hmrClientReplacePlugin(): Plugin {
           include: [HMR_CLIENT_PATTERN],
         },
       },
-      async handler(_id) {
+      handler(_id) {
         return {
-          code: await getCompiledHmrClient(),
+          code: getCompiledHmrClient(),
           moduleType: 'js',
         };
       },
