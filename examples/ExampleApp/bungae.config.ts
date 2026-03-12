@@ -18,8 +18,8 @@ export default defineConfig({
   dev: true,
   minify: false,
   outDir: join(__dirname, '.bungae'),
-  // Bundler type: 'graph' (Babel, stable) or 'bun' (Hermes Parser, experimental)
-  bundler: 'bun',
+  // Bundler type: 'oxc' (Rolldown, default) or 'graph' (Babel, stable) or 'bun' (experimental)
+  bundler: 'oxc',
   resolver: {
     sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
     assetExts: [
