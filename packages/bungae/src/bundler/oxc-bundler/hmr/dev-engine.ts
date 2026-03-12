@@ -14,7 +14,7 @@ import EventEmitter from 'node:events';
 import { readFileSync } from 'node:fs';
 
 import type { RolldownOutput } from 'rolldown';
-import { dev, type DevEngine, type BindingClientHmrUpdate } from 'rolldown/experimental';
+import { dev, transformSync, type DevEngine, type BindingClientHmrUpdate } from 'rolldown/experimental';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
@@ -51,11 +51,10 @@ function compileRuntime(): string {
   if (compiledRuntimeCode != null) return compiledRuntimeCode;
 
   const runtimeSource = readFileSync(require.resolve('./runtime'), 'utf-8');
-  const transpiler = new Bun.Transpiler({
-    loader: 'ts',
-    target: 'browser',
+  const result = transformSync('runtime.ts', runtimeSource, {
+    sourcemap: false,
   });
-  compiledRuntimeCode = transpiler.transformSync(runtimeSource);
+  compiledRuntimeCode = result.code;
   return compiledRuntimeCode;
 }
 

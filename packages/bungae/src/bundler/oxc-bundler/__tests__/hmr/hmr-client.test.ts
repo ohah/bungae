@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'fs';
 
+import { transformSync } from 'rolldown/experimental';
+
 describe('HMR Client', () => {
   it('should export a valid TypeScript source file', () => {
     const source = readFileSync(
@@ -46,21 +48,17 @@ describe('HMR Client', () => {
     expect(source).toContain('.setup(socket, origin)');
   });
 
-  it('should be compilable with Bun.Transpiler', () => {
+  it('should be compilable with Rolldown transformSync', () => {
     const source = readFileSync(
       require.resolve('../../hmr/hmr-client'),
       'utf-8',
     );
-    const transpiler = new Bun.Transpiler({
-      loader: 'ts',
-      target: 'browser',
-    });
 
-    const result = transpiler.transformSync(source);
-    expect(result).toBeTruthy();
-    expect(result).not.toContain(': string');
-    expect(result).not.toContain(': number');
+    const result = transformSync('hmr-client.ts', source, { sourcemap: false });
+    expect(result.code).toBeTruthy();
+    expect(result.code).not.toContain(': string');
+    expect(result.code).not.toContain(': number');
     // Should still have the class logic
-    expect(result).toContain('HMRClient');
+    expect(result.code).toContain('HMRClient');
   });
 });
