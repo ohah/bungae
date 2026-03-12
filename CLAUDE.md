@@ -475,6 +475,7 @@ Rolldown upstream에 기여하여 근본적으로 해결할 수 있습니다:
   `intro`/`outro` 해킹 불필요
 
 **Rollipop의 접근 (참고)**:
+
 - Rolldown을 `@rollipop/rolldown`으로 포크
 - `globalIdentifiers` 옵션 추가하여 특정 식별자가 top-level var로 선언되지 않도록 함
 - DevEngine `dev()` API를 사용하기 위해 `format: 'esm'` 유지 필수 → IIFE 불가 → 포크 선택
