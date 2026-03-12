@@ -2,72 +2,82 @@
  * Hermes Compatibility Plugin for Rolldown
  *
  * Downlevels JavaScript syntax that Hermes doesn't support:
- * - Private class fields (#field) → string-key property polyfill (loose mode)
- * - Private methods (#method()) → string-key property polyfill (loose mode)
+ * - Private class fields (#field) → string-key property (loose mode)
+ * - Private methods (#method()) → string-key property (loose mode)
  *
- * Uses SWC (loose mode) to transform the final output chunk, so it catches
- * both user code and Rolldown's own runtime (e.g., DevEngine runtime).
+ * Uses SWC in the `transform` hook (per-module, before bundling) to convert
+ * private fields before Rolldown wraps classes into class expressions.
  *
- * Why loose mode: SWC's default (spec) mode uses WeakMap + comma expressions
- * with class expressions (e.g., `Foo = (_x = new WeakMap(), class Foo1 { })`),
- * which Hermes cannot parse. Loose mode uses string-key properties instead,
- * avoiding the problematic comma expression pattern.
+ * Why `transform` instead of `renderChunk`:
+ * Rolldown converts class declarations to class expressions during bundling
+ * (e.g., `var Foo = class Foo1 { ... }`). SWC's private field transform on
+ * class expressions creates comma expressions (`Foo = (_x = key(), class Foo1 { })`),
+ * which Hermes cannot parse. By transforming in `transform` (before bundling),
+ * private fields are already removed when Rolldown processes the class.
  *
- * Target: ES2020 (Hermes supports most ES2020 except private fields)
+ * This is the same approach used by Rollipop (reference Rolldown-based RN bundler).
+ *
+ * Target: ES2020 with assumptions.privateFieldsAsProperties
  */
 
 import type { Plugin } from 'rolldown';
 
 export function hermesCompatPlugin(): Plugin {
+  let swcModule: typeof import('@swc/core') | null = null;
+
   return {
     name: 'bungae:hermes-compat',
 
-    // renderChunk runs on the final output, after all modules are bundled.
-    // This ensures we catch private fields from any source (user code, node_modules, runtime).
-    renderChunk: {
-      async handler(code, _chunk) {
-        // Quick check: skip SWC if no private fields
-        if (!code.includes('#')) {
-          return null;
+    // transform runs on each module individually, before Rolldown bundles them.
+    // At this stage, classes are still declarations (not expressions), so SWC's
+    // private field transform produces clean output without comma expressions.
+    async transform(code, id) {
+      // Only process JS/TS files
+      if (!/\.[mc]?[jt]sx?$/.test(id)) {
+        return null;
+      }
+
+      // Quick check: skip if no private fields
+      if (!code.includes('#')) {
+        return null;
+      }
+
+      // Only transform if there are actual private field patterns
+      if (!/(?:this\.#|\.#[a-zA-Z_]|#[a-zA-Z_]\w*[;=,()])/.test(code)) {
+        return null;
+      }
+
+      try {
+        if (!swcModule) {
+          swcModule = await import('@swc/core');
         }
 
-        // Only transform if there are actual private field patterns
-        // (#identifier followed by word chars, not #region or sourcemap comments)
-        if (!/(?:this\.#|\.#[a-zA-Z_]|#[a-zA-Z_]\w*[;=,()])/.test(code)) {
-          return null;
-        }
-
-        try {
-          const swc = await import('@swc/core');
-
-          const result = await swc.transform(code, {
-            jsc: {
-              parser: {
-                syntax: 'ecmascript',
-              },
-              target: 'es2020',
-              // Loose mode: string-key properties instead of WeakMap
-              // Avoids comma expression + class expression pattern that Hermes can't parse
-              loose: true,
-              transform: {
-                useDefineForClassFields: false,
-              },
+        const result = await swcModule.transform(code, {
+          filename: id,
+          jsc: {
+            parser: {
+              syntax: id.endsWith('.ts') || id.endsWith('.tsx') ? 'typescript' : 'ecmascript',
+              tsx: id.endsWith('.tsx'),
             },
-            // Preserve source maps
-            sourceMaps: true,
-          });
+            target: 'es2020',
+            assumptions: {
+              setPublicClassFields: true,
+              privateFieldsAsProperties: true,
+            },
+          },
+          sourceMaps: true,
+        });
 
-          return {
-            code: result.code,
-            map: result.map || undefined,
-          };
-        } catch (error: any) {
-          console.warn(
-            `[hermes-compat] SWC transform failed, returning original code: ${error.message}`,
-          );
-          return null;
-        }
-      },
+        return {
+          code: result.code,
+          map: result.map || undefined,
+        };
+      } catch (error: any) {
+        console.warn(
+          `[hermes-compat] SWC transform failed for ${id}, returning original code: ${error.message}`,
+        );
+        return null;
+      }
     },
   };
 }
