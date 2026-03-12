@@ -3,6 +3,7 @@
  * Usage: npx tsx scripts/test-oxc-bundler.ts
  */
 
+import { writeFileSync, mkdirSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -38,6 +39,12 @@ async function main() {
     console.log(result.code.substring(0, 500));
     console.log('\n--- 코드 뒤 200자 ---');
     console.log(result.code.substring(result.code.length - 200));
+
+    // Save bundle for debugging
+    mkdirSync('/tmp/oxc-debug', { recursive: true });
+    writeFileSync('/tmp/oxc-debug/bundle.js', result.code);
+    if (result.map) writeFileSync('/tmp/oxc-debug/bundle.js.map', result.map);
+    console.log('\n--- 번들 파일 저장: /tmp/oxc-debug/bundle.js ---');
   } catch (err: any) {
     console.error('\n❌ 에러:', err.message);
     if (err.stack) {

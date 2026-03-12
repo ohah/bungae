@@ -55,8 +55,8 @@ class Foo {
     expect(result.code).toBeDefined();
     // Should not contain private field syntax
     expect(result.code).not.toContain('#value');
-    // Should contain WeakMap polyfill pattern
-    expect(result.code).toContain('WeakMap');
+    // Should contain loose mode polyfill pattern (string-key properties, not WeakMap)
+    expect(result.code).toContain('_class_private_field_loose');
   });
 
   it('should transform private methods', async () => {
