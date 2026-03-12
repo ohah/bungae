@@ -208,12 +208,15 @@ async function loadRNPolyfills(projectRoot: string): Promise<string> {
     const polyfillPaths = rnGetPolyfills();
 
     const babel = await import('@babel/core');
+    const swc = await import('@swc/core');
 
-    // Read each polyfill, strip Flow types with Babel, wrap in IIFE
+    // Read each polyfill, strip Flow types with Babel, downlevel to ES5 with SWC, wrap in IIFE
     const codes: string[] = [];
     for (const polyfillPath of polyfillPaths) {
       const source = readFileSync(polyfillPath, 'utf-8');
-      const result = await babel.transformAsync(source, {
+
+      // Step 1: Strip Flow types with Babel + hermes-parser
+      const babelResult = await babel.transformAsync(source, {
         filename: polyfillPath,
         babelrc: false,
         configFile: false,
@@ -226,9 +229,19 @@ async function loadRNPolyfills(projectRoot: string): Promise<string> {
           require.resolve('@babel/plugin-transform-flow-strip-types'),
         ],
       });
-      if (result?.code) {
-        codes.push(`(function(global){${result.code}})(globalThis);`);
-      }
+      if (!babelResult?.code) continue;
+
+      // Step 2: Downlevel to ES5 with SWC (Hermes compat)
+      const swcResult = await swc.transform(babelResult.code, {
+        jsc: {
+          parser: { syntax: 'ecmascript' },
+          target: 'es5',
+          assumptions: { setPublicClassFields: true, privateFieldsAsProperties: true },
+        },
+        sourceMaps: false,
+      });
+
+      codes.push(`(function(global){${swcResult.code}})(globalThis);`);
     }
 
     cachedPolyfillCode = codes.join('\n');
