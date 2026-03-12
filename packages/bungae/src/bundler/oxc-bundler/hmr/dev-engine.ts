@@ -105,13 +105,9 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         platformResolverPlugin(this.config),
       ],
 
-      // Enable dev mode with HMR runtime
-      experimental: {
-        devMode: {
-          implement: resolve(__dirname, 'runtime.ts'),
-        },
-        incrementalBuild: true,
-      },
+      // Note: experimental.devMode requires a pre-compiled JS runtime file.
+      // HMR is handled at the server level for now (full rebuild + WebSocket push).
+      // TODO: Pre-compile runtime.ts → runtime.js for Rolldown devMode integration
     };
 
     const outputOptions: OutputOptions = {
