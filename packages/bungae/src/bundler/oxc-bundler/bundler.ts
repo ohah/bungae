@@ -53,10 +53,7 @@ export async function buildWithOxc(
   const preludeModules = resolvePreludeModules(config);
 
   // Build extension list for Rolldown resolver
-  const extensions = buildExtensions(
-    config.platform,
-    config.resolver.sourceExts,
-  );
+  const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
 
   // Configure Rolldown
   const bundle = await rolldown({
@@ -112,9 +109,7 @@ export async function buildWithOxc(
     map = undefined;
   }
 
-  console.log(
-    `  Bundling done in ${bundleDuration}ms (${output.length} chunks)`,
-  );
+  console.log(`  Bundling done in ${bundleDuration}ms (${output.length} chunks)`);
 
   // Collect assets from asset plugin
   const assets = output

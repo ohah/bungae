@@ -5,6 +5,10 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
+import babelGenerator from '@babel/generator';
+import * as babelTypes from '@babel/types';
+import { toSegmentTuple } from 'metro-source-map';
+
 import type { ResolvedConfig } from '../../config/types';
 import type { Module } from '../../serializer/types';
 import { extractDependenciesFromAst } from '../../transformer/extract-dependencies-from-ast';
@@ -463,12 +467,6 @@ export async function graphToSerializerModules(
   orderedModules: GraphModule[],
   config: ResolvedConfig,
 ): Promise<Module[]> {
-  const generator = await import('@babel/generator');
-  const babelTypes = await import('@babel/types');
-  // Import metro-source-map utilities for Metro-compatible source map generation
-  const metroSourceMap = await import('metro-source-map');
-  const { toSegmentTuple } = metroSourceMap;
-
   // In production builds, exclude dev-only modules (Metro-compatible)
   // Metro excludes openURLInBrowser and other dev tools in production builds
   const filteredModules = config.dev
@@ -513,7 +511,7 @@ export async function graphToSerializerModules(
         // Metro's transformJS (line 461-474) uses generate() with sourceMaps: true
         // Then converts rawMappings to Metro format using toSegmentTuple
         // This ensures accurate source mapping: original code → transformed AST → wrapped code
-        const generated = generator.default(
+        const generated = babelGenerator(
           astToGenerate,
           {
             comments: true,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, chmodSync } from 'fs';
-import { join } from 'path';
 import { tmpdir } from 'os';
+import { join } from 'path';
 
 import { findHermesc } from '../../hermes/find-hermesc';
 
@@ -16,7 +16,8 @@ describe('findHermesc', () => {
   it('should find hermesc in react-native SDK path', () => {
     // Create fake react-native structure with hermesc
     const rnDir = join(testDir, 'node_modules', 'react-native');
-    const platform = process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
+    const platform =
+      process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
     const hermescDir = join(rnDir, 'sdks', 'hermesc', `${platform}-bin`);
 
     mkdirSync(hermescDir, { recursive: true });

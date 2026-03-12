@@ -24,11 +24,7 @@ export function platformResolverPlugin(config: ResolvedConfig): Plugin {
   );
 
   // Build extension resolution order with platform priority
-  const platformExts = sourceExts.flatMap((ext) => [
-    `.${platform}${ext}`,
-    `.native${ext}`,
-    ext,
-  ]);
+  const platformExts = sourceExts.flatMap((ext) => [`.${platform}${ext}`, `.native${ext}`, ext]);
 
   return {
     name: 'bungae:platform-resolver',
@@ -84,9 +80,7 @@ export function platformResolverPlugin(config: ResolvedConfig): Plugin {
  * Build the full list of extensions for Rolldown resolve config
  */
 export function buildExtensions(platform: string, sourceExts: string[]): string[] {
-  const normalized = sourceExts.map((ext) =>
-    ext.startsWith('.') ? ext : `.${ext}`,
-  );
+  const normalized = sourceExts.map((ext) => (ext.startsWith('.') ? ext : `.${ext}`));
 
   const extensions: string[] = [];
   for (const ext of normalized) {

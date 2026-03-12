@@ -10,12 +10,12 @@ Hermes 바이트코드 사전 컴파일 통합으로 차별화합니다.
 
 ### 번들러 비교
 
-| 번들러 | ESM 순서 보장 | 속도 | RN 지원 | 상태 |
-|--------|:------------:|:----:|:-------:|:----:|
-| Metro | `__d()/__r()` DFS | 느림 | 공식 | 안정 |
-| Bun.build | 없음 | 빠름 | 없음 | 제한적 |
-| esbuild | 없음 | 빠름 | 없음 | 안정 |
-| Rspack | 없음 (Webpack 방식) | 빠름 | Re.Pack | 안정 |
+| 번들러       |       ESM 순서 보장        |     속도      | RN 지원  |    상태    |
+| ------------ | :------------------------: | :-----------: | :------: | :--------: |
+| Metro        |     `__d()/__r()` DFS      |     느림      |   공식   |    안정    |
+| Bun.build    |            없음            |     빠름      |   없음   |   제한적   |
+| esbuild      |            없음            |     빠름      |   없음   |    안정    |
+| Rspack       |    없음 (Webpack 방식)     |     빠름      | Re.Pack  |    안정    |
 | **Rolldown** | **`strictExecutionOrder`** | **매우 빠름** | **없음** | **실험적** |
 
 ### 핵심 선택 이유
@@ -32,16 +32,16 @@ Hermes 바이트코드 사전 컴파일 통합으로 차별화합니다.
 
 Rollipop도 Rolldown 기반이지만, Bungae v2는 다음을 제공합니다:
 
-| 기능 | Rollipop | Bungae v2 |
-|------|:--------:|:---------:|
-| Rolldown 코어 | ✅ | ✅ |
-| Flow 처리 | ✅ | ✅ |
-| HMR | ✅ | ✅ |
-| **Hermes 사전 컴파일** | ❌ | ✅ |
-| **번들 분석 내장** | ❌ | ✅ |
-| **원격 캐시** | ❌ | ✅ |
-| **Code Splitting (RN 특화)** | ❌ | ✅ (Phase 3) |
-| **Zero-Config** | ❌ | ✅ |
+| 기능                         | Rollipop |  Bungae v2   |
+| ---------------------------- | :------: | :----------: |
+| Rolldown 코어                |    ✅    |      ✅      |
+| Flow 처리                    |    ✅    |      ✅      |
+| HMR                          |    ✅    |      ✅      |
+| **Hermes 사전 컴파일**       |    ❌    |      ✅      |
+| **번들 분석 내장**           |    ❌    |      ✅      |
+| **원격 캐시**                |    ❌    |      ✅      |
+| **Code Splitting (RN 특화)** |    ❌    | ✅ (Phase 3) |
+| **Zero-Config**              |    ❌    |      ✅      |
 
 ## 아키텍처
 
@@ -143,13 +143,13 @@ export async function bundle(config: BungaeConfig) {
 
 #### 1-2. 플러그인 구현 (1주)
 
-| 플러그인 | 역할 | 구현 방식 |
-|---------|------|----------|
-| `prelude` | RN 전역 변수 (`__DEV__`, `ErrorUtils` 등) | intro 주입 |
-| `flow-strip` | Flow 타입 제거 | hermes-parser + flow-remove-types |
-| `asset` | 이미지/폰트 → AssetRegistry 모듈 | onLoad 훅 |
-| `json` | JSON → export default | onLoad 훅 |
-| `platform-resolver` | `.ios.ts` / `.android.ts` 해석 | onResolve 훅 |
+| 플러그인            | 역할                                      | 구현 방식                         |
+| ------------------- | ----------------------------------------- | --------------------------------- |
+| `prelude`           | RN 전역 변수 (`__DEV__`, `ErrorUtils` 등) | intro 주입                        |
+| `flow-strip`        | Flow 타입 제거                            | hermes-parser + flow-remove-types |
+| `asset`             | 이미지/폰트 → AssetRegistry 모듈          | onLoad 훅                         |
+| `json`              | JSON → export default                     | onLoad 훅                         |
+| `platform-resolver` | `.ios.ts` / `.android.ts` 해석            | onResolve 훅                      |
 
 #### 1-3. 프로덕션 빌드 (1주)
 
@@ -163,11 +163,11 @@ export async function bundle(config: BungaeConfig) {
 ```typescript
 // hermes/compiler.ts
 export async function compileToHermesBytecode(options: {
-  input: string;      // JS 번들 경로
-  output: string;     // .hbc 출력 경로
+  input: string; // JS 번들 경로
+  output: string; // .hbc 출력 경로
   sourceMap: boolean;
   optimize: boolean;
-}): Promise<HermesCompileResult>
+}): Promise<HermesCompileResult>;
 ```
 
 - `react-native/sdks/hermesc/` 에서 hermesc 자동 탐색
@@ -176,6 +176,7 @@ export async function compileToHermesBytecode(options: {
 - 결과: `.hbc` 파일 직접 출력
 
 **Phase 1 결과물:**
+
 ```bash
 $ bunx bungae build --platform ios
 
@@ -217,11 +218,11 @@ const engine = await rolldown.dev({
 // 파일 변경 감지 → 증분 빌드 → HMR 전송
 engine.onUpdate((update) => {
   if (update.type === 'Patch') {
-    wsClients.forEach(client => {
+    wsClients.forEach((client) => {
       client.send({ type: 'hmr:update', code: update.code });
     });
   } else if (update.type === 'FullReload') {
-    wsClients.forEach(client => {
+    wsClients.forEach((client) => {
       client.send({ type: 'hmr:reload' });
     });
   }
@@ -229,6 +230,7 @@ engine.onUpdate((update) => {
 ```
 
 HMR 런타임 (클라이언트에 주입):
+
 - `module.hot.accept()` 지원
 - React Refresh 통합 (Fast Refresh)
 - WebSocket 연결 관리
@@ -247,6 +249,7 @@ HMR 런타임 (클라이언트에 주입):
 - 에러 포매팅
 
 **Phase 2 결과물:**
+
 ```bash
 $ bunx bungae start --platform ios
 
@@ -315,10 +318,11 @@ export default {
       region: 'ap-northeast-2',
     },
   },
-}
+};
 ```
 
 동작 방식:
+
 ```
 빌드 시:
   1. 모듈 해시 계산 (소스 + 설정 + 의존성)
@@ -369,18 +373,19 @@ export default {
     preload: ['screens/Home'],
 
     // chunk 로딩 방식
-    loader: 'fetch',  // fetch API로 chunk 다운로드
+    loader: 'fetch', // fetch API로 chunk 다운로드
   },
-}
+};
 ```
 
 런타임 로더:
+
 ```javascript
 // Bungae가 자동 주입하는 chunk 로더
 globalThis.__bungae_loadChunk = async (chunkName) => {
   const response = await fetch(`${serverUrl}/${chunkName}.bundle`);
   const code = await response.text();
-  eval(code);  // 또는 Function()으로 실행
+  eval(code); // 또는 Function()으로 실행
 };
 ```
 
@@ -415,7 +420,7 @@ export default defineConfig({
 
   // Code Splitting (선택)
   codeSplitting: {
-    enabled: false,  // 기본 OFF
+    enabled: false, // 기본 OFF
     strategy: 'route-based',
   },
 
@@ -453,7 +458,8 @@ function findHermesc(projectRoot: string): string | null {
       paths: [projectRoot],
     });
     const rnRoot = dirname(rnPackageJson);
-    const platform = process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
+    const platform =
+      process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
     const hermescPath = join(rnRoot, 'sdks/hermesc', `${platform}-bin`, 'hermesc');
 
     if (existsSync(hermescPath)) return hermescPath;
@@ -751,14 +757,14 @@ jobs:
     steps:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bun test                    # 전체 단위 테스트
+      - run: bun test # 전체 단위 테스트
 
   e2e-test:
-    runs-on: macos-latest                # Hermes는 macOS에서 테스트
+    runs-on: macos-latest # Hermes는 macOS에서 테스트
     steps:
       - uses: oven-sh/setup-bun@v2
       - run: bun install
-      - run: bun test --filter "e2e"     # E2E 테스트만
+      - run: bun test --filter "e2e" # E2E 테스트만
 
   rn-compat-test:
     strategy:
@@ -772,31 +778,31 @@ jobs:
           # 해당 RN 버전으로 fixture 설치
           cd fixtures/minimal-app
           bun add react-native@${{ matrix.rn-version }}
-      - run: bun test --filter "e2e"     # RN 버전별 호환성 테스트
+      - run: bun test --filter "e2e" # RN 버전별 호환성 테스트
 ```
 
 ### 커버리지 목표
 
-| 영역 | 최소 커버리지 | 비고 |
-|------|:-----------:|------|
-| 플러그인 (flow, asset, resolver) | **90%** | 핵심 변환 로직, 엣지 케이스 많음 |
-| Hermes 컴파일러 | **85%** | 외부 바이너리 의존, 에러 핸들링 중요 |
-| 개발 서버 | **80%** | HTTP/WS 핸들러 |
-| HMR | **80%** | 증분 빌드 + 메시지 전송 |
-| 캐시 | **85%** | 무효화 로직 정확해야 함 |
-| 번들 분석 | **75%** | 리포팅 UI는 테스트 제외 가능 |
-| E2E (빌드 → Hermes → 실행) | **필수** | RN 버전별 최소 1개 시나리오 |
+| 영역                             | 최소 커버리지 | 비고                                 |
+| -------------------------------- | :-----------: | ------------------------------------ |
+| 플러그인 (flow, asset, resolver) |    **90%**    | 핵심 변환 로직, 엣지 케이스 많음     |
+| Hermes 컴파일러                  |    **85%**    | 외부 바이너리 의존, 에러 핸들링 중요 |
+| 개발 서버                        |    **80%**    | HTTP/WS 핸들러                       |
+| HMR                              |    **80%**    | 증분 빌드 + 메시지 전송              |
+| 캐시                             |    **85%**    | 무효화 로직 정확해야 함              |
+| 번들 분석                        |    **75%**    | 리포팅 UI는 테스트 제외 가능         |
+| E2E (빌드 → Hermes → 실행)       |   **필수**    | RN 버전별 최소 1개 시나리오          |
 
 ---
 
 ## 마일스톤
 
-| Phase | 기간 | 목표 | 결과물 |
-|-------|------|------|--------|
-| **Phase 1** | 4주 | 프로덕션 빌드 + Hermes | `bunx bungae build` |
-| **Phase 2** | 4주 | 개발 서버 + HMR | `bunx bungae start` |
-| **Phase 3** | 4주 | 차별화 기능 | analyze, cache, code splitting |
-| **Phase 4** | 2주 | 안정화 + 문서화 | v2.0.0 릴리스 |
+| Phase       | 기간 | 목표                   | 결과물                         |
+| ----------- | ---- | ---------------------- | ------------------------------ |
+| **Phase 1** | 4주  | 프로덕션 빌드 + Hermes | `bunx bungae build`            |
+| **Phase 2** | 4주  | 개발 서버 + HMR        | `bunx bungae start`            |
+| **Phase 3** | 4주  | 차별화 기능            | analyze, cache, code splitting |
+| **Phase 4** | 2주  | 안정화 + 문서화        | v2.0.0 릴리스                  |
 
 **총 예상 기간: 14주 (약 3.5개월)**
 
@@ -804,16 +810,17 @@ jobs:
 
 ## 리스크
 
-| 리스크 | 영향 | 대응 |
-|--------|------|------|
-| Rolldown API 변경 | 높음 | 버전 고정, 어댑터 레이어 |
+| 리스크                      | 영향 | 대응                             |
+| --------------------------- | ---- | -------------------------------- |
+| Rolldown API 변경           | 높음 | 버전 고정, 어댑터 레이어         |
 | Rolldown `dev()` API 불안정 | 중간 | Phase 2에서 자체 watch 구현 폴백 |
-| Hermes 버전 호환성 | 낮음 | hermesc 버전 감지 + 폴백 |
-| RN 신규 버전 대응 | 중간 | RN 릴리스 추적, CI 테스트 |
+| Hermes 버전 호환성          | 낮음 | hermesc 버전 감지 + 폴백         |
+| RN 신규 버전 대응           | 중간 | RN 릴리스 추적, CI 테스트        |
 
 ## 기존 코드 활용
 
 v1(graph-bundler)에서 재사용 가능한 것:
+
 - `config/` — 설정 시스템 (확장하여 사용)
 - `server/handlers/` — HTTP 핸들러 (에셋, 소스맵, 심볼리케이션)
 - `terminal-actions.ts` — 터미널 단축키
@@ -821,6 +828,7 @@ v1(graph-bundler)에서 재사용 가능한 것:
 - `file-watcher.ts` — 파일 변경 감지
 
 v1에서 사용하지 않는 것:
+
 - `serializer/` — `__d()/__r()` 기반 (ESM으로 대체)
 - `transformer/` — Babel 기반 (Rolldown + OXC로 대체)
 - `graph-bundler/graph.ts` — 자체 그래프 (Rolldown이 처리)

@@ -20,12 +20,8 @@ import type { ResolvedConfig } from '../../../config/types';
 import type { AssetData } from '../types';
 
 export function assetPlugin(config: ResolvedConfig): Plugin {
-  const assetExts = config.resolver.assetExts.map((ext) =>
-    ext.startsWith('.') ? ext : `.${ext}`,
-  );
-  const assetPattern = new RegExp(
-    `\\.(${assetExts.map((e) => e.slice(1)).join('|')})$`,
-  );
+  const assetExts = config.resolver.assetExts.map((ext) => (ext.startsWith('.') ? ext : `.${ext}`));
+  const assetPattern = new RegExp(`\\.(${assetExts.map((e) => e.slice(1)).join('|')})$`);
   const collectedAssets: AssetData[] = [];
 
   return {
@@ -55,11 +51,7 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
 /**
  * Resolve asset metadata including scales and dimensions
  */
-export function resolveAsset(
-  filePath: string,
-  projectRoot: string,
-  _platform: string,
-): AssetData {
+export function resolveAsset(filePath: string, projectRoot: string, _platform: string): AssetData {
   const ext = extname(filePath).slice(1);
   const nameWithoutExt = basename(filePath, `.${ext}`);
   const dir = dirname(filePath);
@@ -89,11 +81,7 @@ export function resolveAsset(
 /**
  * Find scale variants for an asset (@1x, @2x, @3x)
  */
-function findScaleVariants(
-  dir: string,
-  name: string,
-  ext: string,
-): number[] {
+function findScaleVariants(dir: string, name: string, ext: string): number[] {
   const scales: number[] = [];
   // Check base file (1x)
   const basePath = `${dir}/${name}.${ext}`;

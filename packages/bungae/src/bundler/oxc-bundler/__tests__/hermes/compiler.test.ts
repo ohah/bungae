@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, existsSync, chmodSync } from 'fs';
-import { join } from 'path';
 import { tmpdir } from 'os';
+import { join } from 'path';
 
 import { compileToHermesBytecode } from '../../hermes/compiler';
 
@@ -31,7 +31,8 @@ describe('compileToHermesBytecode', () => {
 
   it('should throw when input bundle does not exist', async () => {
     // Need to set up fake hermesc first so we get past the hermesc check
-    const platform = process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
+    const platform =
+      process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
     const rnDir = join(testDir, 'node_modules', 'react-native');
     const hermescDir = join(rnDir, 'sdks', 'hermesc', `${platform}-bin`);
     mkdirSync(hermescDir, { recursive: true });
@@ -50,7 +51,8 @@ describe('compileToHermesBytecode', () => {
 
   it('should compile JS to bytecode when hermesc is available', async () => {
     // Create fake hermesc that produces output
-    const platform = process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
+    const platform =
+      process.platform === 'darwin' ? 'osx' : process.platform === 'win32' ? 'win64' : 'linux64';
     const rnDir = join(testDir, 'node_modules', 'react-native');
     const hermescDir = join(rnDir, 'sdks', 'hermesc', `${platform}-bin`);
     mkdirSync(hermescDir, { recursive: true });

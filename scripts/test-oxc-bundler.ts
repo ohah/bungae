@@ -5,8 +5,9 @@
 
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { resolveConfig } from '../packages/bungae/src/config/index.js';
+
 import { buildWithOxc } from '../packages/bungae/src/bundler/oxc-bundler/index.js';
+import { resolveConfig } from '../packages/bungae/src/config/index.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '../examples/ExampleApp');
@@ -18,10 +19,7 @@ const config = resolveConfig({
   dev: true,
   bundler: 'oxc',
   resolver: {
-    nodeModulesPaths: [
-      resolve(__dirname, '../node_modules'),
-      resolve(root, 'node_modules'),
-    ],
+    nodeModulesPaths: [resolve(__dirname, '../node_modules'), resolve(root, 'node_modules')],
   },
 });
 

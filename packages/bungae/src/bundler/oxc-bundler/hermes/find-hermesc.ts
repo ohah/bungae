@@ -30,13 +30,7 @@ export function findHermesc(projectRoot: string): string | null {
       paths: [projectRoot],
     });
     const rnRoot = dirname(rnPackageJson);
-    const hermescPath = join(
-      rnRoot,
-      'sdks',
-      'hermesc',
-      `${osPlatform}-bin`,
-      'hermesc',
-    );
+    const hermescPath = join(rnRoot, 'sdks', 'hermesc', `${osPlatform}-bin`, 'hermesc');
 
     if (existsSync(hermescPath)) return hermescPath;
 

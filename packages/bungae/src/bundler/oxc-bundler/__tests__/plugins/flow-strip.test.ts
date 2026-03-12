@@ -12,15 +12,11 @@ describe('containsFlowSyntax', () => {
   });
 
   it('should detect @flow strict-local in JSDoc block', () => {
-    expect(
-      containsFlowSyntax('/**\n * @flow strict-local\n */\nconst x = 1;'),
-    ).toBe(true);
+    expect(containsFlowSyntax('/**\n * @flow strict-local\n */\nconst x = 1;')).toBe(true);
   });
 
   it('should detect @flow strict in JSDoc block', () => {
-    expect(
-      containsFlowSyntax('/**\n * @flow strict\n */'),
-    ).toBe(true);
+    expect(containsFlowSyntax('/**\n * @flow strict\n */')).toBe(true);
   });
 
   it('should detect opaque type keyword', () => {
@@ -44,20 +40,14 @@ describe('containsFlowSyntax', () => {
   });
 
   it('should not detect regular TypeScript code', () => {
-    expect(
-      containsFlowSyntax('const x: number = 1;\ninterface Foo { bar: string; }'),
-    ).toBe(false);
+    expect(containsFlowSyntax('const x: number = 1;\ninterface Foo { bar: string; }')).toBe(false);
   });
 
   it('should not detect plain JavaScript', () => {
-    expect(containsFlowSyntax('const x = 1;\nfunction foo() { return x; }')).toBe(
-      false,
-    );
+    expect(containsFlowSyntax('const x = 1;\nfunction foo() { return x; }')).toBe(false);
   });
 
   it('should not false-positive on comment mentioning flow', () => {
-    expect(
-      containsFlowSyntax('// this controls the flow of execution\nconst x = 1;'),
-    ).toBe(false);
+    expect(containsFlowSyntax('// this controls the flow of execution\nconst x = 1;')).toBe(false);
   });
 });

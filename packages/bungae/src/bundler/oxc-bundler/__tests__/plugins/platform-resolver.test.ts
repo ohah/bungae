@@ -35,23 +35,12 @@ describe('buildExtensions', () => {
 
   it('should handle extensions without leading dots', () => {
     const extensions = buildExtensions('ios', ['ts', 'js']);
-    expect(extensions).toEqual([
-      '.ios.ts',
-      '.native.ts',
-      '.ts',
-      '.ios.js',
-      '.native.js',
-      '.js',
-    ]);
+    expect(extensions).toEqual(['.ios.ts', '.native.ts', '.ts', '.ios.js', '.native.js', '.js']);
   });
 
   it('should place platform extensions before native extensions', () => {
     const extensions = buildExtensions('ios', ['.tsx']);
-    expect(extensions.indexOf('.ios.tsx')).toBeLessThan(
-      extensions.indexOf('.native.tsx'),
-    );
-    expect(extensions.indexOf('.native.tsx')).toBeLessThan(
-      extensions.indexOf('.tsx'),
-    );
+    expect(extensions.indexOf('.ios.tsx')).toBeLessThan(extensions.indexOf('.native.tsx'));
+    expect(extensions.indexOf('.native.tsx')).toBeLessThan(extensions.indexOf('.tsx'));
   });
 });

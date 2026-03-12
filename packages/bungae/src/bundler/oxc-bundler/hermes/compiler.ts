@@ -40,14 +40,7 @@ export interface HermesCompileOptions {
 export async function compileToHermesBytecode(
   options: HermesCompileOptions,
 ): Promise<HermesCompileResult> {
-  const {
-    input,
-    output,
-    sourceMap = true,
-    inputSourceMap,
-    optimize = true,
-    projectRoot,
-  } = options;
+  const { input, output, sourceMap = true, inputSourceMap, optimize = true, projectRoot } = options;
 
   // Find hermesc binary
   const hermescPath = findHermesc(projectRoot);
@@ -62,10 +55,7 @@ export async function compileToHermesBytecode(
   }
 
   // Build hermesc arguments
-  const args: string[] = [
-    '-emit-binary',
-    '-out', output,
-  ];
+  const args: string[] = ['-emit-binary', '-out', output];
 
   if (optimize) {
     args.push('-O');
@@ -93,9 +83,7 @@ export async function compileToHermesBytecode(
       timeout: 300_000, // 5 minutes max
     });
   } catch (error: any) {
-    throw new Error(
-      `Hermes compilation failed: ${error.stderr || error.message}`,
-    );
+    throw new Error(`Hermes compilation failed: ${error.stderr || error.message}`);
   }
 
   const duration = Date.now() - startTime;

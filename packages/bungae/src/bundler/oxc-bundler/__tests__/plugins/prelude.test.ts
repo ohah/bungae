@@ -15,12 +15,12 @@ describe('generatePreludeCode', () => {
 
   it('should set process.env.NODE_ENV to development', () => {
     const code = generatePreludeCode(true, 'ios');
-    expect(code).toContain("process.env.NODE_ENV = \"development\"");
+    expect(code).toContain('process.env.NODE_ENV = "development"');
   });
 
   it('should set process.env.NODE_ENV to production', () => {
     const code = generatePreludeCode(false, 'ios');
-    expect(code).toContain("process.env.NODE_ENV = \"production\"");
+    expect(code).toContain('process.env.NODE_ENV = "production"');
   });
 
   it('should set up __BUNDLE_START_TIME__', () => {

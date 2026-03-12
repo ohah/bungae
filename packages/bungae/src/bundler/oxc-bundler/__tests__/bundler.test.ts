@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
 import { tmpdir } from 'os';
+import { join } from 'path';
 
 import type { ResolvedConfig } from '../../../config/types';
 
@@ -101,10 +101,7 @@ export default greeting;
   });
 
   it('should bundle with source map in dev mode', async () => {
-    writeFileSync(
-      join(testDir, 'index.ts'),
-      'export const x = 42;\n',
-    );
+    writeFileSync(join(testDir, 'index.ts'), 'export const x = 42;\n');
 
     const { buildWithOxc } = await import('../bundler');
     const config = createTestConfig({
@@ -123,10 +120,7 @@ export default greeting;
   });
 
   it('should bundle with inline source map', async () => {
-    writeFileSync(
-      join(testDir, 'index.ts'),
-      'export const x = 42;\n',
-    );
+    writeFileSync(join(testDir, 'index.ts'), 'export const x = 42;\n');
 
     const { buildWithOxc } = await import('../bundler');
     const config = createTestConfig({
@@ -144,10 +138,7 @@ export default greeting;
   });
 
   it('should handle JSON imports', async () => {
-    writeFileSync(
-      join(testDir, 'data.json'),
-      JSON.stringify({ name: 'test', version: '1.0' }),
-    );
+    writeFileSync(join(testDir, 'data.json'), JSON.stringify({ name: 'test', version: '1.0' }));
     writeFileSync(
       join(testDir, 'index.ts'),
       `

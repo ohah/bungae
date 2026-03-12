@@ -22,10 +22,7 @@ export interface PreludeOptions {
   preludeModules?: string[];
 }
 
-export function preludePlugin(
-  config: ResolvedConfig,
-  options: PreludeOptions = {},
-): Plugin {
+export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = {}): Plugin {
   const { dev, platform } = config;
   const { preludeModules = [] } = options;
 
@@ -52,15 +49,9 @@ export function preludePlugin(
         const preludeCode = generatePreludeCode(dev, platform);
 
         // Build prelude imports
-        const preludeImports = preludeModules
-          .map((mod) => `import '${mod}';`)
-          .join('\n');
+        const preludeImports = preludeModules.map((mod) => `import '${mod}';`).join('\n');
 
-        const modifiedSource = [
-          preludeCode,
-          preludeImports,
-          originalSource,
-        ]
+        const modifiedSource = [preludeCode, preludeImports, originalSource]
           .filter(Boolean)
           .join('\n');
 
