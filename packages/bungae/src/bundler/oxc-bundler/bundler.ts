@@ -83,12 +83,22 @@ export async function buildWithOxc(
     ],
   });
 
+  // Resolve prelude + polyfills (must execute before any module code)
+  const prelude = generatePreludeCode(config.dev, config.platform);
+  const polyfillCode = await loadRNPolyfills(config.root);
+
   // Generate output
+  // Use intro to prepend globals/polyfills and wrap chunk in IIFE.
+  // IIFE prevents top-level `var` declarations (e.g., `var Headers` from
+  // fetch.js) from creating non-configurable properties on globalThis,
+  // which would break React Native's polyfillGlobal().
   const { output } = await bundle.generate({
     format: 'esm',
     strictExecutionOrder: true,
     sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
     minify,
+    intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
+    outro: '}).call(globalThis);',
   });
 
   await bundle.close();
@@ -101,12 +111,7 @@ export async function buildWithOxc(
     throw new Error('No output chunk generated');
   }
 
-  // Prepend React Native polyfills + globals (must be before any module code)
-  // Rolldown places entry code at the END of the bundle, but RN modules
-  // reference these globals immediately. Prepend them to ensure availability.
-  const prelude = generatePreludeCode(config.dev, config.platform);
-  const polyfillCode = await loadRNPolyfills(config.root);
-  let code = `var global = globalThis;\n${prelude}\n${polyfillCode}\n` + mainChunk.code;
+  let code = mainChunk.code;
   let map = mainChunk.map?.toString();
 
   // Handle inline source map
