@@ -77,21 +77,22 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
       if (handled) return;
     }
 
-    // Bundle request: *.bundle
-    if (pathname.endsWith('.bundle')) {
+    // Bundle request: *.bundle or *.bundle.js
+    if (pathname.endsWith('.bundle') || pathname.endsWith('.bundle.js')) {
       await handleBundleRequest(res, devEngine, config);
       return;
     }
 
-    // Source map request: *.map
+    // Source map request: *.map or *.bundle.map
     if (pathname.endsWith('.map')) {
       await handleSourceMapRequest(res, devEngine);
       return;
     }
 
-    // Status endpoint
-    if (pathname === '/status') {
-      sendJson(res, 200, { status: 'packager-status:running' });
+    // Status endpoint — RN native code expects exact plain text "packager-status:running"
+    // (RCTBundleURLProvider.mm does string comparison, not JSON parsing)
+    if (pathname === '/status' || pathname === '/status.txt') {
+      sendText(res, 200, 'packager-status:running');
       return;
     }
 
