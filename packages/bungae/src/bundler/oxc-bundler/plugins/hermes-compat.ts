@@ -1,19 +1,39 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * Hermes engine doesn't support:
- * - Class expressions (`var Foo = class Foo {}`)
- * - Private class fields (`#field`)
+ * Handles two incompatibilities between Rolldown's output and React Native:
  *
- * Rolldown generates class expressions when bundling ESM modules,
- * and doesn't support ES5 target natively (minimum is ES2015).
+ * 1. ES5 downlevel (Hermes):
+ *    Hermes doesn't support class expressions or private fields.
+ *    Rolldown generates these when bundling ESM modules (minimum ES2015).
+ *    → SWC `renderChunk` with `target: 'es5'` converts them in one pass.
  *
- * Solution: SWC `renderChunk` with `target: 'es5'` to convert
- * class → function and private fields → properties in one pass
- * on the final bundle output (~200ms for 4MB bundle).
+ * 2. Configurable exports (React Native dev mode):
+ *    Rolldown's runtime helpers (__exportAll, __copyProps) create module
+ *    exports with `configurable: false` (Object.defineProperty default).
+ *    React Native's `deepFreezeAndThrowOnMutationInDev` tries to redefine
+ *    these properties, causing "property is not configurable" errors.
+ *    → Patch __defProp to always set `configurable: true`.
  */
 
 import type { Plugin } from 'rolldown';
+
+/**
+ * Patch Rolldown's __defProp to always set configurable: true.
+ *
+ * Rolldown's runtime uses __defProp (= Object.defineProperty) to create
+ * module exports, but doesn't set configurable: true. React Native's
+ * deepFreezeAndThrowOnMutationInDev needs configurable properties to
+ * add mutation-throwing setters in dev mode.
+ */
+function patchRolldownRuntime(code: string): string {
+  // Replace: var __defProp = Object.defineProperty;
+  // With: a wrapper that forces configurable: true
+  return code.replace(
+    /var __defProp = Object\.defineProperty;/,
+    `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
+  );
+}
 
 export function hermesCompatPlugin(): Plugin {
   return {
@@ -38,8 +58,11 @@ export function hermesCompatPlugin(): Plugin {
             sourceMaps: true,
           });
 
+          // Patch Rolldown runtime for React Native compatibility
+          const patched = patchRolldownRuntime(result.code);
+
           return {
-            code: result.code,
+            code: patched,
             map: result.map || undefined,
           };
         } catch (error: any) {

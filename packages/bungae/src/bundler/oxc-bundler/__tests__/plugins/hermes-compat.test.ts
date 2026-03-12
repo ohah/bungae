@@ -86,4 +86,14 @@ describe('hermesCompatPlugin', () => {
     expect(result).not.toBeNull();
     expect(result.code).not.toContain('= class');
   });
+
+  it('should patch __defProp to set configurable: true', async () => {
+    const code = `var __defProp = Object.defineProperty;
+var obj = {};
+__defProp(obj, "foo", { get: function() { return 1; }, enumerable: true });`;
+    const result = await callRenderChunk(code);
+    expect(result).not.toBeNull();
+    expect(result.code).not.toContain('var __defProp = Object.defineProperty;');
+    expect(result.code).toContain('desc.configurable = true');
+  });
 });
