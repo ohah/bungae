@@ -53,6 +53,93 @@ function createTestConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConf
   } as ResolvedConfig;
 }
 
+describe('createRolldownOptions', () => {
+  it('should create input and output options', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({
+      root: '/tmp/test',
+      entry: 'index.ts',
+    });
+
+    const { inputOptions, outputOptions } = createRolldownOptions(config);
+
+    expect(inputOptions.input).toContain('index.ts');
+    expect(inputOptions.platform).toBe('neutral');
+    expect(inputOptions.cwd).toBe('/tmp/test');
+    expect(inputOptions.resolve).toBeDefined();
+    expect(inputOptions.plugins).toBeDefined();
+    expect(Array.isArray(inputOptions.plugins)).toBe(true);
+
+    expect(outputOptions.format).toBe('esm');
+    expect(outputOptions.strictExecutionOrder).toBe(true);
+  });
+
+  it('should disable treeshake in dev mode', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({ dev: true });
+
+    const { inputOptions } = createRolldownOptions(config, { dev: true });
+    expect(inputOptions.treeshake).toBe(false);
+  });
+
+  it('should enable treeshake in prod mode', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({ dev: false });
+
+    const { inputOptions } = createRolldownOptions(config, { dev: false });
+    expect(inputOptions.treeshake).toBe(true);
+  });
+
+  it('should include extra plugins when provided', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig();
+
+    const extraPlugin = { name: 'test-plugin' };
+    const { inputOptions } = createRolldownOptions(config, {
+      extraPlugins: [extraPlugin],
+    });
+
+    const plugins = inputOptions.plugins as any[];
+    const names = plugins.map((p) => p.name || '');
+    expect(names).toContain('test-plugin');
+  });
+
+  it('should configure sourcemap based on options', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig();
+
+    const { outputOptions: opts1 } = createRolldownOptions(config, { sourcemap: true });
+    expect(opts1.sourcemap).toBe(true);
+
+    const { outputOptions: opts2 } = createRolldownOptions(config, { sourcemap: false });
+    expect(opts2.sourcemap).toBe(false);
+
+    const { outputOptions: opts3 } = createRolldownOptions(config, { sourcemap: 'inline' });
+    expect(opts3.sourcemap).toBe(true);
+  });
+
+  it('should set resolve extensions including platform variants', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({ platform: 'ios' });
+
+    const { inputOptions } = createRolldownOptions(config);
+    const extensions = inputOptions.resolve?.extensions as string[];
+    expect(extensions).toBeDefined();
+    expect(extensions.some((ext) => ext.includes('.ios.'))).toBe(true);
+  });
+
+  it('should set react-native mainFields', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig();
+
+    const { inputOptions } = createRolldownOptions(config);
+    const mainFields = inputOptions.resolve?.mainFields;
+    expect(mainFields).toContain('react-native');
+    expect(mainFields).toContain('browser');
+    expect(mainFields).toContain('main');
+  });
+});
+
 describe('buildWithOxc', () => {
   const testDir = join(tmpdir(), 'bungae-oxc-bundler-test');
 
