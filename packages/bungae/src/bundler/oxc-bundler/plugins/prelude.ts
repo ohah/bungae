@@ -74,5 +74,7 @@ process.env = process.env || {};
 process.env.NODE_ENV = ${JSON.stringify(dev ? 'development' : 'production')};
 globalThis.__DEV__ = __DEV__;
 globalThis.process = process;
+globalThis.__BUNGAE_BUNDLER__ = true;
+globalThis.__BUNGAE_VERSION__ = "oxc";
 `.trim();
 }
