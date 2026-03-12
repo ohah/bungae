@@ -12,6 +12,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 
+import type { InputOptions, OutputOptions, Plugin } from 'rolldown';
 import { rolldown } from 'rolldown';
 
 import type { ResolvedConfig } from '../../config/types';
@@ -24,9 +25,71 @@ import {
   assetPlugin,
   preludePlugin,
   hermesCompatPlugin,
+  hmrClientReplacePlugin,
+  reactRefreshPlugin,
   generatePreludeCode,
 } from './plugins';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
+
+export interface RolldownOptionsResult {
+  inputOptions: InputOptions;
+  outputOptions: OutputOptions;
+}
+
+/**
+ * Create shared Rolldown input/output options.
+ * Used by both buildWithOxc() and OxcDevEngine.
+ */
+export function createRolldownOptions(
+  config: ResolvedConfig,
+  options: {
+    sourcemap?: boolean | 'inline' | 'hidden';
+    minify?: boolean;
+    dev?: boolean;
+    extraPlugins?: Plugin[];
+  } = {},
+): RolldownOptionsResult {
+  const {
+    sourcemap = config.dev ? true : false,
+    minify: minifyOpt = config.minify,
+    dev = config.dev,
+    extraPlugins = [],
+  } = options;
+
+  const entryPath = resolve(config.root, config.entry);
+  const preludeModules = resolvePreludeModules(config);
+  const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
+
+  const inputOptions: InputOptions = {
+    input: entryPath,
+    platform: 'neutral',
+    cwd: config.root,
+    resolve: {
+      extensions,
+      mainFields: ['react-native', 'browser', 'main', 'module'],
+      conditionNames: ['react-native', 'import', 'require', 'default'],
+    },
+    treeshake: dev ? false : true,
+    plugins: [
+      preludePlugin(config, { preludeModules }),
+      flowStripPlugin(config),
+      assetPlugin(config),
+      jsonPlugin(),
+      platformResolverPlugin(config),
+      hermesCompatPlugin(),
+      ...extraPlugins,
+    ],
+  };
+
+  const outputOptions: OutputOptions = {
+    format: 'esm',
+    strictExecutionOrder: true,
+    sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
+    minify: minifyOpt,
+  };
+
+  return { inputOptions, outputOptions };
+}
 
 /**
  * Build React Native bundle using Rolldown
@@ -51,37 +114,13 @@ export async function buildWithOxc(
   const startTime = Date.now();
   console.log('⚡ Bundling with Rolldown...');
 
-  // Resolve prelude modules (InitializeCore, etc.)
-  const preludeModules = resolvePreludeModules(config);
-
-  // Build extension list for Rolldown resolver
-  const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
+  const { inputOptions, outputOptions } = createRolldownOptions(config, {
+    sourcemap,
+    minify,
+  });
 
   // Configure Rolldown
-  const bundle = await rolldown({
-    input: entryPath,
-    platform: 'neutral', // RN is neither browser nor node
-    cwd: config.root,
-
-    resolve: {
-      extensions,
-      mainFields: ['react-native', 'browser', 'main', 'module'],
-      conditionNames: ['react-native', 'import', 'require', 'default'],
-    },
-
-    // __DEV__ and process.env.NODE_ENV are set in the prelude plugin
-
-    treeshake: config.dev ? false : true,
-
-    plugins: [
-      preludePlugin(config, { preludeModules }),
-      flowStripPlugin(config),
-      assetPlugin(config),
-      jsonPlugin(),
-      platformResolverPlugin(config),
-      hermesCompatPlugin(),
-    ],
-  });
+  const bundle = await rolldown(inputOptions);
 
   // Resolve prelude + polyfills (must execute before any module code)
   const prelude = generatePreludeCode(config.dev, config.platform);
@@ -93,10 +132,7 @@ export async function buildWithOxc(
   // fetch.js) from creating non-configurable properties on globalThis,
   // which would break React Native's polyfillGlobal().
   const { output } = await bundle.generate({
-    format: 'esm',
-    strictExecutionOrder: true,
-    sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
-    minify,
+    ...outputOptions,
     intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
     outro: '}).call(globalThis);',
   });

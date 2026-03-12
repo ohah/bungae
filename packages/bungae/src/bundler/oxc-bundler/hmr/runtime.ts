@@ -6,6 +6,8 @@
  *
  * This replaces RN's built-in HMRClient.js since Metro's protocol
  * is incompatible with Rolldown's ESM scope-hoisted output.
+ *
+ * Injected via Rolldown DevEngine's `devMode.implement` option.
  */
 
 declare global {
@@ -13,12 +15,76 @@ declare global {
   var __turboModuleProxy: (moduleName: string) => any;
   var nativeModuleProxy: Record<string, any>;
   var globalEvalWithSourceUrl: (code: string, sourceURL?: string) => void;
+  var __ReactRefresh: any;
 }
 
 // DO NOT EDIT THIS CLASS NAME (`DevRuntime`)
 declare const DevRuntime: any;
 
 const BaseDevRuntime = DevRuntime;
+
+/**
+ * Check if a module's exports constitute a React Refresh boundary.
+ * A boundary is a module that only exports React components.
+ */
+function isReactRefreshBoundary(moduleExports: Record<string, any>): boolean {
+  const ReactRefresh = globalThis.__ReactRefresh;
+  if (!ReactRefresh) return false;
+
+  if (typeof moduleExports === 'function') {
+    return ReactRefresh.isLikelyComponentType(moduleExports);
+  }
+
+  if (typeof moduleExports === 'object' && moduleExports !== null) {
+    const hasDefaultExport = 'default' in moduleExports;
+    let hasNonComponentExport = false;
+
+    for (const key of Object.keys(moduleExports)) {
+      if (key === '__esModule') continue;
+      const val = moduleExports[key];
+      if (typeof val === 'function' && !ReactRefresh.isLikelyComponentType(val)) {
+        hasNonComponentExport = true;
+      }
+    }
+
+    if (hasDefaultExport && !hasNonComponentExport) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Enqueue a React Refresh update with debouncing.
+ */
+let pendingUpdates = 0;
+let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+
+function enqueueUpdate(): void {
+  pendingUpdates++;
+
+  if (refreshTimeout != null) {
+    clearTimeout(refreshTimeout);
+  }
+
+  refreshTimeout = setTimeout(() => {
+    refreshTimeout = null;
+    const updates = pendingUpdates;
+    pendingUpdates = 0;
+
+    if (updates > 0) {
+      const ReactRefresh = globalThis.__ReactRefresh;
+      if (ReactRefresh) {
+        try {
+          ReactRefresh.performReactRefresh();
+        } catch (error) {
+          console.error('[HMR] React Refresh failed:', error);
+        }
+      }
+    }
+  }, 50);
+}
 
 class ModuleHotContext {
   acceptCallbacks: Array<{ deps: string[]; fn: (exports: any) => void }> = [];
@@ -27,6 +93,17 @@ class ModuleHotContext {
     private moduleId: string,
     private socketSend: (msg: string) => void,
   ) {}
+
+  get refresh() {
+    return globalThis.__ReactRefresh;
+  }
+
+  get refreshUtils() {
+    return {
+      isReactRefreshBoundary,
+      enqueueUpdate,
+    };
+  }
 
   accept(...args: any[]) {
     if (args.length === 1) {

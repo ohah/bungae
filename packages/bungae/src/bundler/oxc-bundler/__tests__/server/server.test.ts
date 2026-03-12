@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import type { HMRServerMessage, HMRClientMessage } from '../../hmr/types';
+import type { HMRServerMessage, HMRClientMessage, HMRUpdateResult } from '../../hmr/types';
 
 describe('OXC Server - HMR Protocol', () => {
   it('should serialize update-start message', () => {
@@ -72,10 +72,10 @@ describe('OXC Server - HMR Protocol', () => {
     expect(parsed.modules).toHaveLength(2);
   });
 
-  it('should handle HMR update sequence correctly', () => {
+  it('should handle HMR Patch update sequence correctly', () => {
     const messages: HMRServerMessage[] = [];
 
-    // Simulate a Patch update sequence
+    // Simulate a Patch update sequence from DevEngine
     messages.push({ type: 'hmr:update-start' });
     messages.push({ type: 'hmr:update', code: 'var x = 1;' });
     messages.push({ type: 'hmr:update-done' });
@@ -84,6 +84,124 @@ describe('OXC Server - HMR Protocol', () => {
     expect(messages[0]!.type).toBe('hmr:update-start');
     expect(messages[1]!.type).toBe('hmr:update');
     expect(messages[2]!.type).toBe('hmr:update-done');
+  });
+
+  it('should handle FullReload update correctly', () => {
+    const messages: HMRServerMessage[] = [];
+
+    // Simulate a FullReload from DevEngine
+    messages.push({ type: 'hmr:reload' });
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.type).toBe('hmr:reload');
+  });
+});
+
+describe('OXC Server - HMR Update Dispatch', () => {
+  it('should dispatch Patch update as update-start/update/update-done sequence', () => {
+    const sent: string[] = [];
+    const mockClient = {
+      id: 'client-0',
+      platform: 'ios',
+      bundleEntry: 'index.js',
+      send: (msg: string) => sent.push(msg),
+    };
+
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: {
+            type: 'Patch',
+            code: 'console.log("patched")',
+            filename: 'App.tsx',
+            hmrBoundaries: [],
+          },
+        },
+      ],
+      changedFiles: ['App.tsx'],
+    };
+
+    // Simulate server dispatch logic
+    for (const clientUpdate of result.updates) {
+      const update = clientUpdate.update;
+      if (update.type === 'Patch') {
+        mockClient.send(JSON.stringify({ type: 'hmr:update-start' }));
+        mockClient.send(JSON.stringify({ type: 'hmr:update', code: update.code }));
+        mockClient.send(JSON.stringify({ type: 'hmr:update-done' }));
+      }
+    }
+
+    expect(sent).toHaveLength(3);
+    expect(JSON.parse(sent[0]!).type).toBe('hmr:update-start');
+    expect(JSON.parse(sent[1]!).type).toBe('hmr:update');
+    expect(JSON.parse(sent[1]!).code).toBe('console.log("patched")');
+    expect(JSON.parse(sent[2]!).type).toBe('hmr:update-done');
+  });
+
+  it('should dispatch FullReload update as reload message', () => {
+    const sent: string[] = [];
+    const mockClient = {
+      id: 'client-0',
+      platform: 'ios',
+      bundleEntry: 'index.js',
+      send: (msg: string) => sent.push(msg),
+    };
+
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: {
+            type: 'FullReload',
+            reason: 'non-component change',
+          },
+        },
+      ],
+      changedFiles: ['config.ts'],
+    };
+
+    for (const clientUpdate of result.updates) {
+      const update = clientUpdate.update;
+      if (update.type === 'FullReload') {
+        mockClient.send(JSON.stringify({ type: 'hmr:reload' }));
+      }
+    }
+
+    expect(sent).toHaveLength(1);
+    expect(JSON.parse(sent[0]!).type).toBe('hmr:reload');
+  });
+
+  it('should not send anything for Noop updates', () => {
+    const sent: string[] = [];
+    const mockClient = {
+      id: 'client-0',
+      platform: 'ios',
+      bundleEntry: 'index.js',
+      send: (msg: string) => sent.push(msg),
+    };
+
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: { type: 'Noop' },
+        },
+      ],
+      changedFiles: [],
+    };
+
+    for (const clientUpdate of result.updates) {
+      const update = clientUpdate.update;
+      if (update.type === 'Patch') {
+        mockClient.send(JSON.stringify({ type: 'hmr:update', code: (update as any).code }));
+      } else if (update.type === 'FullReload') {
+        mockClient.send(JSON.stringify({ type: 'hmr:reload' }));
+      }
+      // Noop: nothing
+    }
+
+    expect(sent).toHaveLength(0);
   });
 });
 

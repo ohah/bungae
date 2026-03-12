@@ -17,7 +17,7 @@ import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/serve
 import { parseRequestUrl, sendJson, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { OxcDevEngine } from '../hmr';
-import type { HMRClient, HMRClientMessage, HMRServerError } from '../hmr/types';
+import type { HMRClient, HMRClientMessage, HMRServerError, HMRUpdateResult } from '../hmr/types';
 
 /**
  * Start the OXC dev server
@@ -138,7 +138,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     // HMR WebSocket endpoint
     if (url.pathname === '/hot') {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        handleHMRConnection(ws, hmrClients, clientIdCounter++);
+        handleHMRConnection(ws, hmrClients, clientIdCounter++, devEngine);
       });
       return;
     }
@@ -170,11 +170,39 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
 
   // --- DevEngine Events ---
 
-  // On successful rebuild: send reload to all HMR clients
-  devEngine.on('buildDone', () => {
-    for (const client of hmrClients.values()) {
-      client.send(JSON.stringify({ type: 'hmr:reload' }));
+  // On HMR update from DevEngine: send patch or reload to clients
+  devEngine.on('hmrUpdate', (result: HMRUpdateResult) => {
+    for (const clientUpdate of result.updates) {
+      const update = clientUpdate.update;
+
+      // Find the target client, or broadcast to all
+      const targetClient = hmrClients.get(clientUpdate.clientId);
+      const targets = targetClient ? [targetClient] : Array.from(hmrClients.values());
+
+      for (const client of targets) {
+        switch (update.type) {
+          case 'Patch':
+            client.send(JSON.stringify({ type: 'hmr:update-start' }));
+            client.send(JSON.stringify({ type: 'hmr:update', code: update.code }));
+            client.send(JSON.stringify({ type: 'hmr:update-done' }));
+            break;
+
+          case 'FullReload':
+            client.send(JSON.stringify({ type: 'hmr:reload' }));
+            break;
+
+          case 'Noop':
+            // Nothing to do
+            break;
+        }
+      }
     }
+  });
+
+  // On successful rebuild (initial or full): notify clients
+  devEngine.on('buildDone', () => {
+    // Initial build or full rebuild completed - clients already get
+    // the bundle via HTTP request, no need to send reload here
   });
 
   // On build failure: send error to all HMR clients
@@ -283,6 +311,7 @@ function handleHMRConnection(
   ws: WebSocket,
   clients: Map<string, HMRClient>,
   clientNum: number,
+  devEngine: OxcDevEngine,
 ): void {
   const clientId = `client-${clientNum}`;
   console.log(`[HMR] Client connected: ${clientId}`);
@@ -291,17 +320,32 @@ function handleHMRConnection(
     try {
       const message = JSON.parse(data.toString()) as HMRClientMessage;
 
-      if (message.type === 'hmr:connected') {
-        const client: HMRClient = {
-          id: clientId,
-          platform: message.platform,
-          bundleEntry: message.bundleEntry,
-          send: (msg) => {
-            if (ws.readyState === ws.OPEN) ws.send(msg);
-          },
-        };
-        clients.set(clientId, client);
-        console.log(`[HMR] Client registered: ${clientId} (${message.platform})`);
+      switch (message.type) {
+        case 'hmr:connected': {
+          const client: HMRClient = {
+            id: clientId,
+            platform: message.platform,
+            bundleEntry: message.bundleEntry,
+            send: (msg) => {
+              if (ws.readyState === ws.OPEN) ws.send(msg);
+            },
+          };
+          clients.set(clientId, client);
+          console.log(`[HMR] Client registered: ${clientId} (${message.platform})`);
+          break;
+        }
+
+        case 'hmr:module-registered':
+          devEngine.registerModules(clientId, message.modules).catch((err) => {
+            console.error('[HMR] Failed to register modules:', err);
+          });
+          break;
+
+        case 'hmr:invalidate':
+          devEngine.invalidate(message.moduleId).catch((err) => {
+            console.error('[HMR] Failed to invalidate module:', err);
+          });
+          break;
       }
     } catch (error) {
       console.error('[HMR] Failed to process message:', error);
@@ -311,6 +355,7 @@ function handleHMRConnection(
   ws.on('close', () => {
     console.log(`[HMR] Client disconnected: ${clientId}`);
     clients.delete(clientId);
+    devEngine.removeClient(clientId).catch(() => {});
   });
 
   ws.on('error', (error) => {
@@ -338,8 +383,8 @@ function printServerInfo(host: string, port: number, config: ResolvedConfig): vo
   console.log(`  http://${host}:${port}`);
   console.log(`  Platform: ${config.platform}`);
   console.log(`  Entry: ${config.entry}`);
-  console.log(`  HMR: ws://${host}:${port}/hot (full reload)`);
-  console.log(`  Bundler: Rolldown (buildWithOxc)`);
+  console.log(`  HMR: ws://${host}:${port}/hot (patch + Fast Refresh)`);
+  console.log(`  Bundler: Rolldown DevEngine`);
   console.log('');
   console.log('📱 Terminal shortcuts:');
   console.log('   r - Reload app');

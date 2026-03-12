@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import type { HMRServerMessage, HMRClientMessage, HMRClient } from '../../hmr/types';
+import type { HMRServerMessage, HMRClientMessage, HMRClient, HMRUpdateResult } from '../../hmr/types';
 
 describe('HMR Types', () => {
   it('should construct server messages', () => {
@@ -61,5 +61,77 @@ describe('HMR Types', () => {
     client.send(JSON.stringify({ type: 'hmr:reload' }));
     expect(messages).toHaveLength(1);
     expect(JSON.parse(messages[0]!)).toEqual({ type: 'hmr:reload' });
+  });
+
+  it('should construct HMRUpdateResult with Patch updates', () => {
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: {
+            type: 'Patch',
+            code: 'console.log("patched")',
+            filename: 'App.tsx',
+            hmrBoundaries: [],
+          },
+        },
+      ],
+      changedFiles: ['App.tsx'],
+    };
+
+    expect(result.updates).toHaveLength(1);
+    expect(result.updates[0]!.update.type).toBe('Patch');
+    expect(result.changedFiles).toEqual(['App.tsx']);
+  });
+
+  it('should construct HMRUpdateResult with FullReload', () => {
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: {
+            type: 'FullReload',
+            reason: 'config changed',
+          },
+        },
+      ],
+      changedFiles: ['bungae.config.ts'],
+    };
+
+    expect(result.updates[0]!.update.type).toBe('FullReload');
+  });
+
+  it('should construct HMRUpdateResult with mixed update types', () => {
+    const result: HMRUpdateResult = {
+      updates: [
+        {
+          clientId: 'client-0',
+          update: {
+            type: 'Patch',
+            code: 'var x = 1;',
+            filename: 'App.tsx',
+            hmrBoundaries: [],
+          },
+        },
+        {
+          clientId: 'client-1',
+          update: {
+            type: 'FullReload',
+          },
+        },
+        {
+          clientId: 'client-2',
+          update: {
+            type: 'Noop',
+          },
+        },
+      ],
+      changedFiles: ['App.tsx'],
+    };
+
+    expect(result.updates).toHaveLength(3);
+    expect(result.updates[0]!.update.type).toBe('Patch');
+    expect(result.updates[1]!.update.type).toBe('FullReload');
+    expect(result.updates[2]!.update.type).toBe('Noop');
   });
 });

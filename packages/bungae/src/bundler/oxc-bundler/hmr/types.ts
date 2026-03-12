@@ -5,6 +5,8 @@
  * Metro's __d()/__r() protocol is incompatible with Rolldown's ESM output.
  */
 
+import type { BindingClientHmrUpdate } from 'rolldown/experimental';
+
 /** Server → Client messages */
 export type HMRServerMessage =
   | { type: 'hmr:update-start' }
@@ -36,4 +38,13 @@ export interface HMRClient {
   platform: string;
   bundleEntry: string;
   send: (msg: string) => void;
+}
+
+/** Re-export Rolldown HMR update types */
+export type { BindingClientHmrUpdate };
+
+/** HMR update result from DevEngine */
+export interface HMRUpdateResult {
+  updates: BindingClientHmrUpdate[];
+  changedFiles: string[];
 }
