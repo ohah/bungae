@@ -1,13 +1,11 @@
 /**
  * OXC Dev Server
  *
- * Development server for oxc-bundler using Rolldown's DevEngine.
- * Provides HTTP bundle serving, WebSocket HMR, and DevTools integration.
+ * Development server for oxc-bundler.
+ * Uses buildWithOxc() for full rebuilds + file watcher for change detection.
+ * On file change: rebuild → cache → send hmr:reload to connected clients.
  *
- * Architecture:
- * - DevEngine handles: file watching, incremental builds, HMR update generation
- * - Server handles: HTTP serving, WebSocket HMR protocol, DevTools middleware
- * - Reuses: terminal-actions, dev-middleware from graph-bundler
+ * Reuses: terminal-actions, dev-middleware, server utils from graph-bundler.
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -18,22 +16,17 @@ import type { ResolvedConfig } from '../../../config/types';
 import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/server/dev-middleware';
 import { parseRequestUrl, sendJson, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { OxcDevEngine, type HmrUpdate } from '../hmr';
+import { OxcDevEngine } from '../hmr';
 import type { HMRClient, HMRClientMessage, HMRServerError } from '../hmr/types';
-
-export interface OxcServerOptions {
-  host?: string;
-  port?: number;
-}
 
 /**
  * Start the OXC dev server
  */
 export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
-  const host = config.server?.host || '0.0.0.0';
+  const host = '0.0.0.0';
   const port = config.server?.port || 8081;
 
-  // Initialize DevEngine
+  // Initialize DevEngine (buildWithOxc + file watcher)
   const devEngine = new OxcDevEngine(config, { host, port });
 
   // Track HMR clients
@@ -86,7 +79,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
 
     // Bundle request: *.bundle
     if (pathname.endsWith('.bundle')) {
-      await handleBundleRequest(req, res, devEngine, config, url);
+      await handleBundleRequest(res, devEngine, config);
       return;
     }
 
@@ -125,7 +118,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
       sendText(
         res,
         200,
-        '<html><body><h1>Bungae Dev Server (OXC)</h1><p>Running with Rolldown DevEngine</p></body></html>',
+        '<html><body><h1>Bungae Dev Server (OXC)</h1><p>Running with Rolldown</p></body></html>',
         'text/html',
       );
       return;
@@ -144,7 +137,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     // HMR WebSocket endpoint
     if (url.pathname === '/hot') {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        handleHMRConnection(ws, devEngine, hmrClients, clientIdCounter++);
+        handleHMRConnection(ws, hmrClients, clientIdCounter++);
       });
       return;
     }
@@ -174,30 +167,16 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     socket.destroy();
   });
 
-  // --- DevEngine HMR Events ---
-  devEngine.on('hmrUpdates', (updates: HmrUpdate[]) => {
-    for (const update of updates) {
-      const client = hmrClients.get(update.clientId);
-      if (!client) continue;
+  // --- DevEngine Events ---
 
-      switch (update.update.type) {
-        case 'Patch':
-          client.send(JSON.stringify({ type: 'hmr:update-start' }));
-          client.send(JSON.stringify({ type: 'hmr:update', code: update.update.code }));
-          client.send(JSON.stringify({ type: 'hmr:update-done' }));
-          break;
-
-        case 'FullReload':
-          client.send(JSON.stringify({ type: 'hmr:reload' }));
-          break;
-
-        case 'Noop':
-          // No action needed
-          break;
-      }
+  // On successful rebuild: send reload to all HMR clients
+  devEngine.on('buildDone', () => {
+    for (const client of hmrClients.values()) {
+      client.send(JSON.stringify({ type: 'hmr:reload' }));
     }
   });
 
+  // On build failure: send error to all HMR clients
   devEngine.on('buildFailed', (error: Error) => {
     const errorPayload: HMRServerError = {
       type: 'BuildError',
@@ -205,7 +184,6 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
       errors: [{ description: error.message }],
     };
 
-    // Broadcast error to all clients
     for (const client of hmrClients.values()) {
       client.send(JSON.stringify({ type: 'hmr:error', payload: errorPayload }));
     }
@@ -229,8 +207,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
   });
 
   // --- Start ---
-  // Start DevEngine first (it needs to build the initial bundle)
-  console.log('⚡ Starting Rolldown DevEngine...');
+  console.log('⚡ Starting Rolldown build...');
   await devEngine.start();
 
   await new Promise<void>((resolve) => {
@@ -254,16 +231,13 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
 // --- Request Handlers ---
 
 async function handleBundleRequest(
-  _req: IncomingMessage,
   res: ServerResponse,
   devEngine: OxcDevEngine,
   config: ResolvedConfig,
-  _url: URL,
 ): Promise<void> {
   try {
     const bundle = await devEngine.getBundle();
 
-    // Add source map URL
     let code = bundle.code;
     const entryName = config.entry.replace(/\.(js|ts|tsx)$/, '');
     if (bundle.map) {
@@ -306,49 +280,36 @@ async function handleSourceMapRequest(res: ServerResponse, devEngine: OxcDevEngi
 
 function handleHMRConnection(
   ws: WebSocket,
-  devEngine: OxcDevEngine,
   clients: Map<string, HMRClient>,
   clientNum: number,
 ): void {
   const clientId = `client-${clientNum}`;
   console.log(`[HMR] Client connected: ${clientId}`);
 
-  ws.on('message', async (data) => {
+  ws.on('message', (data) => {
     try {
       const message = JSON.parse(data.toString()) as HMRClientMessage;
 
-      switch (message.type) {
-        case 'hmr:connected': {
-          const client: HMRClient = {
-            id: clientId,
-            platform: message.platform,
-            bundleEntry: message.bundleEntry,
-            send: (msg) => {
-              if (ws.readyState === ws.OPEN) ws.send(msg);
-            },
-          };
-          clients.set(clientId, client);
-          console.log(`[HMR] Client registered: ${clientId} (${message.platform})`);
-          break;
-        }
-
-        case 'hmr:module-registered':
-          await devEngine.registerModules(clientId, message.modules);
-          break;
-
-        case 'hmr:invalidate':
-          console.log(`[HMR] Module invalidated: ${message.moduleId}`);
-          break;
+      if (message.type === 'hmr:connected') {
+        const client: HMRClient = {
+          id: clientId,
+          platform: message.platform,
+          bundleEntry: message.bundleEntry,
+          send: (msg) => {
+            if (ws.readyState === ws.OPEN) ws.send(msg);
+          },
+        };
+        clients.set(clientId, client);
+        console.log(`[HMR] Client registered: ${clientId} (${message.platform})`);
       }
     } catch (error) {
       console.error('[HMR] Failed to process message:', error);
     }
   });
 
-  ws.on('close', async () => {
+  ws.on('close', () => {
     console.log(`[HMR] Client disconnected: ${clientId}`);
     clients.delete(clientId);
-    await devEngine.removeClient(clientId);
   });
 
   ws.on('error', (error) => {
@@ -365,9 +326,8 @@ function tryMiddleware(
 ): Promise<boolean> {
   return new Promise((resolve) => {
     middleware(req, res, () => {
-      resolve(false); // next() called = not handled
+      resolve(false);
     });
-    // If response is finished, it was handled
     res.on('finish', () => resolve(true));
   });
 }
@@ -377,8 +337,8 @@ function printServerInfo(host: string, port: number, config: ResolvedConfig): vo
   console.log(`  http://${host}:${port}`);
   console.log(`  Platform: ${config.platform}`);
   console.log(`  Entry: ${config.entry}`);
-  console.log(`  HMR: ws://${host}:${port}/hot`);
-  console.log(`  Bundler: Rolldown DevEngine`);
+  console.log(`  HMR: ws://${host}:${port}/hot (full reload)`);
+  console.log(`  Bundler: Rolldown (buildWithOxc)`);
   console.log('');
   console.log('📱 Terminal shortcuts:');
   console.log('   r - Reload app');

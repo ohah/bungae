@@ -24,7 +24,7 @@ describe('OxcDevEngine', () => {
     expect(engine.listenerCount('buildDone')).toBe(0);
   });
 
-  it('should support event listeners', () => {
+  it('should support buildDone event listeners', () => {
     const config = {
       root: '/tmp/test',
       entry: 'index.js',
@@ -41,19 +41,19 @@ describe('OxcDevEngine', () => {
 
     const engine = new OxcDevEngine(config as any, { host: '0.0.0.0', port: 8081 });
 
-    let buildDoneCalled = false;
-    engine.on('buildDone', () => {
-      buildDoneCalled = true;
+    let buildResult: any = null;
+    engine.on('buildDone', (result) => {
+      buildResult = result;
     });
 
     expect(engine.listenerCount('buildDone')).toBe(1);
 
-    // Manually emit to test
-    engine.emit('buildDone', { code: 'test', map: undefined });
-    expect(buildDoneCalled).toBe(true);
+    engine.emit('buildDone', { code: 'var x = 1;', map: undefined });
+    expect(buildResult).toBeDefined();
+    expect(buildResult.code).toBe('var x = 1;');
   });
 
-  it('should handle buildFailed events', () => {
+  it('should support buildFailed event', () => {
     const config = {
       root: '/tmp/test',
       entry: 'index.js',
@@ -76,11 +76,11 @@ describe('OxcDevEngine', () => {
     });
 
     const testError = new Error('Build failed: syntax error');
-    engine.emit('buildFailed', testError);
-    expect(errorReceived).toBe(testError);
+    (engine as any).emit('buildFailed', testError);
+    expect(errorReceived!).toBe(testError);
   });
 
-  it('should handle hmrUpdates events', () => {
+  it('should support watchChange event', () => {
     const config = {
       root: '/tmp/test',
       entry: 'index.js',
@@ -97,19 +97,34 @@ describe('OxcDevEngine', () => {
 
     const engine = new OxcDevEngine(config as any, { host: '0.0.0.0', port: 8081 });
 
-    let receivedUpdates: any[] = [];
-    engine.on('hmrUpdates', (updates) => {
-      receivedUpdates = updates;
+    let changedFile: string | null = null;
+    engine.on('watchChange', (file) => {
+      changedFile = file;
     });
 
-    const updates = [
-      {
-        clientId: 'client-0',
-        update: { type: 'Patch' as const, code: 'console.log("updated")', filename: 'App.tsx' },
+    (engine as any).emit('watchChange', 'App.tsx');
+    expect(changedFile!).toBe('App.tsx');
+  });
+
+  it('should have no-op registerModules and removeClient', async () => {
+    const config = {
+      root: '/tmp/test',
+      entry: 'index.js',
+      platform: 'ios',
+      dev: true,
+      minify: false,
+      bundler: 'oxc' as const,
+      resolver: {
+        sourceExts: ['tsx', 'ts', 'jsx', 'js'],
+        assetExts: ['png', 'jpg'],
+        nodeModulesPaths: [],
       },
-    ];
-    engine.emit('hmrUpdates', updates);
-    expect(receivedUpdates).toHaveLength(1);
-    expect(receivedUpdates[0].update.type).toBe('Patch');
+    };
+
+    const engine = new OxcDevEngine(config as any, { host: '0.0.0.0', port: 8081 });
+
+    // These should not throw
+    await engine.registerModules('client-0', ['./App.tsx']);
+    await engine.removeClient('client-0');
   });
 });
