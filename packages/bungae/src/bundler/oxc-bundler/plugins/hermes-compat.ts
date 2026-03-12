@@ -2,11 +2,16 @@
  * Hermes Compatibility Plugin for Rolldown
  *
  * Downlevels JavaScript syntax that Hermes doesn't support:
- * - Private class fields (#field) → WeakMap-based polyfill
- * - Private methods (#method()) → WeakMap-based polyfill
+ * - Private class fields (#field) → string-key property polyfill (loose mode)
+ * - Private methods (#method()) → string-key property polyfill (loose mode)
  *
- * Uses SWC to transform the final output chunk, so it catches
+ * Uses SWC (loose mode) to transform the final output chunk, so it catches
  * both user code and Rolldown's own runtime (e.g., DevEngine runtime).
+ *
+ * Why loose mode: SWC's default (spec) mode uses WeakMap + comma expressions
+ * with class expressions (e.g., `Foo = (_x = new WeakMap(), class Foo1 { })`),
+ * which Hermes cannot parse. Loose mode uses string-key properties instead,
+ * avoiding the problematic comma expression pattern.
  *
  * Target: ES2020 (Hermes supports most ES2020 except private fields)
  */
@@ -41,7 +46,9 @@ export function hermesCompatPlugin(): Plugin {
                 syntax: 'ecmascript',
               },
               target: 'es2020',
-              // Private fields → WeakMap transform
+              // Loose mode: string-key properties instead of WeakMap
+              // Avoids comma expression + class expression pattern that Hermes can't parse
+              loose: true,
               transform: {
                 useDefineForClassFields: false,
               },
