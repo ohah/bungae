@@ -29,10 +29,17 @@ import type { Plugin } from 'rolldown';
 function patchRolldownRuntime(code: string): string {
   // Replace: var __defProp = Object.defineProperty;
   // With: a wrapper that forces configurable: true
-  return code.replace(
+  const patched = code.replace(
     /var __defProp = Object\.defineProperty;/,
     `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
   );
+  if (patched === code) {
+    console.warn(
+      '[hermes-compat] Failed to patch __defProp — Rolldown runtime pattern may have changed. ' +
+        'React Native dev mode may show "property is not configurable" errors.',
+    );
+  }
+  return patched;
 }
 
 export function hermesCompatPlugin(): Plugin {
