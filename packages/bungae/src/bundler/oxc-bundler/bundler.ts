@@ -83,7 +83,6 @@ export async function buildWithOxc(
   // Generate output
   const { output } = await bundle.generate({
     format: 'esm',
-    // @ts-expect-error - strictExecutionOrder is Rolldown-specific
     strictExecutionOrder: true,
     sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
     minify,
