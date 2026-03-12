@@ -81,8 +81,8 @@ function wrapWithRefreshBoundary(code: string, id: string): string {
   const prepend = `
 var __prev$RefreshReg$ = globalThis.$RefreshReg$;
 var __prev$RefreshSig$ = globalThis.$RefreshSig$;
-globalThis.$RefreshReg$ = function(type, id) { return __ReactRefresh.register(type, ${JSON.stringify(id)} + ' ' + id) }
-globalThis.$RefreshSig$ = function() { return __ReactRefresh.createSignatureFunctionForTransform(); }
+globalThis.$RefreshReg$ = function(type, id) { if (globalThis.__ReactRefresh) globalThis.__ReactRefresh.register(type, ${JSON.stringify(id)} + ' ' + id); }
+globalThis.$RefreshSig$ = function() { if (globalThis.__ReactRefresh) return globalThis.__ReactRefresh.createSignatureFunctionForTransform(); return function(type) { return type; }; }
 `;
 
   const append = `
