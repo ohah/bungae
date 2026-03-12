@@ -9,7 +9,7 @@
  * 2. Optionally compiles to Hermes bytecode
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 
 import { rolldown } from 'rolldown';
@@ -101,11 +101,12 @@ export async function buildWithOxc(
     throw new Error('No output chunk generated');
   }
 
-  // Prepend React Native globals (must be before any module code)
+  // Prepend React Native polyfills + globals (must be before any module code)
   // Rolldown places entry code at the END of the bundle, but RN modules
   // reference these globals immediately. Prepend them to ensure availability.
   const prelude = generatePreludeCode(config.dev, config.platform);
-  let code = `var global = globalThis;\n${prelude}\n` + mainChunk.code;
+  const polyfillCode = await loadRNPolyfills(config.root);
+  let code = `var global = globalThis;\n${prelude}\n${polyfillCode}\n` + mainChunk.code;
   let map = mainChunk.map?.toString();
 
   // Handle inline source map
@@ -186,6 +187,56 @@ function resolvePreludeModules(config: ResolvedConfig): string[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Load React Native polyfills (console, error-guard) from rn-get-polyfills.
+ * These are Flow files that need Babel + hermes-parser for type stripping.
+ * Same approach as Rollipop: read polyfill files → strip Flow → wrap in IIFE.
+ * Cached after first load since polyfills don't change during a session.
+ */
+let cachedPolyfillCode: string | null = null;
+
+async function loadRNPolyfills(projectRoot: string): Promise<string> {
+  if (cachedPolyfillCode !== null) return cachedPolyfillCode;
+
+  try {
+    // Get polyfill paths from React Native
+    const rnGetPolyfills = require(
+      require.resolve('react-native/rn-get-polyfills', { paths: [projectRoot] }),
+    ) as () => string[];
+    const polyfillPaths = rnGetPolyfills();
+
+    const babel = await import('@babel/core');
+
+    // Read each polyfill, strip Flow types with Babel, wrap in IIFE
+    const codes: string[] = [];
+    for (const polyfillPath of polyfillPaths) {
+      const source = readFileSync(polyfillPath, 'utf-8');
+      const result = await babel.transformAsync(source, {
+        filename: polyfillPath,
+        babelrc: false,
+        configFile: false,
+        sourceMaps: false,
+        plugins: [
+          [
+            require.resolve('babel-plugin-syntax-hermes-parser'),
+            { parseLangTypes: 'flow', reactRuntimeTarget: '19' },
+          ],
+          require.resolve('@babel/plugin-transform-flow-strip-types'),
+        ],
+      });
+      if (result?.code) {
+        codes.push(`(function(global){${result.code}})(globalThis);`);
+      }
+    }
+
+    cachedPolyfillCode = codes.join('\n');
+  } catch {
+    cachedPolyfillCode = '';
+  }
+
+  return cachedPolyfillCode;
 }
 
 function formatSize(bytes: number): string {
