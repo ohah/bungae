@@ -83,6 +83,7 @@
     "metro-source-map": "^0.83.3",
     "oxc-parser": "^0.108.0",
     "oxc-transform": "0.111.0",
+    "rolldown": "^1.0.0-rc.9",
     "source-map": "^0.7.4",
     "terser": "^5.15.0",
     "vlq": "^2.0.4",
