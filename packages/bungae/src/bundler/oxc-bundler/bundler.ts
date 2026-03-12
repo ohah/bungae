@@ -100,7 +100,9 @@ export async function buildWithOxc(
     throw new Error('No output chunk generated');
   }
 
-  let code = mainChunk.code;
+  // Prepend React Native globals (must be before any module code)
+  // `global` is used extensively by RN but doesn't exist in Hermes
+  let code = `var global = globalThis;\n` + mainChunk.code;
   let map = mainChunk.map?.toString();
 
   // Handle inline source map
