@@ -21,7 +21,7 @@ export { buildWithGraph, serveWithGraph } from './graph-bundler';
 export { buildWithBunTranspiler, serveWithBunTranspiler } from './bun-bundler';
 
 // OXC bundler with Rolldown (ESM, strictExecutionOrder, v2)
-export { buildWithOxc } from './oxc-bundler';
+export { buildWithOxc, serveWithOxc } from './oxc-bundler';
 export type { OxcBuildResult, OxcBuildOptions } from './oxc-bundler';
 
 // Track if bundler selection has been logged (prevent duplicate logs)
@@ -94,6 +94,7 @@ export async function serve(config: ResolvedConfig): Promise<{ stop: () => Promi
     return serveWithBunTranspiler(config);
   }
 
-  // Default: oxc bundler dev server (Phase 2 - not yet implemented)
-  throw new Error('oxc-bundler dev server is not yet implemented (Phase 2)');
+  // Default: oxc bundler dev server (Rolldown DevEngine)
+  const { serveWithOxc } = await import('./oxc-bundler');
+  return serveWithOxc(config);
 }
