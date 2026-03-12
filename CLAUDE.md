@@ -415,14 +415,69 @@ Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리
 
 #### Hermes 호환성: hermes-compat 플러그인 ✅ 해결됨
 
-Hermes 엔진은 ES2020 대부분을 지원하지만 **private class fields (`#field`)를 지원하지 않음**.
-`hermes-compat` 플러그인으로 SWC `renderChunk`를 통해 이 문제를 해결:
+`hermes-compat` 플러그인은 Rolldown 출력을 Hermes/React Native에서 실행 가능하도록 후처리합니다.
+구현 위치: `oxc-bundler/plugins/hermes-compat.ts`
 
-- 최종 출력 청크에서 `#private` → WeakMap 폴리필로 자동 변환
-- ES2020 타겟으로 SWC transform (Hermes가 지원하는 수준으로 다운레벨)
-- `#` 문자가 없으면 빠르게 skip (성능 최적화)
-- Rolldown DevEngine runtime, node_modules, 사용자 코드 등 모든 소스의 `#private`를 처리
-- 구현 위치: `oxc-bundler/plugins/hermes-compat.ts`
+**1. ES5 다운레벨 (SWC renderChunk)**
+
+Hermes는 class expressions, private class fields를 지원하지 않고,
+Rolldown은 ESM 번들링 시 class declarations → class expressions 변환 (최소 타겟 ES2015).
+SWC `renderChunk`로 `target: 'es5'` 변환하여 class → function, `#private` → 일반 속성으로 변환.
+
+**2. Rolldown 런타임 `__defProp` 패치**
+
+Rolldown의 런타임 헬퍼(`__exportAll`, `__copyProps`, `__toCommonJS`)가
+`Object.defineProperty`로 모듈 export를 생성할 때 `configurable: false` (기본값)를 사용.
+React Native의 `deepFreezeAndThrowOnMutationInDev`는 dev 모드에서 props를
+freeze하면서 `Object.defineProperty(obj, key, { set: throwFn })`으로 setter를 추가하는데,
+`configurable: false`면 "property is not configurable" TypeError 발생.
+
+해결: `renderChunk`에서 `var __defProp = Object.defineProperty;`를
+`configurable: true`를 강제하는 래퍼로 교체.
+
+**3. IIFE 래핑 (intro/outro)**
+
+Rolldown `format: 'esm'` 출력에서 top-level `var` 선언이
+`globalThis`에 `configurable: false` 속성을 생성 (JS 스펙).
+예: `var Headers`(fetch.js export) → `globalThis.Headers = undefined, configurable: false`
+→ React Native의 `polyfillGlobal("Headers", ...)`에서 `Object.defineProperty` 실패.
+
+해결: `bundle.generate()`의 `intro`/`outro` 옵션으로 Rolldown 청크를 IIFE로 래핑,
+`var` 선언이 function scope에 머물도록 함.
+
+**4. RN 폴리필 ES5 변환**
+
+`rn-get-polyfills()`로 로드하는 RN 폴리필 파일(console.js, error-guard.js)에
+ES6+ 구문(const, let, arrow functions)이 포함되어 있어 Hermes에서 파싱 실패.
+Babel로 Flow 타입 제거 후 SWC `target: 'es5'`로 추가 변환.
+
+#### Rolldown upstream 기여 계획
+
+현재 `hermes-compat` 플러그인에서 문자열 치환으로 해결하는 두 가지 문제는
+Rolldown upstream에 기여하여 근본적으로 해결할 수 있습니다:
+
+**1. `__defProp`에 `configurable: true` 옵션** (우선순위: 높음)
+
+- **문제**: Rolldown 런타임의 `__exportAll`, `__copyProps` 등이 `configurable: false`로 export 생성
+- **영향**: React Native뿐 아니라 `Object.freeze`/`Object.defineProperty`로 객체를 조작하는 모든 환경
+- **제안**: `output.exportsConfigurable: true` 옵션 또는 런타임 헬퍼에서 기본적으로 `configurable: true` 설정
+- **참고**: Rollipop은 이 문제 때문에 Rolldown을 포크함 (`globalIdentifiers` 옵션 추가)
+- **현재 워크어라운드**: `renderChunk`에서 `var __defProp = Object.defineProperty;` 문자열 치환
+  → Rolldown 버전 업데이트 시 패턴 불일치 위험 (실패 시 경고 출력하도록 구현됨)
+- **upstream 이슈/PR**: 미생성 (TODO)
+
+**2. `format: 'iife'`에서 `strictExecutionOrder` 지원** (우선순위: 낮음)
+
+- **문제**: `format: 'iife'`를 사용하면 top-level var 문제가 자연스럽게 해결되지만,
+  `strictExecutionOrder`와의 호환성 확인 필요
+- **현재**: `format: 'esm'` + `intro`/`outro`로 수동 IIFE 래핑
+- **이상적**: `format: 'iife'` + `strictExecutionOrder` 조합이 정상 동작하면
+  `intro`/`outro` 해킹 불필요
+
+**Rollipop의 접근 (참고)**:
+- Rolldown을 `@rollipop/rolldown`으로 포크
+- `globalIdentifiers` 옵션 추가하여 특정 식별자가 top-level var로 선언되지 않도록 함
+- DevEngine `dev()` API를 사용하기 위해 `format: 'esm'` 유지 필수 → IIFE 불가 → 포크 선택
 
 #### Rolldown DevEngine 사용하지 않는 이유
 
