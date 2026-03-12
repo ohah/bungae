@@ -11,7 +11,7 @@
  */
 
 import { createHash } from 'crypto';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { basename, dirname, extname, relative, sep } from 'path';
 
 import type { Plugin } from 'rolldown';
@@ -58,7 +58,7 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
 export function resolveAsset(
   filePath: string,
   projectRoot: string,
-  platform: string,
+  _platform: string,
 ): AssetData {
   const ext = extname(filePath).slice(1);
   const nameWithoutExt = basename(filePath, `.${ext}`);
@@ -95,8 +95,6 @@ function findScaleVariants(
   ext: string,
 ): number[] {
   const scales: number[] = [];
-  const scalePattern = /^(.+)@(\d+(?:\.\d+)?)x$/;
-
   // Check base file (1x)
   const basePath = `${dir}/${name}.${ext}`;
   if (existsSync(basePath)) {

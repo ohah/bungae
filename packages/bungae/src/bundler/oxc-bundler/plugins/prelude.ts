@@ -73,7 +73,7 @@ export function preludePlugin(
 /**
  * Generate prelude code that sets up React Native globals
  */
-export function generatePreludeCode(dev: boolean, platform: string): string {
+export function generatePreludeCode(dev: boolean, _platform: string): string {
   return `
 // Bungae prelude - React Native globals
 var __DEV__ = ${dev};

@@ -35,7 +35,7 @@ export function platformResolverPlugin(config: ResolvedConfig): Plugin {
 
     resolveId: {
       filter: { id: /^\./ },
-      async handler(source, importer, options) {
+      async handler(source, importer, _options) {
         if (!importer) return null;
 
         const importerDir = dirname(importer);
