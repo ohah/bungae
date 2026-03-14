@@ -70,6 +70,7 @@ export function createRolldownOptions(
       conditionNames: ['react-native', 'import', 'require', 'default'],
     },
     treeshake: dev ? false : true,
+    shimMissingExports: true,
     plugins: [
       preludePlugin(config, { preludeModules }),
       flowStripPlugin(config),
