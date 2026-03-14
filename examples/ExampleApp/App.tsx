@@ -12,12 +12,15 @@ function App() {
     setInfo('done');
   }, []);
 
+  let extra = null;
+  if (info === 'done') {
+    extra = <Text style={styles.text}>If-variable: done!</Text>;
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 4f: {info}</Text>
-      {info === 'done' ? (
-        <Text style={styles.text}>Ternary: done!</Text>
-      ) : null}
+      <Text style={styles.text}>Step 4g: {info}</Text>
+      {extra}
     </View>
   );
 }
