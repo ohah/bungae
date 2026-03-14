@@ -48,7 +48,7 @@ export function hermesCompatPlugin(dev = true): Plugin {
                 tsx: id.endsWith('.tsx'),
                 jsx: id.endsWith('.jsx'),
               },
-              target: 'es5',
+              target: 'es2015',
               transform: {
                 react: {
                   runtime: 'automatic',

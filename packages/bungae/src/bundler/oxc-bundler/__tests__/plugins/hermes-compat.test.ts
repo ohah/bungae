@@ -29,15 +29,7 @@ describe('hermesCompatPlugin', () => {
     return hook.handler(code, {});
   }
 
-  describe('ES5 transform (per-module)', () => {
-    it('should transform class expressions to functions', async () => {
-      const code = `var Foo = class Foo1 { constructor() { this.x = 1; } };`;
-      const result = await callTransform(code);
-      expect(result).not.toBeNull();
-      expect(result.code).not.toContain('= class');
-      expect(result.code).toContain('function Foo1');
-    });
-
+  describe('ES2015 transform (per-module)', () => {
     it('should transform private class fields', async () => {
       const code = `class Foo { #value = 42; getValue() { return this.#value; } }`;
       const result = await callTransform(code);
@@ -52,19 +44,26 @@ describe('hermesCompatPlugin', () => {
       expect(result.code).not.toContain('#doSomething');
     });
 
-    it('should transform let/const to var', async () => {
+    it('should preserve let/const (es2015 keeps them)', async () => {
       const code = `const a = 1; let b = 2;`;
       const result = await callTransform(code);
       expect(result).not.toBeNull();
-      expect(result.code).toContain('var a');
-      expect(result.code).toContain('var b');
+      expect(result.code).toContain('const a');
+      expect(result.code).toContain('let b');
     });
 
-    it('should transform arrow functions', async () => {
+    it('should preserve arrow functions (es2015 keeps them)', async () => {
       const code = `const fn = () => 42;`;
       const result = await callTransform(code);
       expect(result).not.toBeNull();
-      expect(result.code).not.toContain('=>');
+      expect(result.code).toContain('=>');
+    });
+
+    it('should preserve class expressions (Hermes 0.83 supports them)', async () => {
+      const code = `var Foo = class Foo1 { constructor() { this.x = 1; } };`;
+      const result = await callTransform(code);
+      expect(result).not.toBeNull();
+      expect(result.code).toContain('class');
     });
 
     it('should skip json files', async () => {
