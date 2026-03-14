@@ -99,8 +99,12 @@ class HMRClient implements HMRClientNativeInterface {
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({ type: 'hmr:connected', bundleEntry, platform }));
       // Connect runtime AFTER socket is open, so queued messages can be flushed
+      console.log('[HMR-CLIENT] open handler, __rolldown_runtime__:', typeof globalThis.__rolldown_runtime__);
       if (globalThis.__rolldown_runtime__ != null) {
+        console.log('[HMR-CLIENT] calling setup()');
         globalThis.__rolldown_runtime__.setup(socket, origin);
+      } else {
+        console.warn('[HMR-CLIENT] __rolldown_runtime__ is null, cannot setup HMR');
       }
     });
 
