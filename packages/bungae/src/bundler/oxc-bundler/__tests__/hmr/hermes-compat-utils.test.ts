@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 
-import { patchRolldownRuntime, transformToES5 } from '../../hmr/hermes-compat-utils';
+import { patchRolldownRuntime, transformForHermes } from '../../hmr/hermes-compat-utils';
 
 describe('patchRolldownRuntime', () => {
   it('should patch __defProp to add configurable: true', () => {
@@ -57,16 +57,16 @@ describe('patchRolldownRuntime', () => {
   });
 });
 
-describe('transformToES5', () => {
+describe('transformForHermes', () => {
   it('should convert arrow functions to regular functions', async () => {
     const input = 'const fn = () => 42;';
-    const result = await transformToES5(input);
+    const result = await transformForHermes(input);
     expect(result).not.toContain('=>');
   });
 
   it('should convert const/let to var', async () => {
     const input = 'const x = 1;\nlet y = 2;';
-    const result = await transformToES5(input);
+    const result = await transformForHermes(input);
     expect(result).not.toContain('const ');
     expect(result).not.toContain('let ');
     expect(result).toContain('var ');
@@ -74,13 +74,13 @@ describe('transformToES5', () => {
 
   it('should convert template literals to string concatenation', async () => {
     const input = 'const msg = `hello ${name}`;';
-    const result = await transformToES5(input);
+    const result = await transformForHermes(input);
     expect(result).not.toContain('`');
   });
 
   it('should handle class expressions', async () => {
     const input = 'var Foo = class { constructor() { this.x = 1; } };';
-    const result = await transformToES5(input);
+    const result = await transformForHermes(input);
     // SWC converts class to function with ES5 target
     // The class keyword should not appear as a declaration (helper names like _class_call_check are ok)
     expect(result).not.toContain('= class');
