@@ -12,15 +12,12 @@ function App() {
     setInfo('done');
   }, []);
 
-  let extra = null;
-  if (info === 'done') {
-    extra = <Text style={styles.text}>If-variable: done!</Text>;
-  }
+  const renderBadge = () => <Text style={styles.text}>Wrapped &&: done!</Text>;
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 4g: {info}</Text>
-      {extra}
+      <Text style={styles.text}>Step 4h: {info}</Text>
+      {info === 'done' && renderBadge()}
     </View>
   );
 }
