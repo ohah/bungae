@@ -27,41 +27,18 @@ describe('chunkLoaderPlugin', () => {
     });
   }
 
-  describe('dynamic import() replacement', () => {
-    it('should replace import("./chunk-name.js") with __bungae_loadChunk()', () => {
+  describe('renderChunk does NOT replace dynamic import()', () => {
+    it('should not modify dynamic import() calls (handled by generateBundle)', () => {
       const code = `var settings = import("./settings-abc123.js");`;
       const result = callRenderChunk(code);
-      expect(result.code).toContain('__bungae_loadChunk("settings-abc123.js")');
-      expect(result.code).not.toContain('import(');
-    });
-
-    it('should replace single-quoted import() calls', () => {
-      const code = `var mod = import('./profile-def456.js');`;
-      const result = callRenderChunk(code);
-      expect(result.code).toContain('__bungae_loadChunk("profile-def456.js")');
-    });
-
-    it('should replace multiple import() calls', () => {
-      const code = `
-        var a = import("./chunk-a.js");
-        var b = import("./chunk-b.js");
-      `;
-      const result = callRenderChunk(code);
-      expect(result.code).toContain('__bungae_loadChunk("chunk-a.js")');
-      expect(result.code).toContain('__bungae_loadChunk("chunk-b.js")');
-      expect(result.code).not.toContain('import(');
+      // Dynamic import replacement happens in generateBundle, not renderChunk
+      expect(result).toBeNull();
     });
 
     it('should not modify code without chunk references', () => {
       const code = `var x = 1; console.log(x);`;
       const result = callRenderChunk(code);
       expect(result).toBeNull();
-    });
-
-    it('should handle import() with whitespace', () => {
-      const code = `var mod = import(  "./chunk-ws.js"  );`;
-      const result = callRenderChunk(code);
-      expect(result.code).toContain('__bungae_loadChunk("chunk-ws.js")');
     });
   });
 
@@ -160,6 +137,47 @@ describe('chunkLoaderPlugin generateBundle', () => {
     expect(bundle['chunk-shared.js']).toBeUndefined();
     // Dynamic chunk should remain
     expect(bundle['lazy.js']).toBeDefined();
+  });
+
+  it('should replace dynamic import() in all chunks', () => {
+    const bundle: Record<string, any> = {
+      'index.js': {
+        type: 'chunk',
+        isEntry: true,
+        isDynamicEntry: false,
+        fileName: 'index.js',
+        code: `var load = function() { return import("./lazy-abc123.js"); };`,
+      },
+      'lazy-abc123.js': {
+        type: 'chunk',
+        isEntry: false,
+        isDynamicEntry: true,
+        fileName: 'lazy-abc123.js',
+        code: '(function() { lazy code }).call(globalThis);',
+      },
+    };
+
+    callGenerateBundle(bundle);
+
+    expect(bundle['index.js'].code).toContain('__bungae_loadChunk("lazy-abc123.js")');
+    expect(bundle['index.js'].code).not.toContain('import(');
+  });
+
+  it('should NOT replace import() in React error message strings', () => {
+    const bundle: Record<string, any> = {
+      'index.js': {
+        type: 'chunk',
+        isEntry: true,
+        isDynamicEntry: false,
+        fileName: 'index.js',
+        code: `console.error("lazy(() => import('./MyComponent'))");`,
+      },
+    };
+
+    callGenerateBundle(bundle);
+
+    // './MyComponent' is not a .js file, so it should not be replaced
+    expect(bundle['index.js'].code).not.toContain('__bungae_loadChunk');
   });
 
   it('should not modify bundle without shared chunks', () => {

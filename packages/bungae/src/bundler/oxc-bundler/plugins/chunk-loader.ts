@@ -77,13 +77,11 @@ export function transformChunkCode(
 ): string {
   let result = code;
 
-  // 1. Replace dynamic import() calls with __bungae_loadChunk()
-  result = result.replace(
-    /import\(\s*["']\.\/([^"']+)["']\s*\)/g,
-    '__bungae_loadChunk("$1")',
-  );
+  // NOTE: Dynamic import() replacement is done in generateBundle (not here)
+  // because renderChunk receives placeholder filenames (e.g., !~{000}~)
+  // that haven't been resolved to actual chunk filenames yet.
 
-  // 2. Replace static import from other chunks with registry reads
+  // 1. Replace static import from other chunks with registry reads
   result = result.replace(
     /import\s*\{([^}]+)\}\s*from\s*["']\.\/([^"']+)["']\s*;?/g,
     (_match, imports: string, chunkFile: string) => {
@@ -159,6 +157,21 @@ export function chunkLoaderPlugin(options: ChunkLoaderOptions = {}): Plugin {
           }
         }
 
+        // At generateBundle time, Rolldown has resolved all chunk filename
+        // placeholders (e.g., !~{000}~ → actual hash). We must do the
+        // dynamic import() replacement here, NOT in renderChunk, because
+        // renderChunk receives placeholder filenames that don't match.
+        //
+        // Replace import("./lazy-hash.js") with __bungae_loadChunk("lazy-hash.js")
+        // in ALL chunks. Only match .js files (Rolldown chunk output).
+        for (const [_fileName, output] of Object.entries(bundle)) {
+          if (output.type !== 'chunk') continue;
+          output.code = output.code.replace(
+            /import\(\s*["']\.\/([^"']+\.js)["']\s*\)/g,
+            '__bungae_loadChunk("$1")',
+          );
+        }
+
         if (!entryChunk || sharedChunks.length === 0) return;
 
         // Inline shared chunks at the marker position in the entry chunk.
@@ -182,9 +195,6 @@ export function chunkLoaderPlugin(options: ChunkLoaderOptions = {}): Plugin {
         for (const chunk of sharedChunks) {
           delete bundle[chunk.fileName];
         }
-
-        // Remove __bungae_loadChunkSync references for inlined chunks
-        // (they're now directly accessible in the same scope)
       },
     },
   };
