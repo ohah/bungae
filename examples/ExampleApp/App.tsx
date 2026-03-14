@@ -16,10 +16,8 @@ function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 8: {info}</Text>
-      {info === 'done' ? (
-        <Text style={styles.text}>Conditional: works!</Text>
-      ) : null}
+      <Text style={styles.text}>Step 9: {info}</Text>
+      {info === 'done' && <Text style={styles.text}>AND works!</Text>}
     </View>
   );
 }
