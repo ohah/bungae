@@ -130,7 +130,9 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
           if (result instanceof Error) {
             console.log('[dev-engine] onHmrUpdates error:', result.message);
           } else {
-            console.log(`[dev-engine] onHmrUpdates: ${result.updates.length} updates, files: ${result.changedFiles.join(', ')}`);
+            console.log(
+              `[dev-engine] onHmrUpdates: ${result.updates.length} updates, files: ${result.changedFiles.join(', ')}`,
+            );
             for (const u of result.updates) {
               console.log(`  [update] client=${u.clientId} type=${u.update.type}`);
             }
@@ -138,7 +140,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
           this.handleHmrUpdates(result);
         },
         onOutput: (result) => {
-          console.log('[dev-engine] onOutput fired:', result instanceof Error ? result.message : 'success');
+          console.log(
+            '[dev-engine] onOutput fired:',
+            result instanceof Error ? result.message : 'success',
+          );
           this.handleOutput(result);
         },
         rebuildStrategy: 'auto',
