@@ -14,10 +14,8 @@ function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 4d: {info}</Text>
-      {info === 'done' && (
-        <Text style={styles.text}>Conditional: visible!</Text>
-      )}
+      <Text style={styles.text}>Step 4e: {info}</Text>
+      <Text style={styles.text}>Always visible</Text>
     </View>
   );
 }
