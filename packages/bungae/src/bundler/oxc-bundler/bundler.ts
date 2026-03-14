@@ -75,7 +75,7 @@ export function createRolldownOptions(
       assetPlugin(config),
       jsonPlugin(),
       platformResolverPlugin(config),
-      hermesCompatPlugin(dev),
+      hermesCompatPlugin(),
       ...extraPlugins,
     ],
   };
