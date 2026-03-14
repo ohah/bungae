@@ -1,42 +1,71 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * Handles three post-bundling transformations in `renderChunk`:
+ * Three post-bundling transformations in `renderChunk`:
  *
- * 1. ES5 downlevel: SWC `target: 'es5'` converts class expressions,
+ * 1. && JSX → ternary: Convert `cond && (0, jsx)(...)` to
+ *    `cond ? (0, jsx)(...) : null`. Hermes + SWC es5 combination
+ *    has a runtime issue with `&&` in JSX children arrays.
+ *    Applied BEFORE SWC so the ternary form goes through es5 transform.
+ *
+ * 2. ES5 downlevel: SWC `target: 'es5'` converts class expressions,
  *    private fields, let/const, arrow functions, etc.
  *
- * 2. && JSX → ternary: Hermes has a runtime bug with `false` in jsxs
- *    children arrays after SWC es5 transform. Convert `cond && jsx(...)`
- *    to `cond ? jsx(...) : null` which Hermes handles correctly.
- *
- * 3. Configurable exports: Rolldown's __defProp creates exports with
- *    `configurable: false`. Patch to `configurable: true` for RN dev mode.
+ * 3. Configurable exports: Patch __defProp to set `configurable: true`.
  */
 
 import type { Plugin } from 'rolldown';
 
 /**
- * Convert `&& (0, jsx)(...)` patterns to ternary `? (0, jsx)(...) : null`.
+ * Convert `&& /* @__PURE__ * / (0, fn)(` patterns to ternary.
  *
- * Rolldown's JSX output uses `condition && (0, jsx)(Component, props)`.
- * After SWC es5, Hermes fails when `false` appears in jsxs children arrays
- * and transitions to an element on re-render. Ternary with `null` works.
+ * Uses paren-counting to find the end of the JSX call expression,
+ * then appends `: null`. Only targets Rolldown's JSX output pattern.
  */
 function patchAndJsxToTernary(code: string): string {
-  // Match: <expr> && /* @__PURE__ */ (0, <jsx_fn>)(
-  // Replace with: <expr> ? /* @__PURE__ */ (0, <jsx_fn>)( ... : null
-  // The pattern is specific to Rolldown's JSX output to avoid false positives.
-  return code.replace(
-    /(\S+)\s*&&\s*(\/\*\s*@__PURE__\s*\*\/\s*)\(0,\s*(\w+(?:\.\w+)*)\)\(/g,
-    '$1 ? $2(0, $3)(',
-  ).replace(
-    // For each replaced pattern, we need to add `: null` after the closing paren.
-    // This is complex with regex alone, so use a simpler approach:
-    // Replace `&& (0, fn)(` (without @__PURE__) as well
-    /(\S+)\s*&&\s*\(0,\s*(\w+(?:\.\w+)*)\)\(/g,
-    '$1 ? (0, $2)(',
-  );
+  // Find all `&& /* @__PURE__ */ (0,` or `&& (0,` patterns
+  const pattern = /(\s*)&&(\s*(?:\/\*[^*]*\*\/\s*)?)\(0,/g;
+  let result = '';
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(code)) !== null) {
+    const andStart = match.index;
+    // Find the start of the `(0, fn)(args)` call — starts at `(0,`
+    const callStart = andStart + match[0].length - 3; // position of `(0,`
+
+    // Track balanced parens to find end of `(0, fn)(args)`
+    // First: find end of `(0, fn)` — the comma expression
+    let depth = 0;
+    let i = callStart;
+    // Pass through `(0, fn)`
+    for (; i < code.length; i++) {
+      if (code[i] === '(') depth++;
+      else if (code[i] === ')') {
+        depth--;
+        if (depth === 0) { i++; break; }
+      }
+    }
+    // Now `i` is right after `(0, fn)`. Next should be `(args)`.
+    if (i < code.length && code[i] === '(') {
+      depth = 0;
+      for (; i < code.length; i++) {
+        if (code[i] === '(') depth++;
+        else if (code[i] === ')') {
+          depth--;
+          if (depth === 0) { i++; break; }
+        }
+      }
+    }
+
+    // Replace: `&& <pure> (0, fn)(args)` → `? <pure> (0, fn)(args) : null`
+    result += code.slice(lastIndex, andStart);
+    result += match[1] + '?' + match[2] + code.slice(callStart, i) + ' : null';
+    lastIndex = i;
+  }
+
+  result += code.slice(lastIndex);
+  return result;
 }
 
 export function hermesCompatPlugin(): Plugin {
@@ -48,10 +77,11 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          // DEBUG: dump pre-SWC bundle
-          try { require('fs').writeFileSync('/tmp/bungae-pre-swc.js', code); } catch {}
+          // 1. Convert && JSX to ternary (before SWC)
+          const ternaryPatched = patchAndJsxToTernary(code);
 
-          const result = await swc.transform(code, {
+          // 2. SWC es5 transform
+          const result = await swc.transform(ternaryPatched, {
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
@@ -63,13 +93,8 @@ export function hermesCompatPlugin(): Plugin {
             sourceMaps: true,
           });
 
-          // DEBUG: dump post-SWC bundle
-          try { require('fs').writeFileSync('/tmp/bungae-post-swc.js', result.code); } catch {}
-
-          let patched = result.code;
-
-          // Patch __defProp for configurable exports
-          patched = patched.replace(
+          // 3. Patch __defProp for configurable exports
+          const patched = result.code.replace(
             /var __defProp = Object\.defineProperty;/,
             `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
           );
