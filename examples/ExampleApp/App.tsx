@@ -8,8 +8,7 @@ function App() {
   return (
     <View style={styles.container}>
       <Text style={styles.text}>Step 12</Text>
-      {true ? <Text style={styles.text}>Ternary baseline</Text> : null}
-      {/* padding comment to shift bundle size AAAAAAAAAAAA */}
+      {true && <Text style={styles.text}>Ternary baseline</Text>}
     </View>
   );
 }
