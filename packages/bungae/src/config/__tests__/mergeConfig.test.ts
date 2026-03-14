@@ -32,6 +32,7 @@ describe('mergeConfig', () => {
         transformer: {
           minifier: 'bun',
           inlineRequires: false,
+          babelPlugins: [],
         },
         experimental: {
           treeShaking: false,
