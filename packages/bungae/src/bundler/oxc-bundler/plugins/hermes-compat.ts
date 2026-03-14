@@ -1,15 +1,13 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * Two concerns handled in `renderChunk` (post-bundling):
+ * 1. Per-module SWC es5 transform (`transform` hook):
+ *    Hermes doesn't support class expressions or private fields.
+ *    SWC `target: 'es5'` converts each module individually.
+ *    React Native internal modules (already Babel-processed by flow-strip)
+ *    are excluded to avoid breaking their scoping semantics.
  *
- * 1. Class expressions → function expressions:
- *    Hermes doesn't support class expressions (`var X = class {}`).
- *    Rolldown generates these when bundling ESM modules.
- *    Uses Babel with only @babel/plugin-transform-classes to avoid
- *    changing let/const/arrow/template-literal scoping semantics.
- *
- * 2. Configurable exports:
+ * 2. Configurable exports (`renderChunk` hook):
  *    Rolldown's runtime helpers create module exports with
  *    `configurable: false`. React Native's deepFreezeAndThrowOnMutationInDev
  *    needs `configurable: true` to add mutation-throwing setters in dev mode.
@@ -18,51 +16,80 @@
 
 import type { Plugin } from 'rolldown';
 
+let swcModule: typeof import('@swc/core') | null = null;
+
+async function getSwc() {
+  if (!swcModule) {
+    swcModule = await import('@swc/core');
+  }
+  return swcModule;
+}
+
+/**
+ * Modules that should NOT be SWC-transformed.
+ * These are processed by flow-strip (Babel) and rely on let/const scoping.
+ */
+const SKIP_PATTERNS = [
+  /node_modules\/react-native\//,
+  /node_modules\/react\//,
+  /node_modules\/@react-native\//,
+  /node_modules\/metro-runtime\//,
+  /node_modules\/scheduler\//,
+];
+
+function shouldSkipTransform(id: string): boolean {
+  return SKIP_PATTERNS.some((pattern) => pattern.test(id));
+}
+
 export function hermesCompatPlugin(): Plugin {
   return {
     name: 'bungae:hermes-compat',
 
-    renderChunk: {
-      async handler(code, _chunk) {
-        let result = code;
+    transform: {
+      filter: {
+        id: {
+          exclude: [/\.json$/],
+        },
+      },
+      async handler(code, id) {
+        if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
+        if (shouldSkipTransform(id)) return null;
 
-        // 1. Transform class expressions to function expressions for Hermes.
-        //    Only @babel/plugin-transform-classes — no other ES5 transforms.
-        //    This preserves let/const, arrow functions, template literals, etc.
         try {
-          const babel = await import('@babel/core');
+          const swc = await getSwc();
 
-          const babelResult = await babel.transformAsync(result, {
-            babelrc: false,
-            configFile: false,
-            sourceType: 'script',
-            plugins: [
-              '@babel/plugin-transform-classes',
-              ['@babel/plugin-transform-class-properties', { loose: true }],
-              ['@babel/plugin-transform-private-methods', { loose: true }],
-              ['@babel/plugin-transform-private-property-in-object', { loose: true }],
-            ],
-            assumptions: {
-              setPublicClassFields: true,
-              privateFieldsAsProperties: true,
+          const result = await swc.transform(code, {
+            filename: id,
+            jsc: {
+              parser: { syntax: 'ecmascript' },
+              target: 'es5',
+              assumptions: {
+                setPublicClassFields: true,
+                privateFieldsAsProperties: true,
+              },
             },
             sourceMaps: true,
           });
 
-          if (babelResult?.code) {
-            result = babelResult.code;
-          }
-        } catch (error: any) {
-          console.warn(`[hermes-compat] Babel class transform failed: ${error.message}`);
+          return {
+            code: result.code,
+            map: result.map || undefined,
+          };
+        } catch {
+          return null;
         }
+      },
+    },
 
-        // 2. Patch Rolldown's __defProp to always set configurable: true.
-        result = result.replace(
+    renderChunk: {
+      handler(code, _chunk) {
+        // Patch Rolldown's __defProp to always set configurable: true.
+        const patched = code.replace(
           /var __defProp = Object\.defineProperty;/,
           `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
         );
 
-        return { code: result };
+        return { code: patched };
       },
     },
   };
