@@ -27,7 +27,7 @@ export function hermesCompatPlugin(): Plugin {
           //    in React Native bundled context.
           // 2. Strip /* @__PURE__ */ annotations (only for tree-shaking, already done).
           const preProcessed = code
-            .replace(/\(0, ([\w$]+(?:\.[\w$]+)*)\)\(/g, '$1(')
+            .replace(/\(0,\s*([\w$]+(?:\.[\w$]+)*)\)\s*\(/g, '$1(')
             .replace(/\/\* @__PURE__ \*\/ /g, '');
 
           const result = await swc.transform(preProcessed, {
