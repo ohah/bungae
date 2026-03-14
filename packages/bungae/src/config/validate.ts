@@ -154,6 +154,15 @@ export function validateConfig(config: BungaeConfig): void {
         `Invalid config: \`transformer.inlineRequires\` must be a boolean, but received ${typeof config.transformer.inlineRequires}`,
       );
     }
+
+    if (
+      config.transformer.babelPlugins !== undefined &&
+      !Array.isArray(config.transformer.babelPlugins)
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`transformer.babelPlugins\` must be an array, but received ${typeof config.transformer.babelPlugins}`,
+      );
+    }
   }
 
   // Validate experimental

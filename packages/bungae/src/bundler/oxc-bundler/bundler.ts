@@ -25,6 +25,7 @@ import {
   assetPlugin,
   preludePlugin,
   hermesCompatPlugin,
+  babelPluginsPlugin,
   generatePreludeCode,
 } from './plugins';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
@@ -75,9 +76,10 @@ export function createRolldownOptions(
       assetPlugin(config),
       jsonPlugin(),
       platformResolverPlugin(config),
+      babelPluginsPlugin(config),
       hermesCompatPlugin(),
       ...extraPlugins,
-    ],
+    ].filter(Boolean),
   };
 
   const outputOptions: OutputOptions = {

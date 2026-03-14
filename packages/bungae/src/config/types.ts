@@ -33,6 +33,19 @@ export interface TransformerConfig {
   minifier?: 'bun' | 'terser' | 'esbuild' | 'swc';
   /** Enable inline requires */
   inlineRequires?: boolean;
+  /**
+   * Babel plugins to apply during transformation (OXC bundler only).
+   * Useful for plugins that require AST-level transforms not supported by OXC,
+   * e.g., react-native-reanimated/plugin.
+   *
+   * Each entry can be a plugin name (string) or [plugin, options] tuple.
+   * @example
+   * babelPlugins: [
+   *   'react-native-reanimated/plugin',
+   *   ['@babel/plugin-proposal-decorators', { legacy: true }],
+   * ]
+   */
+  babelPlugins?: (string | [string, Record<string, unknown>])[];
 }
 
 /**

@@ -36,6 +36,7 @@ describe('Config Defaults', () => {
 
     expect(config.transformer.minifier).toBe('terser'); // Metro-compatible: Metro uses Terser by default
     expect(config.transformer.inlineRequires).toBe(false);
+    expect(config.transformer.babelPlugins).toEqual([]);
   });
 
   test('should have default serializer config', () => {
