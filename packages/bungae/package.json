@@ -119,6 +119,7 @@
     "@types/ws": "^8.5.10",
     "babel-plugin-minify-dead-code-elimination": "^0.5.2",
     "babel-plugin-minify-simplify": "^0.5.1",
+    "image-size": "^2.0.2",
     "typescript": "^5"
   },
   "peerDependencies": {

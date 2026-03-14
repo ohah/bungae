@@ -13,9 +13,13 @@ import {
   useColorScheme,
   View,
   Text,
+  Image,
   TouchableOpacity,
   Alert,
 } from 'react-native';
+
+// Test asset import - verifies asset plugin resolves images correctly
+const testIcon = require('./src/assets/test-icon.png');
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function App() {
@@ -295,6 +299,9 @@ function AppContent() {
         </View>
       )}
 
+      {/* Asset test - verifies image loading */}
+      <Image source={testIcon} style={styles.testIcon} />
+
       {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
       <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
         <Text style={styles.testButtonText}>🧪 Test Button (Event Handler Test)</Text>
@@ -315,6 +322,13 @@ function AppContent() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  testIcon: {
+    width: 10,
+    height: 10,
+    position: 'absolute',
+    top: 120,
+    right: 16,
   },
   bundlerBadge: {
     position: 'absolute',
