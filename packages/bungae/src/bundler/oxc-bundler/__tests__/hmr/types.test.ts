@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 
-import type { HMRServerMessage, HMRClientMessage, HMRClient, HMRUpdateResult } from '../../hmr/types';
+import type {
+  HMRServerMessage,
+  HMRClientMessage,
+  HMRClient,
+  HMRUpdateResult,
+} from '../../hmr/types';
 
 describe('HMR Types', () => {
   it('should construct server messages', () => {

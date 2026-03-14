@@ -99,7 +99,10 @@ describe('hermesCompatPlugin', () => {
   describe('&& pattern runtime behavior', () => {
     async function transformAndEval(code: string): Promise<any> {
       const result = await callRenderChunk(code);
-      return new Function(result.code + '\nreturn typeof __test_result__ !== "undefined" ? __test_result__ : undefined;')();
+      return new Function(
+        result.code +
+          '\nreturn typeof __test_result__ !== "undefined" ? __test_result__ : undefined;',
+      )();
     }
 
     it('&& should be converted to ternary and work correctly', async () => {

@@ -15,7 +15,12 @@ import { readFileSync } from 'node:fs';
 
 import type { RolldownOutput } from 'rolldown';
 import { rolldown } from 'rolldown';
-import { dev, transformSync, type DevEngine, type BindingClientHmrUpdate } from 'rolldown/experimental';
+import {
+  dev,
+  transformSync,
+  type DevEngine,
+  type BindingClientHmrUpdate,
+} from 'rolldown/experimental';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
@@ -101,10 +106,7 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         sourcemap: true,
         minify: false,
         dev: true,
-        extraPlugins: [
-          hmrClientReplacePlugin(),
-          ...reactRefreshPlugin(),
-        ],
+        extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
       });
 
       // Store for fallback build
@@ -142,7 +144,9 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       }
 
       if (!this.cachedBundle && !this.buildError) {
-        console.log('[dev-engine] onOutput not fired, falling back to rolldown() for initial build...');
+        console.log(
+          '[dev-engine] onOutput not fired, falling back to rolldown() for initial build...',
+        );
         await this.fallbackBuild();
       }
     } catch (error: any) {
