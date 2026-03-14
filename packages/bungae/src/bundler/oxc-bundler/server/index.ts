@@ -349,6 +349,7 @@ function handleHMRConnection(
         }
 
         case 'hmr:module-registered':
+          console.log(`[HMR] Registering ${message.modules.length} modules for ${clientId}`);
           devEngine.registerModules(clientId, message.modules).catch((err) => {
             console.error('[HMR] Failed to register modules:', err);
           });
