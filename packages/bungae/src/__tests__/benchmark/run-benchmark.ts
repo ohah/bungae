@@ -13,7 +13,8 @@
 
 import { execSync } from 'child_process';
 import { existsSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 import { runMetroBenchmark } from './metro-benchmark';
 import { runOxcBenchmark, runOxcBenchmarkWithCache } from './oxc-benchmark';
@@ -35,6 +36,8 @@ function parseArgs(): BenchmarkOptions {
   const args = process.argv.slice(2);
 
   // Default to ExampleApp in examples folder
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
   const defaultProjectRoot = resolve(__dirname, '../../../../../examples/ExampleApp');
 
   const options: BenchmarkOptions = {
