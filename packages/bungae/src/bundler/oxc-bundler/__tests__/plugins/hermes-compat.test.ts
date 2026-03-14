@@ -59,30 +59,23 @@ describe('hermesCompatPlugin', () => {
     });
   });
 
-  describe('&& JSX → ternary patch', () => {
-    it('should convert && @__PURE__ (0, jsx) to ternary', async () => {
-      const code = `var children = [jsx(Text, {}), info && /* @__PURE__ */ (0, jsx)(Text, { children: "test" })];`;
+  describe('@__PURE__ stripping (SWC bug workaround)', () => {
+    it('should strip @__PURE__ annotations before SWC', async () => {
+      const code = `var x = /* @__PURE__ */ (0, fn)(args);`;
       const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('&&');
-      expect(result.code).toContain('? ');
-      expect(result.code).toContain(': null');
+      expect(result.code).not.toContain('@__PURE__');
     });
 
-    it('should convert && (0, jsx) without @__PURE__ to ternary', async () => {
-      const code = `var x = info && (0, jsx)(Text, { children: "test" });`;
+    it('should preserve (0, fn)() call in && context after stripping', async () => {
+      // SWC bug: `&& /* @__PURE__ */ (0, fn)(args)` → `&& (void 0)(args)`.
+      // Stripping @__PURE__ prevents this.
+      const code = `var x = true && /* @__PURE__ */ (0, fn)(Text, { children: "test" });`;
       const result = await callRenderChunk(code);
-      expect(result.code).toContain('? ');
-      expect(result.code).toContain(': null');
+      expect(result.code).not.toContain('void 0)(');
+      expect(result.code).toContain('(0, fn)');
     });
 
-    it('should handle nested JSX props', async () => {
-      const code = `cond && /* @__PURE__ */ (0, jsx)(View, { style: [a, { color: fn() }], children: (0, jsx)(Text, {}) })`;
-      const result = await callRenderChunk(code);
-      expect(result.code).toContain('? ');
-      expect(result.code).toContain(': null');
-    });
-
-    it('should NOT convert regular && (no (0, fn) pattern)', async () => {
+    it('should preserve regular && without (0, fn)', async () => {
       const code = `var x = a && b && c;`;
       const result = await callRenderChunk(code);
       expect(result.code).toContain('&&');
@@ -123,8 +116,8 @@ var __test_result__ = {
   second: render('done')
 };`;
       const result = await transformAndEval(code);
-      // First render: ternary returns null (was false with &&)
-      expect(result.first.props.children[1]).toBeNull();
+      // First render: && returns false when condition is falsy
+      expect(result.first.props.children[1]).toBe(false);
       // Re-render: returns element
       expect(result.second.props.children[1].props.children).toBe('conditional');
     });

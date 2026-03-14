@@ -20,11 +20,13 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          // Dump pre/post SWC for debugging
-          const fs = require('fs');
-          try { fs.writeFileSync('/tmp/bungae-pre-swc.js', code); } catch {}
+          // Strip /* @__PURE__ */ annotations before SWC.
+          // SWC es5 has a bug: in `&& /* @__PURE__ */ (0, fn)(args)` context,
+          // it replaces `(0, fn)` with `(void 0)`, breaking the function call.
+          // These annotations are only for tree-shaking (already done by Rolldown).
+          const stripped = code.replace(/\/\* @__PURE__ \*\/ /g, '');
 
-          const result = await swc.transform(code, {
+          const result = await swc.transform(stripped, {
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
@@ -35,8 +37,6 @@ export function hermesCompatPlugin(): Plugin {
             },
             sourceMaps: true,
           });
-
-          try { fs.writeFileSync('/tmp/bungae-post-swc.js', result.code); } catch {}
 
           const patched = result.code.replace(
             /var __defProp = Object\.defineProperty;/,
