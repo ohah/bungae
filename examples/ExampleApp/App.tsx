@@ -1,16 +1,14 @@
 /**
- * Step 11: && with LogBox disabled
+ * Step 12: ternary baseline re-check
  */
 
-import { View, Text, StyleSheet, LogBox } from 'react-native';
-
-LogBox.ignoreAllLogs();
+import { View, Text, StyleSheet } from 'react-native';
 
 function App() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 11</Text>
-      {true && <Text style={styles.text}>AND with LogBox disabled</Text>}
+      <Text style={styles.text}>Step 12</Text>
+      {true ? <Text style={styles.text}>Ternary baseline</Text> : null}
     </View>
   );
 }
