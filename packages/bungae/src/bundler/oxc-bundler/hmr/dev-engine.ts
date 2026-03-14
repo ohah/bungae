@@ -105,17 +105,22 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       const prelude = generatePreludeCode(true, this.config.platform);
       const polyfillCode = await loadRNPolyfills(this.config.root);
 
+      const codeSplitting = this.config.experimental?.codeSplitting === true && this.config.bundler === 'oxc';
+
+      // Code splitting uses fallback build (no DevEngine), so HMR plugins
+      // (import.meta.hot) are not needed and would cause Hermes errors.
+      const extraPlugins = codeSplitting
+        ? []
+        : [hmrClientReplacePlugin(), ...reactRefreshPlugin()];
+
       const { inputOptions, outputOptions } = createRolldownOptions(this.config, {
         sourcemap: true,
         minify: false,
         dev: true,
         host: this.options.host === '0.0.0.0' ? 'localhost' : this.options.host,
         port: this.options.port,
-        extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
+        extraPlugins,
       });
-
-      // Build intro with optional chunk loader runtime
-      const codeSplitting = this.config.experimental?.codeSplitting === true && this.config.bundler === 'oxc';
       const devHost = this.options.host === '0.0.0.0' ? 'localhost' : this.options.host;
 
       let introOption: string | ((chunk: any) => string);
