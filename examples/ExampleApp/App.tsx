@@ -14,7 +14,7 @@ function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.badgeText}>Step 4c: {info}</Text>
+      <Text style={styles.text}>Step 4c: {info}</Text>
     </View>
   );
 }
@@ -22,20 +22,13 @@ function App() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#fff',
   },
-  badge: {
-    position: 'absolute',
-    top: 50,
-    right: 16,
-    backgroundColor: 'rgba(251, 191, 36, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  badgeText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: '600',
+  text: {
+    fontSize: 24,
+    color: '#333',
   },
 });
 
