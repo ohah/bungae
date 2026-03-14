@@ -7,8 +7,8 @@ import { View, Text, StyleSheet } from 'react-native';
 function App() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 9d</Text>
-      {true && <Text style={styles.text}>Static AND</Text>}
+      <Text style={styles.text}>Step 10</Text>
+      {true && <Text style={styles.text}>AND auto-patched!</Text>}
     </View>
   );
 }
