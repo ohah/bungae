@@ -74,7 +74,23 @@ export function resolveAsset(filePath: string, projectRoot: string, platform: st
   const dimensions = getImageDimensions(filePath, ext);
 
   // HTTP server location (Metro-compatible path)
-  const httpServerLocation = '/' + relativePath.split(sep).join('/');
+  // For files outside project root (monorepo node_modules), normalize the path
+  // e.g., ../../node_modules/.bun/react-native@.../Libraries/LogBox → /node_modules/react-native/Libraries/LogBox
+  let httpPath = relativePath.split(sep).join('/');
+  if (httpPath.startsWith('..')) {
+    // Extract meaningful path: find "node_modules/{package}/..." and simplify
+    const nmIdx = httpPath.indexOf('node_modules/');
+    if (nmIdx !== -1) {
+      httpPath = httpPath.slice(nmIdx);
+      // Bun's .bun cache: node_modules/.bun/pkg@ver+hash/node_modules/pkg/...
+      // Simplify to: node_modules/pkg/...
+      const bunCacheMatch = httpPath.match(/node_modules\/\.bun\/[^/]+\/node_modules\/(.*)/);
+      if (bunCacheMatch) {
+        httpPath = 'node_modules/' + bunCacheMatch[1];
+      }
+    }
+  }
+  const httpServerLocation = '/' + httpPath;
 
   return {
     __packager_asset: true,
