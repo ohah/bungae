@@ -91,8 +91,9 @@ function isReactRefreshBoundary(moduleExports: Record<string, any>): boolean {
 
     var keys = Object.keys(moduleExports);
     for (var i = 0; i < keys.length; i++) {
-      if (keys[i] === '__esModule') continue;
-      var val = moduleExports[keys[i]];
+      var key = keys[i]!;
+      if (key === '__esModule') continue;
+      var val = moduleExports[key];
       if (typeof val === 'function' && !ReactRefresh.isLikelyComponentType(val)) {
         hasNonComponentExport = true;
       }
@@ -178,7 +179,7 @@ function send(msg: string): void {
 function flushQueue(): void {
   if (!_socket) return;
   for (var i = 0; i < _queuedMessages.length; i++) {
-    _socket.send(_queuedMessages[i]);
+    _socket.send(_queuedMessages[i]!);
   }
   _queuedMessages.length = 0;
 }
@@ -252,12 +253,12 @@ var __rolldown_runtime__: any = {
 
   applyUpdates: function (boundaries: [string, string][]) {
     for (var i = 0; i < boundaries.length; i++) {
-      var moduleId = boundaries[i][0];
+      var moduleId = boundaries[i]![0];
       var mod = _modules[moduleId];
       var ctx = moduleHotContexts.get(moduleId);
       if (ctx) {
         for (var j = 0; j < ctx.acceptCallbacks.length; j++) {
-          ctx.acceptCallbacks[j].fn(mod?.exportsHolder?.exports);
+          ctx.acceptCallbacks[j]!.fn(mod?.exportsHolder?.exports);
         }
         ctx.cleanup();
       }
