@@ -9,30 +9,37 @@ describe('hermesCompatPlugin', () => {
     expect(plugin.name).toBe('bungae:hermes-compat');
   });
 
-  it('should have renderChunk hook', () => {
+  it('should have transform and renderChunk hooks', () => {
+    expect(plugin.transform).toBeDefined();
     expect(plugin.renderChunk).toBeDefined();
   });
 
-  // Helper to call renderChunk handler
-  async function callRenderChunk(code: string) {
-    const hook = plugin.renderChunk as { handler: (code: string, chunk: any) => Promise<any> };
+  // Helper to call transform handler (per-module SWC es5)
+  async function callTransform(code: string, id = '/test/module.js') {
+    const hook = plugin.transform as { handler: (code: string, id: string) => Promise<any>; filter: any };
+    return hook.handler(code, id);
+  }
+
+  // Helper to call renderChunk handler (__defProp patch)
+  function callRenderChunk(code: string) {
+    const hook = plugin.renderChunk as { handler: (code: string, chunk: any) => any };
     return hook.handler(code, {});
   }
 
   // Helper to transform and eval code, returning result
   async function transformAndEval(code: string): Promise<any> {
-    const result = await callRenderChunk(code);
+    const result = await callTransform(code);
     if (!result?.code) throw new Error('Transform returned null');
     return new Function(result.code + '\nreturn typeof __test_result__ !== "undefined" ? __test_result__ : undefined;')();
   }
 
-  describe('class transforms', () => {
+  describe('class transforms (per-module)', () => {
     it('should transform class expressions to functions', async () => {
       const code = `var Foo = class Foo1 {
   constructor() { this.x = 1; }
   getX() { return this.x; }
 };`;
-      const result = await callRenderChunk(code);
+      const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('= class');
       expect(result.code).toContain('function');
@@ -43,7 +50,7 @@ describe('hermesCompatPlugin', () => {
   #value = 42;
   getValue() { return this.#value; }
 }`;
-      const result = await callRenderChunk(code);
+      const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('#value');
     });
@@ -53,7 +60,7 @@ describe('hermesCompatPlugin', () => {
   #doSomething() { return 'hello'; }
   run() { return this.#doSomething(); }
 }`;
-      const result = await callRenderChunk(code);
+      const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('#doSomething');
     });
@@ -63,18 +70,36 @@ describe('hermesCompatPlugin', () => {
   get x() { return 1; }
   constructor() {}
 };`;
-      const result = await callRenderChunk(code);
+      const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('= class');
     });
+
+    it('should skip flow-stripped modules', async () => {
+      const { flowStrippedModules } = await import('../../plugins/flow-strip');
+      const testId = '/test/flow-module.js';
+      flowStrippedModules.add(testId);
+      try {
+        const result = await callTransform('class Foo {}', testId);
+        // Should return null (skipped)
+        expect(result).toBeNull();
+      } finally {
+        flowStrippedModules.delete(testId);
+      }
+    });
+
+    it('should skip json files', async () => {
+      const result = await callTransform('{"key": "value"}', '/test/data.json');
+      expect(result).toBeNull();
+    });
   });
 
-  describe('__defProp patch', () => {
-    it('should patch __defProp to set configurable: true', async () => {
+  describe('__defProp patch (renderChunk)', () => {
+    it('should patch __defProp to set configurable: true', () => {
       const code = `var __defProp = Object.defineProperty;
 var obj = {};
 __defProp(obj, "foo", { get: function() { return 1; }, enumerable: true });`;
-      const result = await callRenderChunk(code);
+      const result = callRenderChunk(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('var __defProp = Object.defineProperty;');
       expect(result.code).toContain('desc.configurable = true');
@@ -260,9 +285,9 @@ var __test_result__ = {
   });
 
   describe('source maps', () => {
-    it('should preserve source maps', async () => {
+    it('should preserve source maps from transform', async () => {
       const code = `class Foo { #x = 1; getX() { return this.#x; } }`;
-      const result = await callRenderChunk(code);
+      const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.map).toBeDefined();
     });

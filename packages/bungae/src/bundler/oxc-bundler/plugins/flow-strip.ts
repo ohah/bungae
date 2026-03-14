@@ -32,6 +32,9 @@ export function containsFlowSyntax(code: string): boolean {
   return false;
 }
 
+/** Set of module IDs processed by flow-strip (shared with hermes-compat) */
+export const flowStrippedModules = new Set<string>();
+
 export function flowStripPlugin(_config: ResolvedConfig): Plugin {
   let babel: typeof import('@babel/core') | null = null;
 
@@ -81,6 +84,9 @@ export function flowStripPlugin(_config: ResolvedConfig): Plugin {
       });
 
       if (!result?.code) return null;
+
+      // Track this module so hermes-compat skips it
+      flowStrippedModules.add(id);
 
       return {
         code: result.code,

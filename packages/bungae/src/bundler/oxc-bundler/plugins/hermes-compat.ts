@@ -1,31 +1,52 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * 1. ES5 downlevel (`renderChunk`):
- *    Hermes doesn't support class expressions or private fields.
- *    SWC `target: 'es5'` converts the entire chunk in one pass.
+ * 1. ES5 downlevel — `transform` hook (per-module, before bundling):
+ *    Hermes doesn't support class expressions, private fields, etc.
+ *    SWC `target: 'es5'` converts each module individually.
+ *    Modules already processed by flow-strip are skipped to avoid
+ *    breaking React/RN internal scoping (let/const → var issues).
  *
- * 2. Configurable exports (`renderChunk`):
+ * 2. Configurable exports — `renderChunk` hook (post-bundling):
  *    Rolldown's runtime helpers create module exports with
- *    `configurable: false`. React Native's deepFreezeAndThrowOnMutationInDev
- *    needs `configurable: true` to add mutation-throwing setters in dev mode.
- *    → Patch __defProp in the final chunk.
+ *    `configurable: false`. Patch __defProp to set `configurable: true`.
  */
 
-import { writeFileSync } from 'fs';
-
 import type { Plugin } from 'rolldown';
+
+import { flowStrippedModules } from './flow-strip';
+
+let swcModule: typeof import('@swc/core') | null = null;
+
+async function getSwc() {
+  if (!swcModule) {
+    swcModule = await import('@swc/core');
+  }
+  return swcModule;
+}
 
 export function hermesCompatPlugin(): Plugin {
   return {
     name: 'bungae:hermes-compat',
 
-    renderChunk: {
-      async handler(code, _chunk) {
+    transform: {
+      filter: {
+        id: {
+          exclude: [/\.json$/],
+        },
+      },
+      async handler(code, id) {
+        if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
+
+        // Skip modules already processed by flow-strip (React/RN internals).
+        // SWC es5 let→var conversion breaks their scoping semantics.
+        if (flowStrippedModules.has(id)) return null;
+
         try {
-          const swc = await import('@swc/core');
+          const swc = await getSwc();
 
           const result = await swc.transform(code, {
+            filename: id,
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
@@ -37,20 +58,25 @@ export function hermesCompatPlugin(): Plugin {
             sourceMaps: true,
           });
 
-          // Patch __defProp for configurable exports
-          const patched = result.code.replace(
-            /var __defProp = Object\.defineProperty;/,
-            `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
-          );
-
           return {
-            code: patched,
+            code: result.code,
             map: result.map || undefined,
           };
-        } catch (error: any) {
-          console.warn(`[hermes-compat] SWC transform failed: ${error.message}`);
+        } catch {
           return null;
         }
+      },
+    },
+
+    renderChunk: {
+      handler(code, _chunk) {
+        // Patch Rolldown's __defProp to always set configurable: true.
+        const patched = code.replace(
+          /var __defProp = Object\.defineProperty;/,
+          `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
+        );
+
+        return { code: patched };
       },
     },
   };
