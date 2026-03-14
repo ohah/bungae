@@ -14,13 +14,14 @@ import EventEmitter from 'node:events';
 import { readFileSync } from 'node:fs';
 
 import type { RolldownOutput } from 'rolldown';
+import { rolldown } from 'rolldown';
 import { dev, transformSync, type DevEngine, type BindingClientHmrUpdate } from 'rolldown/experimental';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
 import { hermesCompatPlugin, hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
 import { generatePreludeCode } from '../plugins/prelude';
-import { patchRolldownRuntime, transformToES5 } from './hermes-compat-utils';
+import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
 
 export interface DevEngineEventMap {
@@ -39,6 +40,7 @@ export interface DevEngineOptions {
 interface CachedBundle {
   code: string;
   map?: string;
+  needsHermesCompat?: boolean;
 }
 
 /**
@@ -82,6 +84,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     await this.initPromise;
   }
 
+  /** Shared Rolldown options (computed once, reused for fallback build) */
+  private rolldownInputOptions: any = null;
+  private rolldownOutputOptions: any = null;
+
   private async startDevEngine(): Promise<void> {
     this.state = 'building';
     this.emit('buildStart');
@@ -101,26 +107,78 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         ],
       });
 
-      // Add DevEngine-specific experimental options
-      (inputOptions as any).experimental = {
-        devMode: { implement: runtimeCode },
-        incrementalBuild: true,
-      };
-
-      // Add IIFE wrapping to output
+      // Store for fallback build
       const devOutputOptions = {
         ...outputOptions,
         intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
         outro: '}).call(globalThis);',
       };
+      this.rolldownInputOptions = inputOptions;
+      this.rolldownOutputOptions = devOutputOptions;
 
-      this.engine = await dev(inputOptions, devOutputOptions, {
+      // Add DevEngine-specific experimental options
+      const devInputOptions = { ...inputOptions };
+      (devInputOptions as any).experimental = {
+        devMode: { implement: runtimeCode },
+        incrementalBuild: true,
+      };
+
+      this.engine = await dev(devInputOptions, devOutputOptions, {
         onHmrUpdates: (result) => this.handleHmrUpdates(result),
         onOutput: (result) => this.handleOutput(result),
         rebuildStrategy: 'auto',
       });
 
       await this.engine.run();
+
+      // DevEngine's onOutput may not fire on initial build.
+      // Wait for output, and if still no bundle, fall back to rolldown() build.
+      if (!this.cachedBundle && !this.buildError) {
+        try {
+          await this.engine.ensureLatestBuildOutput();
+        } catch {
+          // ensureLatestBuildOutput may fail if no output was produced
+        }
+      }
+
+      if (!this.cachedBundle && !this.buildError) {
+        console.log('[dev-engine] onOutput not fired, falling back to rolldown() for initial build...');
+        await this.fallbackBuild();
+      }
+    } catch (error: any) {
+      this.buildError = error;
+      this.state = 'ready';
+      this.emit('buildFailed', error);
+    }
+  }
+
+  /**
+   * Fallback: use rolldown() + generate() for initial bundle.
+   * This runs all plugin hooks (including renderChunk for hermes-compat).
+   */
+  private async fallbackBuild(): Promise<void> {
+    try {
+      const bundle = await rolldown(this.rolldownInputOptions);
+      const { output } = await bundle.generate(this.rolldownOutputOptions);
+      await bundle.close();
+
+      const mainChunk = output.find((o) => o.type === 'chunk' && o.isEntry);
+      if (!mainChunk || mainChunk.type !== 'chunk') {
+        throw new Error('No output chunk generated from fallback build');
+      }
+
+      console.log(`[dev-engine] Fallback build done (${mainChunk.code.length} chars)`);
+
+      // rolldown() runs renderChunk hooks (hermesCompatPlugin), so the code
+      // is already Hermes-compatible. Mark needsHermesCompat=false.
+      this.cachedBundle = {
+        code: mainChunk.code,
+        map: mainChunk.map?.toString(),
+        needsHermesCompat: false,
+      };
+      this.buildError = null;
+      this.state = 'ready';
+      this.emit('buildDone', this.cachedBundle);
     } catch (error: any) {
       this.buildError = error;
       this.state = 'ready';
@@ -144,7 +202,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       this.emit('watchChange', file);
     }
 
-    // Post-process patch code for Hermes compatibility
+    // Post-process patch code for Hermes compatibility.
+    // HMR patches are small, so we apply __defProp patch synchronously.
+    // #private fields in patches are unlikely since HMR patches are module-level,
+    // but if needed, the server can apply async transform before sending.
     const processedUpdates = result.updates.map((update) => {
       if (update.update.type === 'Patch') {
         let code = update.update.code;
@@ -183,13 +244,12 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       return;
     }
 
-    // Post-process for Hermes compatibility
-    let code = mainChunk.code;
-    code = patchRolldownRuntime(code);
-
+    // Store raw output — Hermes compat transform is applied lazily in getBundle()
+    // because Rolldown's onOutput callback doesn't support async.
     this.cachedBundle = {
-      code,
+      code: mainChunk.code,
       map: mainChunk.map?.toString(),
+      needsHermesCompat: true,
     };
     this.buildError = null;
     this.state = 'ready';
@@ -206,7 +266,17 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     // Wait for DevEngine to produce output
     if (this.engine && !this.cachedBundle && !this.buildError) {
-      await this.engine.ensureLatestBuildOutput();
+      try {
+        await this.engine.ensureLatestBuildOutput();
+      } catch {
+        // May fail if DevEngine didn't produce output
+      }
+    }
+
+    // Last resort: fallback build if still no bundle
+    if (!this.cachedBundle && !this.buildError && this.rolldownInputOptions) {
+      console.log('[dev-engine] No cached bundle, running fallback build...');
+      await this.fallbackBuild();
     }
 
     if (this.buildError) {
@@ -215,6 +285,17 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     if (!this.cachedBundle) {
       throw new Error('No bundle available');
+    }
+
+    // Lazy Hermes compat: Rolldown's dev() API doesn't run renderChunk hooks,
+    // so we transform #private fields and patch __defProp here on first request.
+    if (this.cachedBundle.needsHermesCompat) {
+      try {
+        this.cachedBundle.code = await applyHermesCompat(this.cachedBundle.code);
+      } catch {
+        this.cachedBundle.code = patchRolldownRuntime(this.cachedBundle.code);
+      }
+      this.cachedBundle.needsHermesCompat = false;
     }
 
     return this.cachedBundle;
@@ -236,6 +317,17 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     if (this.engine) {
       await this.engine.removeClient(clientId);
     }
+  }
+
+  /**
+   * Rebuild the bundle (e.g., on FullReload from DevEngine).
+   * Uses rolldown() to produce a fresh bundle with all plugin hooks.
+   */
+  async rebuild(): Promise<void> {
+    if (!this.rolldownInputOptions) return;
+    this.cachedBundle = null;
+    this.buildError = null;
+    await this.fallbackBuild();
   }
 
   /**

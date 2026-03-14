@@ -1,14 +1,24 @@
 /**
- * HMR Runtime for React Native
+ * HMR Runtime for React Native (Rolldown DevEngine)
  *
- * Client-side HMR implementation injected into the bundle in dev mode.
- * Handles WebSocket connection to the dev server and applies HMR updates.
+ * Client-side HMR implementation injected into the bundle via devMode.implement.
  *
- * This replaces RN's built-in HMRClient.js since Metro's protocol
- * is incompatible with Rolldown's ESM scope-hoisted output.
- *
- * Injected via Rolldown DevEngine's `devMode.implement` option.
+ * IMPORTANT: The `implement` code runs in the IIFE scope but DevRuntime/Module
+ * classes defined by Rolldown's runtime are NOT accessible from this scope
+ * (Hermes cannot resolve them). So we build the runtime object from scratch
+ * using only the top-level helpers (__toESM, __toCommonJS, etc.) which ARE
+ * accessible as var declarations in the same IIFE.
  */
+
+// These are declared by Rolldown's runtime as `var` in the same IIFE scope.
+// We reference them via `declare` so TypeScript doesn't complain.
+declare var __toESM: any;
+declare var __toCommonJS: any;
+declare var __exportAll: any;
+declare var __reExport: any;
+declare var __esmMin: any;
+declare var __commonJSMin: any;
+declare var __esmMin_debug_last: string;
 
 declare global {
   var __rolldown_runtime__: any;
@@ -18,17 +28,56 @@ declare global {
   var __ReactRefresh: any;
 }
 
-// DO NOT EDIT THIS CLASS NAME (`DevRuntime`)
-declare const DevRuntime: any;
+// --- Module tracking ---
 
-const BaseDevRuntime = DevRuntime;
+var _modules: Record<string, { id: string; exportsHolder: { exports: any } }> = {};
 
-/**
- * Check if a module's exports constitute a React Refresh boundary.
- * A boundary is a module that only exports React components.
- */
+function runtimeRegisterModule(id: string, exportsHolder: { exports: any }): void {
+  _modules[id] = { id: id, exportsHolder: exportsHolder };
+  // DEBUG: Track last registered module for error diagnosis
+  if (typeof __esmMin_debug_last !== 'undefined') {
+    __esmMin_debug_last = id;
+  }
+  sendModuleRegistered(id);
+}
+
+function runtimeLoadExports(id: string): any {
+  var mod = _modules[id];
+  if (mod) {
+    return mod.exportsHolder.exports;
+  } else {
+    console.warn('Module ' + id + ' not found');
+    return {};
+  }
+}
+
+// Batched module registration messages
+var _regCache: string[] = [];
+var _regTimeout: ReturnType<typeof setTimeout> | null = null;
+var _regSetLength = 0;
+
+function sendModuleRegistered(moduleId: string): void {
+  _regCache.push(moduleId);
+  if (!_regTimeout) {
+    _regTimeout = setTimeout(function flushReg() {
+      if (_regCache.length > _regSetLength) {
+        _regTimeout = setTimeout(flushReg);
+        _regSetLength = _regCache.length;
+        return;
+      }
+      send(JSON.stringify({ type: 'hmr:module-registered', modules: _regCache }));
+      _regCache = [];
+      _regTimeout = null;
+      _regSetLength = 0;
+    });
+    _regSetLength = _regCache.length;
+  }
+}
+
+// --- React Refresh ---
+
 function isReactRefreshBoundary(moduleExports: Record<string, any>): boolean {
-  const ReactRefresh = globalThis.__ReactRefresh;
+  var ReactRefresh = globalThis.__ReactRefresh;
   if (!ReactRefresh) return false;
 
   if (typeof moduleExports === 'function') {
@@ -36,12 +85,13 @@ function isReactRefreshBoundary(moduleExports: Record<string, any>): boolean {
   }
 
   if (typeof moduleExports === 'object' && moduleExports !== null) {
-    const hasDefaultExport = 'default' in moduleExports;
-    let hasNonComponentExport = false;
+    var hasDefaultExport = 'default' in moduleExports;
+    var hasNonComponentExport = false;
 
-    for (const key of Object.keys(moduleExports)) {
-      if (key === '__esModule') continue;
-      const val = moduleExports[key];
+    var keys = Object.keys(moduleExports);
+    for (var i = 0; i < keys.length; i++) {
+      if (keys[i] === '__esModule') continue;
+      var val = moduleExports[keys[i]];
       if (typeof val === 'function' && !ReactRefresh.isLikelyComponentType(val)) {
         hasNonComponentExport = true;
       }
@@ -55,26 +105,20 @@ function isReactRefreshBoundary(moduleExports: Record<string, any>): boolean {
   return false;
 }
 
-/**
- * Enqueue a React Refresh update with debouncing.
- */
-let pendingUpdates = 0;
-let refreshTimeout: ReturnType<typeof setTimeout> | null = null;
+var pendingUpdates = 0;
+var refreshTimeout: ReturnType<typeof setTimeout> | null = null;
 
 function enqueueUpdate(): void {
   pendingUpdates++;
-
   if (refreshTimeout != null) {
     clearTimeout(refreshTimeout);
   }
-
-  refreshTimeout = setTimeout(() => {
+  refreshTimeout = setTimeout(function () {
     refreshTimeout = null;
-    const updates = pendingUpdates;
+    var updates = pendingUpdates;
     pendingUpdates = 0;
-
     if (updates > 0) {
-      const ReactRefresh = globalThis.__ReactRefresh;
+      var ReactRefresh = globalThis.__ReactRefresh;
       if (ReactRefresh) {
         try {
           ReactRefresh.performReactRefresh();
@@ -86,93 +130,163 @@ function enqueueUpdate(): void {
   }, 50);
 }
 
-class ModuleHotContext {
-  acceptCallbacks: Array<{ deps: string[]; fn: (exports: any) => void }> = [];
+// --- Module hot context (import.meta.hot) ---
 
-  constructor(
-    private moduleId: string,
-    private socketSend: (msg: string) => void,
-  ) {}
+function createModuleHotCtx(moduleId: string, socketSend: (msg: string) => void) {
+  var acceptCallbacks: Array<{ deps: string[]; fn: (exports: any) => void }> = [];
 
-  get refresh() {
-    return globalThis.__ReactRefresh;
+  return {
+    get refresh() {
+      return globalThis.__ReactRefresh;
+    },
+    get refreshUtils() {
+      return {
+        isReactRefreshBoundary: isReactRefreshBoundary,
+        enqueueUpdate: enqueueUpdate,
+      };
+    },
+    acceptCallbacks: acceptCallbacks,
+    accept: function (...args: any[]) {
+      if (args.length === 1) {
+        acceptCallbacks.push({ deps: [moduleId], fn: args[0] });
+      }
+    },
+    invalidate: function () {
+      socketSend(JSON.stringify({ type: 'hmr:invalidate', moduleId: moduleId }));
+    },
+    cleanup: function () {
+      acceptCallbacks.length = 0;
+    },
+  };
+}
+
+// --- WebSocket communication ---
+
+var _socket: WebSocket | null = null;
+var _queuedMessages: string[] = [];
+var moduleHotContexts = new Map<string, ReturnType<typeof createModuleHotCtx>>();
+
+function send(msg: string): void {
+  if (!_socket || _socket.readyState !== WebSocket.OPEN) {
+    _queuedMessages.push(msg);
+    return;
   }
+  _socket.send(msg);
+}
 
-  get refreshUtils() {
-    return {
-      isReactRefreshBoundary,
-      enqueueUpdate,
-    };
+function flushQueue(): void {
+  if (!_socket) return;
+  for (var i = 0; i < _queuedMessages.length; i++) {
+    _socket.send(_queuedMessages[i]);
   }
+  _queuedMessages.length = 0;
+}
 
-  accept(...args: any[]) {
-    if (args.length === 1) {
-      this.acceptCallbacks.push({
-        deps: [this.moduleId],
-        fn: args[0],
-      });
-    }
-    // accept() with no args = self-accepting
-  }
-
-  invalidate() {
-    this.socketSend(JSON.stringify({ type: 'hmr:invalidate', moduleId: this.moduleId }));
-  }
-
-  cleanup() {
-    this.acceptCallbacks.length = 0;
+function evaluate(code: string): void {
+  if (globalThis.globalEvalWithSourceUrl) {
+    globalThis.globalEvalWithSourceUrl(code);
+  } else {
+    // eslint-disable-next-line no-eval
+    eval(code);
   }
 }
 
-class ReactNativeDevRuntime extends BaseDevRuntime {
-  private _socket: WebSocket | null = null;
-  private _queuedMessages: string[] = [];
-  moduleHotContexts = new Map<string, ModuleHotContext>();
+function reload(): void {
+  var moduleName = 'DevSettings';
+  (globalThis.__turboModuleProxy
+    ? globalThis.__turboModuleProxy(moduleName)
+    : globalThis.nativeModuleProxy[moduleName]
+  ).reload();
+}
 
-  constructor() {
-    const messenger = {
-      send: (message: any) => this.send(JSON.stringify(message)),
+// --- Build the runtime object from scratch ---
+// DevRuntime class from Rolldown's runtime is NOT accessible in implement scope.
+// We replicate its interface using the same top-level helpers that ARE accessible.
+
+var clientId = 'bungae-' + Date.now();
+
+var __rolldown_runtime__: any = {
+  // Module registry
+  modules: _modules,
+  clientId: clientId,
+  messenger: {
+    send: function (message: any) {
+      send(JSON.stringify(message));
+    },
+  },
+
+  // Core module system methods
+  registerModule: runtimeRegisterModule,
+  loadExports: runtimeLoadExports,
+
+  // ESM/CJS initializer helpers (same as DevRuntime constructor)
+  createEsmInitializer: function (fn: any, res: any) {
+    return function () {
+      return fn && (res = fn((fn = 0))), res;
     };
-    super(messenger);
-  }
+  },
+  createCjsInitializer: function (cb: any, mod: any) {
+    return function () {
+      return mod || cb((mod = { exports: {} }).exports, mod), mod.exports;
+    };
+  },
 
-  createModuleHotContext(moduleId: string) {
-    const ctx = new ModuleHotContext(moduleId, (msg) => this.send(msg));
-    this.moduleHotContexts.set(moduleId, ctx);
+  // Module system helpers — these reference the top-level IIFE vars
+  __toESM: typeof __toESM !== 'undefined' ? __toESM : undefined,
+  __toCommonJS: typeof __toCommonJS !== 'undefined' ? __toCommonJS : undefined,
+  __exportAll: typeof __exportAll !== 'undefined' ? __exportAll : undefined,
+  __reExport: typeof __reExport !== 'undefined' ? __reExport : undefined,
+  __toDynamicImportESM: function (isNodeMode?: boolean) {
+    return function (mod: any) {
+      return typeof __toESM !== 'undefined' ? __toESM(mod.default, isNodeMode) : mod;
+    };
+  },
+
+  // HMR methods
+  createModuleHotContext: function (moduleId: string) {
+    var ctx = createModuleHotCtx(moduleId, send);
+    moduleHotContexts.set(moduleId, ctx);
     return ctx;
-  }
+  },
 
-  applyUpdates(boundaries: [string, string][]) {
-    for (const [moduleId] of boundaries) {
-      const ctx = this.moduleHotContexts.get(moduleId);
+  applyUpdates: function (boundaries: [string, string][]) {
+    for (var i = 0; i < boundaries.length; i++) {
+      var moduleId = boundaries[i][0];
+      var mod = _modules[moduleId];
+      var ctx = moduleHotContexts.get(moduleId);
       if (ctx) {
-        for (const cb of ctx.acceptCallbacks) {
-          cb.fn(this.modules[moduleId]?.exports);
+        for (var j = 0; j < ctx.acceptCallbacks.length; j++) {
+          ctx.acceptCallbacks[j].fn(mod?.exportsHolder?.exports);
         }
         ctx.cleanup();
       }
     }
-  }
+  },
 
-  setup(socket: WebSocket, _origin: string) {
-    if (this._socket != null) {
+  sendModuleRegisteredMessage: sendModuleRegistered,
+
+  // Custom properties
+  moduleHotContexts: moduleHotContexts,
+
+  setup: function (socket: WebSocket, _origin: string) {
+    if (_socket != null) {
       console.warn('[HMR] Runtime already initialized');
       return;
     }
 
-    this._socket = socket;
-    this.flushQueue();
+    _socket = socket;
+    flushQueue();
 
-    socket.addEventListener('message', (event: MessageEvent) => {
-      const message = JSON.parse(event.data);
+    socket.addEventListener('message', function (event: MessageEvent) {
+      var message = JSON.parse(event.data);
 
       switch (message.type) {
         case 'hmr:update':
-          this.evaluate(message.code);
+          evaluate(message.code);
           break;
 
         case 'hmr:reload':
-          this.reload();
+          reload();
           break;
 
         case 'hmr:error':
@@ -180,42 +294,10 @@ class ReactNativeDevRuntime extends BaseDevRuntime {
           break;
       }
     });
-  }
+  },
+};
 
-  private send(msg: string) {
-    if (!this._socket || this._socket.readyState !== WebSocket.OPEN) {
-      this._queuedMessages.push(msg);
-      return;
-    }
-    this._socket.send(msg);
-  }
+// Also set on globalThis for external access
+globalThis.__rolldown_runtime__ = __rolldown_runtime__;
 
-  private flushQueue() {
-    if (!this._socket) return;
-    for (const msg of this._queuedMessages) {
-      this._socket.send(msg);
-    }
-    this._queuedMessages.length = 0;
-  }
-
-  private evaluate(code: string) {
-    if (globalThis.globalEvalWithSourceUrl) {
-      globalThis.globalEvalWithSourceUrl(code);
-    } else {
-      // eslint-disable-next-line no-eval
-      eval(code);
-    }
-  }
-
-  private reload() {
-    const moduleName = 'DevSettings';
-    (globalThis.__turboModuleProxy
-      ? globalThis.__turboModuleProxy(moduleName)
-      : globalThis.nativeModuleProxy[moduleName]
-    ).reload();
-  }
-}
-
-globalThis.__rolldown_runtime__ = new ReactNativeDevRuntime();
-
-export type { ReactNativeDevRuntime };
+export type ReactNativeDevRuntime = typeof __rolldown_runtime__;

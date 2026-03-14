@@ -29,7 +29,7 @@ import type { Plugin } from 'rolldown';
 function patchRolldownRuntime(code: string): string {
   // Replace: var __defProp = Object.defineProperty;
   // With: a wrapper that forces configurable: true
-  const patched = code.replace(
+  let patched = code.replace(
     /var __defProp = Object\.defineProperty;/,
     `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
   );
@@ -39,6 +39,31 @@ function patchRolldownRuntime(code: string): string {
         'React Native dev mode may show "property is not configurable" errors.',
     );
   }
+
+  // DEBUG: Patch __esmMin to catch which module init fails
+  const hasEsmMin = /var __esmMin/.test(patched);
+  console.log(`[hermes-compat-plugin] __esmMin in code: ${hasEsmMin}, code length: ${patched.length}`);
+  patched = patched.replace(
+    /var __esmMin = \(fn, res\)=>\(\)=>\(fn && \(res = fn\(fn = 0\)\), res\);/,
+    `var __esmMin_debug_last = "";
+var __esmMin = function(fn, res) {
+  var wrapper = function() {
+    if (fn) {
+      try {
+        res = fn(fn = 0);
+      } catch(e) {
+        console.error("[ESMMIN DEBUG] Module init failed. Last successful: " + __esmMin_debug_last);
+        console.error("[ESMMIN DEBUG] Error: " + e.message);
+        console.error("[ESMMIN DEBUG] Stack: " + (e.stack || "no stack"));
+        throw e;
+      }
+    }
+    return res;
+  };
+  return wrapper;
+};`,
+  );
+
   return patched;
 }
 
@@ -51,12 +76,19 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
+          // Use ES2020 target instead of ES5. Hermes supports ES2015+
+          // (arrow functions, classes, template literals, destructuring, etc.).
+          // The only feature Hermes lacks is private class fields (#field),
+          // which are ES2022. ES2020 target transforms only what's needed
+          // while avoiding SWC's ES5 bug where `(0, module.fn)` comma
+          // expressions in conditional contexts are incorrectly replaced
+          // with `(void 0)`.
           const result = await swc.transform(code, {
             jsc: {
               parser: {
                 syntax: 'ecmascript',
               },
-              target: 'es5',
+              target: 'es2020',
               assumptions: {
                 setPublicClassFields: true,
                 privateFieldsAsProperties: true,
@@ -66,7 +98,17 @@ export function hermesCompatPlugin(): Plugin {
           });
 
           // Patch Rolldown runtime for React Native compatibility
-          const patched = patchRolldownRuntime(result.code);
+          let patched = patchRolldownRuntime(result.code);
+
+          // DEBUG: Add logging around BatchedBridge's MessageQueue initialization
+          patched = patched.replace(
+            /MessageQueue = \(init_MessageQueue\(\), __toCommonJS\(MessageQueue_exports\)\)\.default;\s*BatchedBridge\$3 = new MessageQueue\(\);/,
+            `MessageQueue = (init_MessageQueue(), __toCommonJS(MessageQueue_exports)).default;
+console.error("[DEBUG BatchedBridge] MessageQueue value:", typeof MessageQueue, MessageQueue);
+console.error("[DEBUG BatchedBridge] MessageQueue_exports:", typeof MessageQueue_exports, Object.keys(MessageQueue_exports || {}));
+try { console.error("[DEBUG BatchedBridge] MessageQueue_exports.default:", typeof (MessageQueue_exports && MessageQueue_exports.default)); } catch(e) { console.error("[DEBUG BatchedBridge] .default access failed:", e.message); }
+BatchedBridge$3 = new MessageQueue();`,
+          );
 
           return {
             code: patched,
