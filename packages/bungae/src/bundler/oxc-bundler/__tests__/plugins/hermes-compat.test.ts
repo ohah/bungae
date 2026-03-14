@@ -59,27 +59,28 @@ describe('hermesCompatPlugin', () => {
     });
   });
 
-  describe('SWC pre-processing (comma expression + @__PURE__ strip)', () => {
-    it('should strip (0, fn) comma expressions', async () => {
-      const code = `var x = (0, mod.fn)(args);`;
+  describe('Rolldown (void 0) bug fix', () => {
+    it('should replace (void 0)( with detected jsx function', async () => {
+      // Simulates Rolldown bug: (void 0)( in && context
+      const code = `
+        var x = (0, import_jsx.jsxDEV)(Text, {});
+        var y = true && /* @__PURE__ */ (void 0)(Text, { children: "test" });
+      `;
       const result = await callRenderChunk(code);
-      expect(result.code).toContain('mod.fn(');
-      expect(result.code).not.toContain('(0,');
+      expect(result.code).not.toContain('(void 0)(');
     });
 
-    it('should strip @__PURE__ annotations', async () => {
-      const code = `var x = /* @__PURE__ */ fn(args);`;
+    it('should detect jsx function from bundle', async () => {
+      const code = `
+        var a = (0, rt.jsx)(View, {});
+        var b = cond && (void 0)(Text, {});
+      `;
       const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('@__PURE__');
+      expect(result.code).not.toContain('(void 0)(');
+      expect(result.code).toContain('rt.jsx');
     });
 
-    it('should prevent (void 0) in && context', async () => {
-      const code = `var x = true && (0, fn)(Text, { children: "test" });`;
-      const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('void 0)(');
-    });
-
-    it('should preserve regular && without (0, fn)', async () => {
+    it('should preserve regular && without (void 0)', async () => {
       const code = `var x = a && b && c;`;
       const result = await callRenderChunk(code);
       expect(result.code).toContain('&&');

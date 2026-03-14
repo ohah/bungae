@@ -20,18 +20,23 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          // DEBUG: dump raw Rolldown output
-          try { require('fs').writeFileSync('/tmp/bungae-raw.js', code); } catch {}
+          // Fix Rolldown bug: in `&& /* @__PURE__ */ (void 0)(args)` context,
+          // Rolldown replaces the JSX function reference with `void 0`.
+          // Detect the JSX function name from working calls and restore broken ones.
+          let fixed = code;
+          const jsxDevMatch = code.match(/\(0,\s*([\w$]+\.jsxDEV)\s*\)/);
+          const jsxMatch = code.match(/\(0,\s*([\w$]+\.jsx)\s*\)/);
+          const jsxFn = jsxDevMatch?.[1] || jsxMatch?.[1];
+          if (jsxFn) {
+            // Replace `(void 0)(Component,` with `(0, jsxFn)(Component,`
+            // Only match (void 0) used as a function call (never legitimate)
+            fixed = code.replace(
+              /\(void 0\)\(/g,
+              `(0, ${jsxFn})(`,
+            );
+          }
 
-          // Pre-process before SWC es5:
-          const preProcessed = code
-            .replace(/\(0,\s*([\w$]+(?:\.[\w$]+)*)\s*\)\s*\(/g, '$1(')
-            .replace(/\/\* @__PURE__ \*\/ /g, '');
-
-          // DEBUG: dump after pre-processing
-          try { require('fs').writeFileSync('/tmp/bungae-preprocessed.js', preProcessed); } catch {}
-
-          const result = await swc.transform(preProcessed, {
+          const result = await swc.transform(fixed, {
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
