@@ -1,42 +1,61 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * Two post-bundling transformations in `renderChunk`:
+ * Per-module ES5 + JSX transform (`transform` hook):
+ *   SWC converts each module individually before Rolldown bundles.
+ *   - ES5: class expressions, private fields, let/const, arrow functions
+ *   - JSX: automatic runtime (jsx/jsxDEV calls)
+ *   By handling JSX here, Rolldown never generates JSX calls, avoiding
+ *   the Rolldown bug where (0, jsxDEV) becomes (void 0) in && context.
  *
- * 1. ES5 downlevel: SWC `target: 'es5'` converts class expressions,
- *    private fields, let/const, arrow functions, etc.
- *
- * 2. Configurable exports: Patch __defProp to set `configurable: true`.
+ * Post-bundling __defProp patch (`renderChunk` hook):
+ *   Rolldown's runtime helpers create exports with `configurable: false`.
+ *   Patch __defProp to set `configurable: true` for RN dev mode.
  */
 
 import type { Plugin } from 'rolldown';
 
-export function hermesCompatPlugin(): Plugin {
+let swcModule: typeof import('@swc/core') | null = null;
+
+async function getSwc() {
+  if (!swcModule) {
+    swcModule = await import('@swc/core');
+  }
+  return swcModule;
+}
+
+export function hermesCompatPlugin(dev = true): Plugin {
   return {
     name: 'bungae:hermes-compat',
 
-    renderChunk: {
-      async handler(code, _chunk) {
+    transform: {
+      filter: {
+        id: {
+          exclude: [/\.json$/],
+        },
+      },
+      async handler(code, id) {
+        if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
+
         try {
-          const swc = await import('@swc/core');
+          const swc = await getSwc();
 
-          // Fix Rolldown bug: in `&& /* @__PURE__ */ (void 0)(args)` context,
-          // Rolldown replaces the JSX function reference with `void 0`.
-          // Detect the JSX function name from working calls and restore broken ones.
-          let fixed = code;
-          const jsxDevMatch = code.match(/\(0,\s*([\w$]+\.jsxDEV)\s*\)/);
-          const jsxMatch = code.match(/\(0,\s*([\w$]+\.jsx)\s*\)/);
-          const jsxFn = jsxDevMatch?.[1] || jsxMatch?.[1];
-          if (jsxFn) {
-            // Replace `(void 0)(Component,` with `(0, jsxFn)(Component,`
-            // Only match (void 0) used as a function call (never legitimate)
-            fixed = code.replace(/\(void 0\)\(/g, `(0, ${jsxFn})(`);
-          }
-
-          const result = await swc.transform(fixed, {
+          const result = await swc.transform(code, {
+            filename: id,
             jsc: {
-              parser: { syntax: 'ecmascript' },
+              parser: {
+                syntax: id.match(/\.tsx?$/) ? 'typescript' : 'ecmascript',
+                tsx: id.endsWith('.tsx'),
+                jsx: id.endsWith('.jsx'),
+              },
               target: 'es5',
+              transform: {
+                react: {
+                  runtime: 'automatic',
+                  development: dev,
+                  refresh: false,
+                },
+              },
               assumptions: {
                 setPublicClassFields: true,
                 privateFieldsAsProperties: true,
@@ -45,19 +64,25 @@ export function hermesCompatPlugin(): Plugin {
             sourceMaps: true,
           });
 
-          const patched = result.code.replace(
-            /var __defProp = Object\.defineProperty;/,
-            `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
-          );
-
           return {
-            code: patched,
+            code: result.code,
             map: result.map || undefined,
           };
-        } catch (error: any) {
-          console.warn(`[hermes-compat] SWC transform failed: ${error.message}`);
+        } catch {
           return null;
         }
+      },
+    },
+
+    renderChunk: {
+      handler(code, _chunk) {
+        // Patch Rolldown's __defProp to always set configurable: true.
+        const patched = code.replace(
+          /var __defProp = Object\.defineProperty;/,
+          `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
+        );
+
+        return { code: patched };
       },
     },
   };

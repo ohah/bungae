@@ -85,7 +85,7 @@ export function flowStripPlugin(_config: ResolvedConfig): Plugin {
       return {
         code: result.code,
         map: result.map ? JSON.stringify(result.map) : undefined,
-        moduleType: 'jsx', // Treat as JSX since Flow files may contain JSX
+        moduleType: 'jsx', // JSX will be transformed by hermes-compat's SWC transform
       };
     },
   };
