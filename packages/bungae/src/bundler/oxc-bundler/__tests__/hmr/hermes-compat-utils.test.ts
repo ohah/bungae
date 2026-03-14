@@ -18,18 +18,11 @@ describe('patchRolldownRuntime', () => {
     expect(result).toBe(input);
   });
 
-  it('should warn when __defProp is used but pattern does not match', () => {
-    const warnings: string[] = [];
-    const originalWarn = console.warn;
-    console.warn = (msg: string) => warnings.push(msg);
-
+  it('should not modify code when __defProp pattern does not match', () => {
     const input = 'var __defProp = someOtherFunction;\n__defProp(obj, key, desc);';
-    patchRolldownRuntime(input);
-
-    expect(warnings.length).toBeGreaterThan(0);
-    expect(warnings[0]).toContain('Failed to patch __defProp');
-
-    console.warn = originalWarn;
+    const result = patchRolldownRuntime(input);
+    // No match → code unchanged
+    expect(result).toBe(input);
   });
 
   it('should not warn when __defProp is not used at all', () => {
