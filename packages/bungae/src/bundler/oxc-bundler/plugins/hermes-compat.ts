@@ -20,6 +20,10 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
+          // Dump pre/post SWC for debugging
+          const fs = require('fs');
+          try { fs.writeFileSync('/tmp/bungae-pre-swc.js', code); } catch {}
+
           const result = await swc.transform(code, {
             jsc: {
               parser: { syntax: 'ecmascript' },
@@ -32,7 +36,8 @@ export function hermesCompatPlugin(): Plugin {
             sourceMaps: true,
           });
 
-          // 3. Patch __defProp for configurable exports
+          try { fs.writeFileSync('/tmp/bungae-post-swc.js', result.code); } catch {}
+
           const patched = result.code.replace(
             /var __defProp = Object\.defineProperty;/,
             `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
