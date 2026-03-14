@@ -218,10 +218,12 @@ function generateAssetRegistryCode(asset: AssetData): string {
     ...(asset.height != null && { height: asset.height }),
   };
 
+  // Use module.exports (CJS) so require('./image.png') returns the asset ID
+  // directly, not an ESM wrapper { default: id, __esModule: true }.
+  // RN's <Image source={require('./image.png')}> expects a number, not an object.
   return `
-import { registerAsset } from 'react-native/Libraries/Image/AssetRegistry';
-
-export default registerAsset(${JSON.stringify(bundleAsset, null, 2)});
+var registerAsset = require('react-native/Libraries/Image/AssetRegistry').registerAsset;
+module.exports = registerAsset(${JSON.stringify(bundleAsset, null, 2)});
 `;
 }
 
