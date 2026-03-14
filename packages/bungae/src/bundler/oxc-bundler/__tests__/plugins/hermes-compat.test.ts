@@ -59,20 +59,24 @@ describe('hermesCompatPlugin', () => {
     });
   });
 
-  describe('@__PURE__ stripping (SWC bug workaround)', () => {
-    it('should strip @__PURE__ annotations before SWC', async () => {
-      const code = `var x = /* @__PURE__ */ (0, fn)(args);`;
+  describe('SWC pre-processing (comma expression + @__PURE__ strip)', () => {
+    it('should strip (0, fn) comma expressions', async () => {
+      const code = `var x = (0, mod.fn)(args);`;
+      const result = await callRenderChunk(code);
+      expect(result.code).toContain('mod.fn(');
+      expect(result.code).not.toContain('(0,');
+    });
+
+    it('should strip @__PURE__ annotations', async () => {
+      const code = `var x = /* @__PURE__ */ fn(args);`;
       const result = await callRenderChunk(code);
       expect(result.code).not.toContain('@__PURE__');
     });
 
-    it('should preserve (0, fn)() call in && context after stripping', async () => {
-      // SWC bug: `&& /* @__PURE__ */ (0, fn)(args)` → `&& (void 0)(args)`.
-      // Stripping @__PURE__ prevents this.
-      const code = `var x = true && /* @__PURE__ */ (0, fn)(Text, { children: "test" });`;
+    it('should prevent (void 0) in && context', async () => {
+      const code = `var x = true && (0, fn)(Text, { children: "test" });`;
       const result = await callRenderChunk(code);
       expect(result.code).not.toContain('void 0)(');
-      expect(result.code).toContain('(0, fn)');
     });
 
     it('should preserve regular && without (0, fn)', async () => {
