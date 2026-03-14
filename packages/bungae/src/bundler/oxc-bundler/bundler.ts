@@ -12,6 +12,9 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 
+import flowStripTypesPlugin from '@babel/plugin-transform-flow-strip-types';
+// Direct imports to avoid require.resolve issues in monorepo/CI environments
+import hermesParserPlugin from 'babel-plugin-syntax-hermes-parser';
 import type { InputOptions, OutputOptions, Plugin } from 'rolldown';
 import { rolldown } from 'rolldown';
 
@@ -250,15 +253,6 @@ async function loadRNPolyfills(projectRoot: string): Promise<string> {
     const babel = await import('@babel/core');
     const swc = await import('@swc/core');
 
-    // Resolve Babel plugin paths with fallback to bungae's own node_modules
-    const resolvePaths = [__dirname, projectRoot];
-    const hermesParserPath = require.resolve('babel-plugin-syntax-hermes-parser', {
-      paths: resolvePaths,
-    });
-    const flowStripPath = require.resolve('@babel/plugin-transform-flow-strip-types', {
-      paths: resolvePaths,
-    });
-
     // Read each polyfill, strip Flow types with Babel, downlevel to ES5 with SWC, wrap in IIFE
     const codes: string[] = [];
     for (const polyfillPath of polyfillPaths) {
@@ -271,8 +265,8 @@ async function loadRNPolyfills(projectRoot: string): Promise<string> {
         configFile: false,
         sourceMaps: false,
         plugins: [
-          [hermesParserPath, { parseLangTypes: 'flow', reactRuntimeTarget: '19' }],
-          flowStripPath,
+          [hermesParserPlugin, { parseLangTypes: 'flow', reactRuntimeTarget: '19' }],
+          flowStripTypesPlugin,
         ],
       });
       if (!babelResult?.code) continue;
