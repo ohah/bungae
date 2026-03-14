@@ -8,8 +8,8 @@
  * Reuses: terminal-actions, dev-middleware, server utils from graph-bundler.
  */
 
-import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { writeFileSync } from 'node:fs';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 

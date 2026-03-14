@@ -223,12 +223,12 @@ var __rolldown_runtime__: any = {
   // ESM/CJS initializer helpers (same as DevRuntime constructor)
   createEsmInitializer: function (fn: any, res: any) {
     return function () {
-      return fn && (res = fn((fn = 0))), res;
+      return (fn && (res = fn((fn = 0))), res);
     };
   },
   createCjsInitializer: function (cb: any, mod: any) {
     return function () {
-      return mod || cb((mod = { exports: {} }).exports, mod), mod.exports;
+      return (mod || cb((mod = { exports: {} }).exports, mod), mod.exports);
     };
   },
 

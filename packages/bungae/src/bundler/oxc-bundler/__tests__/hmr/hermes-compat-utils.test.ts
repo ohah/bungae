@@ -47,8 +47,7 @@ describe('patchRolldownRuntime', () => {
 
   it('should only patch the first occurrence', () => {
     const input =
-      'var __defProp = Object.defineProperty;\n' +
-      'var __defProp2 = Object.defineProperty;\n';
+      'var __defProp = Object.defineProperty;\n' + 'var __defProp2 = Object.defineProperty;\n';
     const result = patchRolldownRuntime(input);
 
     // First one patched

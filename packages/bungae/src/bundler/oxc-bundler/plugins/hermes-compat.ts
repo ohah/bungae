@@ -30,10 +30,7 @@ export function hermesCompatPlugin(): Plugin {
           if (jsxFn) {
             // Replace `(void 0)(Component,` with `(0, jsxFn)(Component,`
             // Only match (void 0) used as a function call (never legitimate)
-            fixed = code.replace(
-              /\(void 0\)\(/g,
-              `(0, ${jsxFn})(`,
-            );
+            fixed = code.replace(/\(void 0\)\(/g, `(0, ${jsxFn})(`);
           }
 
           const result = await swc.transform(fixed, {

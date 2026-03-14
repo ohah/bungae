@@ -15,7 +15,6 @@ declare var __rolldown_runtime__: any;
 // RN native modules accessed dynamically to avoid import resolution issues
 declare var __turboModuleProxy: (moduleName: string) => any;
 
-
 interface HMRClientNativeInterface {
   enable(): void;
   disable(): void;
@@ -98,9 +97,7 @@ class HMRClient implements HMRClientNativeInterface {
     this._socket = socket;
 
     socket.addEventListener('open', () => {
-      socket.send(
-        JSON.stringify({ type: 'hmr:connected', bundleEntry, platform }),
-      );
+      socket.send(JSON.stringify({ type: 'hmr:connected', bundleEntry, platform }));
     });
 
     socket.addEventListener('error', (event: any) => {
