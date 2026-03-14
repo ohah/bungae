@@ -57,6 +57,22 @@ export interface ExperimentalConfig {
    * Only enable if you're certain your code doesn't use dynamic access patterns.
    */
   treeShaking?: boolean;
+
+  /**
+   * Enable code splitting via dynamic import()
+   *
+   * ⚠️ EXPERIMENTAL: Requires bundler: 'oxc'.
+   *
+   * When enabled, `import()` calls produce separate chunk files that are
+   * lazily loaded at runtime. This reduces initial bundle size and startup time.
+   *
+   * - Dev mode: chunks are fetched from the dev server via HTTP
+   * - Production: chunks are loaded from the local filesystem (bundled with the app)
+   * - OTA (EAS/CodePush): all chunks are deployed together as a complete update
+   *
+   * @default false
+   */
+  codeSplitting?: boolean;
 }
 
 /**

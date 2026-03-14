@@ -277,3 +277,194 @@ console.log(add(1, 2));
     expect(result.code).toContain('return a + b');
   });
 });
+
+describe('createRolldownOptions with codeSplitting', () => {
+  it('should enable codeSplitting in output options when configured', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({
+      bundler: 'oxc',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const { inputOptions, outputOptions } = createRolldownOptions(config);
+
+    // Should have chunk-loader plugin
+    const plugins = inputOptions.plugins as any[];
+    const names = plugins.map((p: any) => p.name || '');
+    expect(names).toContain('bungae:chunk-loader');
+
+    // Should enable codeSplitting in output
+    expect((outputOptions as any).codeSplitting).toBe(true);
+    expect(outputOptions.chunkFileNames).toBe('[name]-[hash].js');
+  });
+
+  it('should not enable codeSplitting when not configured', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({ bundler: 'oxc' });
+
+    const { inputOptions, outputOptions } = createRolldownOptions(config);
+
+    const plugins = inputOptions.plugins as any[];
+    const names = plugins.map((p: any) => p.name || '');
+    expect(names).not.toContain('bungae:chunk-loader');
+    expect((outputOptions as any).codeSplitting).toBeUndefined();
+  });
+
+  it('should not enable codeSplitting for non-oxc bundlers', async () => {
+    const { createRolldownOptions } = await import('../bundler');
+    const config = createTestConfig({
+      bundler: 'graph',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const { outputOptions } = createRolldownOptions(config);
+    expect((outputOptions as any).codeSplitting).toBeUndefined();
+  });
+});
+
+describe('buildWithOxc with codeSplitting', () => {
+  const testDir = join(tmpdir(), 'bungae-oxc-codesplit-test');
+
+  beforeEach(() => {
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  it('should produce chunks for dynamic import()', async () => {
+    // Create a lazy-loaded module
+    writeFileSync(
+      join(testDir, 'lazy.ts'),
+      `export function hello() { return "lazy loaded!"; }\n`,
+    );
+
+    // Create entry that dynamically imports the lazy module
+    writeFileSync(
+      join(testDir, 'index.ts'),
+      `
+const loadLazy = () => import('./lazy');
+loadLazy().then(mod => console.log(mod.hello()));
+export default loadLazy;
+`,
+    );
+
+    const { buildWithOxc } = await import('../bundler');
+    const config = createTestConfig({
+      root: testDir,
+      entry: 'index.ts',
+      bundler: 'oxc',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const result = await buildWithOxc(config, undefined, {
+      hermes: false,
+    });
+
+    // Entry chunk should exist
+    expect(result.code).toBeTruthy();
+
+    // Should have non-entry chunks
+    expect(result.chunks).toBeDefined();
+    expect(result.chunks!.length).toBeGreaterThan(0);
+
+    // Entry chunk should use __bungae_loadChunk instead of import()
+    expect(result.code).toContain('__bungae_loadChunk');
+    expect(result.code).not.toMatch(/import\(\s*["']\.\/lazy/);
+
+    // The lazy chunk should contain the hello function
+    const lazyChunk = result.chunks!.find((c) => c.code.includes('lazy loaded'));
+    expect(lazyChunk).toBeDefined();
+  });
+
+  it('should include chunk loader runtime in entry chunk', async () => {
+    writeFileSync(
+      join(testDir, 'lazy.ts'),
+      `export const value = 42;\n`,
+    );
+    writeFileSync(
+      join(testDir, 'index.ts'),
+      `const load = () => import('./lazy');\nexport default load;\n`,
+    );
+
+    const { buildWithOxc } = await import('../bundler');
+    const config = createTestConfig({
+      root: testDir,
+      entry: 'index.ts',
+      bundler: 'oxc',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const result = await buildWithOxc(config, undefined, { hermes: false });
+
+    // Entry chunk should contain the chunk loader runtime
+    expect(result.code).toContain('__bungae_loadChunk');
+    expect(result.code).toContain('globalEvalWithSourceUrl');
+    expect(result.code).toContain('fetch');
+  });
+
+  it('should write chunk files when outfile is specified', async () => {
+    const outfile = join(testDir, 'dist', 'bundle.js');
+
+    writeFileSync(
+      join(testDir, 'lazy.ts'),
+      `export const value = 42;\n`,
+    );
+    writeFileSync(
+      join(testDir, 'index.ts'),
+      `const load = () => import('./lazy');\nexport default load;\n`,
+    );
+
+    const { buildWithOxc } = await import('../bundler');
+    const config = createTestConfig({
+      root: testDir,
+      entry: 'index.ts',
+      bundler: 'oxc',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const result = await buildWithOxc(config, undefined, {
+      outfile,
+      hermes: false,
+    });
+
+    // Check that entry bundle was written
+    const { existsSync } = await import('fs');
+    expect(existsSync(outfile)).toBe(true);
+
+    // Check that chunk files were written
+    if (result.chunks && result.chunks.length > 0) {
+      const chunksDir = join(testDir, 'dist', 'chunks');
+      expect(existsSync(chunksDir)).toBe(true);
+      for (const chunk of result.chunks) {
+        expect(existsSync(join(chunksDir, chunk.fileName))).toBe(true);
+      }
+    }
+  });
+
+  it('should not produce chunks without dynamic import()', async () => {
+    writeFileSync(
+      join(testDir, 'utils.ts'),
+      `export const add = (a: number, b: number) => a + b;\n`,
+    );
+    writeFileSync(
+      join(testDir, 'index.ts'),
+      `import { add } from './utils';\nconsole.log(add(1, 2));\n`,
+    );
+
+    const { buildWithOxc } = await import('../bundler');
+    const config = createTestConfig({
+      root: testDir,
+      entry: 'index.ts',
+      bundler: 'oxc',
+      experimental: { treeShaking: false, codeSplitting: true },
+    });
+
+    const result = await buildWithOxc(config, undefined, { hermes: false });
+
+    // No dynamic imports, so no chunks
+    expect(result.chunks).toBeUndefined();
+    expect(result.code).toContain('return a + b');
+  });
+});

@@ -25,6 +25,7 @@ import {
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
 import { hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
+import { generateChunkLoaderRuntime } from '../plugins/chunk-loader';
 import { generatePreludeCode } from '../plugins/prelude';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
@@ -46,6 +47,8 @@ interface CachedBundle {
   code: string;
   map?: string;
   needsHermesCompat?: boolean;
+  /** Non-entry chunks (when code splitting is enabled) */
+  chunks?: Map<string, { code: string; map?: string }>;
 }
 
 /**
@@ -102,17 +105,38 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       const prelude = generatePreludeCode(true, this.config.platform);
       const polyfillCode = await loadRNPolyfills(this.config.root);
 
+      const codeSplitting = this.config.experimental?.codeSplitting === true && this.config.bundler === 'oxc';
+
+      // Code splitting uses fallback build (no DevEngine), so HMR plugins
+      // (import.meta.hot) are not needed and would cause Hermes errors.
+      const extraPlugins = codeSplitting
+        ? []
+        : [hmrClientReplacePlugin(), ...reactRefreshPlugin()];
+
       const { inputOptions, outputOptions } = createRolldownOptions(this.config, {
         sourcemap: true,
         minify: false,
         dev: true,
-        extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
+        host: this.options.host === '0.0.0.0' ? 'localhost' : this.options.host,
+        port: this.options.port,
+        extraPlugins,
       });
+      const devHost = this.options.host === '0.0.0.0' ? 'localhost' : this.options.host;
+
+      let introOption: string | ((chunk: any) => string);
+      if (codeSplitting) {
+        const chunkLoaderRuntime = generateChunkLoaderRuntime({ host: devHost, port: this.options.port, dev: true });
+        const entryIntro = `var global = globalThis;\n${prelude}\n${polyfillCode}\n${chunkLoaderRuntime}\n(function() {`;
+        const chunkIntro = '(function() {';
+        introOption = (chunk: any) => chunk.isEntry ? entryIntro : chunkIntro;
+      } else {
+        introOption = `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`;
+      }
 
       // Store for fallback build
       const devOutputOptions = {
         ...outputOptions,
-        intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
+        intro: introOption,
         outro: '}).call(globalThis);',
       };
       this.rolldownInputOptions = inputOptions;
@@ -125,29 +149,36 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         incrementalBuild: true,
       };
 
-      this.engine = await dev(devInputOptions, devOutputOptions, {
-        onHmrUpdates: (result) => this.handleHmrUpdates(result),
-        onOutput: (result) => this.handleOutput(result),
-        rebuildStrategy: 'auto',
-      });
-
-      await this.engine.run();
-
-      // DevEngine's onOutput may not fire on initial build.
-      // Wait for output, and if still no bundle, fall back to rolldown() build.
-      if (!this.cachedBundle && !this.buildError) {
-        try {
-          await this.engine.ensureLatestBuildOutput();
-        } catch {
-          // ensureLatestBuildOutput may fail if no output was produced
-        }
-      }
-
-      if (!this.cachedBundle && !this.buildError) {
-        console.log(
-          '[dev-engine] onOutput not fired, falling back to rolldown() for initial build...',
-        );
+      // Code splitting requires generateBundle hook which DevEngine's dev() API
+      // may not support. Use fallback build (rolldown + generate) for code splitting.
+      if (codeSplitting) {
+        console.log('[dev-engine] Code splitting enabled, using rolldown() build...');
         await this.fallbackBuild();
+      } else {
+        this.engine = await dev(devInputOptions, devOutputOptions, {
+          onHmrUpdates: (result) => this.handleHmrUpdates(result),
+          onOutput: (result) => this.handleOutput(result),
+          rebuildStrategy: 'auto',
+        });
+
+        await this.engine.run();
+
+        // DevEngine's onOutput may not fire on initial build.
+        // Wait for output, and if still no bundle, fall back to rolldown() build.
+        if (!this.cachedBundle && !this.buildError) {
+          try {
+            await this.engine.ensureLatestBuildOutput();
+          } catch {
+            // ensureLatestBuildOutput may fail if no output was produced
+          }
+        }
+
+        if (!this.cachedBundle && !this.buildError) {
+          console.log(
+            '[dev-engine] onOutput not fired, falling back to rolldown() for initial build...',
+          );
+          await this.fallbackBuild();
+        }
       }
     } catch (error: any) {
       this.buildError = error;
@@ -173,12 +204,30 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
       console.log(`[dev-engine] Fallback build done (${mainChunk.code.length} chars)`);
 
+      // Collect non-entry chunks (code splitting)
+      let chunks: Map<string, { code: string; map?: string }> | undefined;
+      const nonEntryChunks = output.filter(
+        (o) => o.type === 'chunk' && !o.isEntry,
+      );
+      if (nonEntryChunks.length > 0) {
+        chunks = new Map();
+        for (const chunk of nonEntryChunks) {
+          if (chunk.type === 'chunk') {
+            chunks.set(chunk.fileName, {
+              code: chunk.code,
+              map: chunk.map?.toString(),
+            });
+          }
+        }
+      }
+
       // rolldown() runs renderChunk hooks (hermesCompatPlugin), so the code
       // is already Hermes-compatible. Mark needsHermesCompat=false.
       this.cachedBundle = {
         code: mainChunk.code,
         map: mainChunk.map?.toString(),
         needsHermesCompat: false,
+        chunks,
       };
       this.buildError = null;
       this.state = 'ready';
@@ -250,10 +299,29 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     // DevEngine's dev() API DOES run renderChunk hooks (hermesCompatPlugin),
     // so the output is already Hermes-compatible. No need for applyHermesCompat.
+
+    // Collect non-entry chunks (code splitting)
+    let chunks: Map<string, { code: string; map?: string }> | undefined;
+    const nonEntryChunks = result.output.filter(
+      (o) => o.type === 'chunk' && !o.isEntry,
+    );
+    if (nonEntryChunks.length > 0) {
+      chunks = new Map();
+      for (const chunk of nonEntryChunks) {
+        if (chunk.type === 'chunk') {
+          chunks.set(chunk.fileName, {
+            code: chunk.code,
+            map: chunk.map?.toString(),
+          });
+        }
+      }
+    }
+
     this.cachedBundle = {
       code: mainChunk.code,
       map: mainChunk.map?.toString(),
       needsHermesCompat: false,
+      chunks,
     };
     this.buildError = null;
     this.state = 'ready';
@@ -303,6 +371,14 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     }
 
     return this.cachedBundle;
+  }
+
+  /**
+   * Get a specific chunk by filename (for code splitting)
+   */
+  async getChunk(fileName: string): Promise<{ code: string; map?: string } | null> {
+    const bundle = await this.getBundle();
+    return bundle.chunks?.get(fileName) || null;
   }
 
   /**

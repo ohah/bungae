@@ -26,8 +26,10 @@ import {
   preludePlugin,
   hermesCompatPlugin,
   generatePreludeCode,
+  chunkLoaderPlugin,
+  generateChunkLoaderRuntime,
 } from './plugins';
-import type { OxcBuildResult, OxcBuildOptions } from './types';
+import type { OxcBuildResult, OxcBuildOptions, ChunkInfo } from './types';
 
 export interface RolldownOptionsResult {
   inputOptions: InputOptions;
@@ -45,6 +47,9 @@ export function createRolldownOptions(
     minify?: boolean;
     dev?: boolean;
     extraPlugins?: Plugin[];
+    /** Dev server host/port for chunk loader (dev mode) */
+    host?: string;
+    port?: number;
   } = {},
 ): RolldownOptionsResult {
   const {
@@ -52,11 +57,30 @@ export function createRolldownOptions(
     minify: minifyOpt = config.minify,
     dev = config.dev,
     extraPlugins = [],
+    host = 'localhost',
+    port = config.server?.port || 8081,
   } = options;
 
+  const codeSplitting = config.experimental?.codeSplitting === true && config.bundler === 'oxc';
   const entryPath = resolve(config.root, config.entry);
   const preludeModules = resolvePreludeModules(config);
   const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
+
+  const plugins: Plugin[] = [
+    preludePlugin(config, { preludeModules }),
+    flowStripPlugin(config),
+    assetPlugin(config),
+    jsonPlugin(),
+    platformResolverPlugin(config),
+  ];
+
+  // chunk-loader must run BEFORE hermes-compat so replaced code also gets ES5 downlevel
+  if (codeSplitting) {
+    plugins.push(chunkLoaderPlugin({ host, port, dev }));
+  }
+
+  plugins.push(hermesCompatPlugin());
+  plugins.push(...extraPlugins);
 
   const inputOptions: InputOptions = {
     input: entryPath,
@@ -69,15 +93,7 @@ export function createRolldownOptions(
     },
     treeshake: dev ? false : true,
     shimMissingExports: true,
-    plugins: [
-      preludePlugin(config, { preludeModules }),
-      flowStripPlugin(config),
-      assetPlugin(config),
-      jsonPlugin(),
-      platformResolverPlugin(config),
-      hermesCompatPlugin(),
-      ...extraPlugins,
-    ],
+    plugins,
   };
 
   const outputOptions: OutputOptions = {
@@ -86,6 +102,11 @@ export function createRolldownOptions(
     sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
     minify: minifyOpt,
   };
+
+  if (codeSplitting) {
+    (outputOptions as any).codeSplitting = true;
+    outputOptions.chunkFileNames = '[name]-[hash].js';
+  }
 
   return { inputOptions, outputOptions };
 }
@@ -113,6 +134,8 @@ export async function buildWithOxc(
   const startTime = Date.now();
   console.log('⚡ Bundling with Rolldown...');
 
+  const codeSplitting = config.experimental?.codeSplitting === true && config.bundler === 'oxc';
+
   const { inputOptions, outputOptions } = createRolldownOptions(config, {
     sourcemap,
     minify,
@@ -130,10 +153,30 @@ export async function buildWithOxc(
   // IIFE prevents top-level `var` declarations (e.g., `var Headers` from
   // fetch.js) from creating non-configurable properties on globalThis,
   // which would break React Native's polyfillGlobal().
+  let introOption: string | ((chunk: any) => string);
+  let outroOption: string | ((chunk: any) => string);
+
+  if (codeSplitting) {
+    // With code splitting, only entry chunk gets prelude/polyfills/chunk-loader.
+    // Non-entry chunks get just IIFE wrapping.
+    const chunkLoaderRuntime = generateChunkLoaderRuntime({
+      host: 'localhost',
+      port: config.server?.port || 8081,
+      dev: config.dev,
+    });
+    const entryIntro = `var global = globalThis;\n${prelude}\n${polyfillCode}\n${chunkLoaderRuntime}\n(function() {`;
+    const chunkIntro = '(function() {';
+    introOption = (chunk: any) => chunk.isEntry ? entryIntro : chunkIntro;
+    outroOption = '}).call(globalThis);';
+  } else {
+    introOption = `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`;
+    outroOption = '}).call(globalThis);';
+  }
+
   const { output } = await bundle.generate({
     ...outputOptions,
-    intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
-    outro: '}).call(globalThis);',
+    intro: introOption,
+    outro: outroOption,
   });
 
   await bundle.close();
@@ -149,6 +192,26 @@ export async function buildWithOxc(
   let code = mainChunk.code;
   let map = mainChunk.map?.toString();
 
+  // Collect non-entry chunks (code splitting)
+  let chunks: ChunkInfo[] | undefined;
+  if (codeSplitting) {
+    const nonEntryChunks = output.filter(
+      (o) => o.type === 'chunk' && !o.isEntry,
+    );
+    if (nonEntryChunks.length > 0) {
+      chunks = nonEntryChunks.map((chunk) => {
+        if (chunk.type !== 'chunk') throw new Error('Unexpected asset in chunks');
+        return {
+          name: chunk.name,
+          fileName: chunk.fileName,
+          code: chunk.code,
+          map: chunk.map?.toString(),
+          isDynamicEntry: chunk.isDynamicEntry,
+        };
+      });
+    }
+  }
+
   // Handle inline source map
   if (sourcemap === 'inline' && map) {
     const base64Map = Buffer.from(map).toString('base64');
@@ -156,7 +219,8 @@ export async function buildWithOxc(
     map = undefined;
   }
 
-  console.log(`  Bundling done in ${bundleDuration}ms (${output.length} chunks)`);
+  const chunkCount = (chunks?.length || 0) + 1;
+  console.log(`  Bundling done in ${bundleDuration}ms (${chunkCount} chunk${chunkCount > 1 ? 's' : ''})`);
 
   // Collect assets from asset plugin
   const assets = output
@@ -171,6 +235,20 @@ export async function buildWithOxc(
 
     writeFileSync(outfile, code, 'utf-8');
     console.log(`  Output: ${outfile} (${formatSize(Buffer.byteLength(code))})`);
+
+    // Write non-entry chunks to chunks/ subdirectory
+    if (chunks && chunks.length > 0) {
+      const chunksDir = resolve(outDir, 'chunks');
+      mkdirSync(chunksDir, { recursive: true });
+      for (const chunk of chunks) {
+        const chunkPath = resolve(chunksDir, chunk.fileName);
+        writeFileSync(chunkPath, chunk.code, 'utf-8');
+        console.log(`  Chunk: ${chunkPath} (${formatSize(Buffer.byteLength(chunk.code))})`);
+        if (chunk.map) {
+          writeFileSync(`${chunkPath}.map`, chunk.map, 'utf-8');
+        }
+      }
+    }
 
     if (map) {
       const mapFile = `${outfile}.map`;
@@ -194,6 +272,26 @@ export async function buildWithOxc(
         console.log(
           `  Hermes: ${hermesResult.outputPath} (${formatSize(hermesResult.size)}) in ${hermesResult.duration}ms`,
         );
+
+        // Compile non-entry chunks to Hermes bytecode
+        if (chunks && chunks.length > 0) {
+          const chunksDir = resolve(outDir, 'chunks');
+          for (const chunk of chunks) {
+            try {
+              const chunkPath = resolve(chunksDir, chunk.fileName);
+              await compileToHermesBytecode({
+                input: chunkPath,
+                output: chunkPath.replace(/\.js$/, '.hbc'),
+                sourceMap: !!chunk.map,
+                inputSourceMap: chunk.map ? `${chunkPath}.map` : undefined,
+                optimize: !config.dev,
+                projectRoot: config.root,
+              });
+            } catch (error: any) {
+              console.warn(`  Hermes compilation skipped for chunk ${chunk.fileName}: ${error.message}`);
+            }
+          }
+        }
       } catch (error: any) {
         console.warn(`  Hermes compilation skipped: ${error.message}`);
       }
@@ -208,6 +306,7 @@ export async function buildWithOxc(
     map,
     hermesBytecode,
     assets,
+    chunks,
   };
 }
 

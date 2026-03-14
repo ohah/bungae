@@ -57,4 +57,7 @@ export default defineConfig({
     forwardClientLogs: true,
     verifyConnections: false,
   },
+  experimental: {
+    codeSplitting: true,
+  },
 } satisfies BungaeConfig);

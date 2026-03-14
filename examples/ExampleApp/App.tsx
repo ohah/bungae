@@ -6,8 +6,10 @@
  */
 
 import { NewAppScreen } from '@react-native/new-app-screen';
-import { useEffect, useState } from 'react';
+import { Suspense, lazy, useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
+  LogBox,
   StatusBar,
   StyleSheet,
   useColorScheme,
@@ -17,6 +19,11 @@ import {
   TouchableOpacity,
   Alert,
 } from 'react-native';
+
+LogBox.ignoreAllLogs();
+
+// Code splitting test: lazy-loaded screen
+const LazyScreen = lazy(() => import('./src/LazyScreen'));
 
 // Test asset import - verifies asset plugin resolves images correctly
 const testIcon = require('./src/assets/test-icon.png');
@@ -41,6 +48,7 @@ function AppContent() {
     isBungae: boolean;
   } | null>(null);
   const [hermesEnabled, setHermesEnabled] = useState<boolean | null>(null);
+  const [showLazy, setShowLazy] = useState(false);
 
   // Double-check: Verify which bundler was used
   useEffect(() => {
@@ -318,6 +326,40 @@ function AppContent() {
       >
         <Text style={styles.sourceMapTestButtonText}>🗺️ Source Map Test (Error Test)</Text>
       </TouchableOpacity>
+
+      {/* Code Splitting 테스트 버튼 */}
+      <TouchableOpacity
+        onPress={() => setShowLazy(!showLazy)}
+        style={styles.lazySplitButton}
+        activeOpacity={0.7}
+      >
+        <Text style={styles.testButtonText}>
+          {showLazy ? '✕ Close Lazy Screen' : '📦 Load Lazy Screen (Code Split)'}
+        </Text>
+      </TouchableOpacity>
+
+      {/* Lazy loaded screen */}
+      {showLazy && (
+        <View style={StyleSheet.absoluteFill}>
+          <Suspense
+            fallback={
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color="#e94560" />
+                <Text style={styles.loadingText}>Loading chunk...</Text>
+              </View>
+            }
+          >
+            <LazyScreen />
+          </Suspense>
+          <TouchableOpacity
+            onPress={() => setShowLazy(false)}
+            style={styles.closeButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.closeButtonText}>✕ Close</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
@@ -429,6 +471,47 @@ const styles = StyleSheet.create({
   },
   sourceMapTestButtonText: {
     color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  lazySplitButton: {
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
+    backgroundColor: '#8B5CF6',
+    padding: 15,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1a1a2e',
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#aaa',
+    fontSize: 14,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  closeButtonText: {
+    color: '#fff',
     fontSize: 16,
     fontWeight: '600',
   },
