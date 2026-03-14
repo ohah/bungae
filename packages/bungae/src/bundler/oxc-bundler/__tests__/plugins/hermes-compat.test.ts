@@ -33,30 +33,43 @@ describe('hermesCompatPlugin', () => {
     return new Function(result.code + '\nreturn typeof __test_result__ !== "undefined" ? __test_result__ : undefined;')();
   }
 
-  describe('private fields transform (per-module, es2015)', () => {
+  describe('ES5 transform (per-module)', () => {
+    it('should transform class expressions to functions', async () => {
+      const code = `var Foo = class Foo1 { constructor() { this.x = 1; } };`;
+      const result = await callTransform(code);
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain('= class');
+      expect(result.code).toContain('function Foo1');
+    });
+
     it('should transform private class fields', async () => {
-      const code = `class Foo {
-  #value = 42;
-  getValue() { return this.#value; }
-}`;
+      const code = `class Foo { #value = 42; getValue() { return this.#value; } }`;
       const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('#value');
     });
 
     it('should transform private methods', async () => {
-      const code = `class Bar {
-  #doSomething() { return 'hello'; }
-  run() { return this.#doSomething(); }
-}`;
+      const code = `class Bar { #doSomething() { return 'hello'; } run() { return this.#doSomething(); } }`;
       const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('#doSomething');
     });
 
-    it('should skip modules without # (no private fields)', async () => {
-      const result = await callTransform('class Foo { x = 1; }', '/test/normal.js');
-      expect(result).toBeNull();
+    it('should transform let/const to var', async () => {
+      const code = `const a = 1; let b = 2;`;
+      const result = await callTransform(code);
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain('const ');
+      expect(result.code).not.toContain('let ');
+      expect(result.code).toContain('var ');
+    });
+
+    it('should transform arrow functions', async () => {
+      const code = `const fn = () => 42;`;
+      const result = await callTransform(code);
+      expect(result).not.toBeNull();
+      expect(result.code).not.toContain('=>');
     });
 
     it('should skip json files', async () => {
@@ -64,36 +77,8 @@ describe('hermesCompatPlugin', () => {
       expect(result).toBeNull();
     });
 
-    it('should preserve let/const (es2015 target)', async () => {
-      const code = `class Foo { #x = 1; } const a = 1; let b = 2;`;
-      const result = await callTransform(code);
-      expect(result).not.toBeNull();
-      expect(result.code).not.toContain('#x');
-      expect(result.code).toContain('const ');
-      expect(result.code).toContain('let ');
-    });
-
-    it('should preserve arrow functions', async () => {
-      const code = `class Foo { #x = 1; } const fn = () => 42;`;
-      const result = await callTransform(code);
-      expect(result).not.toBeNull();
-      expect(result.code).toContain('=>');
-    });
-
-    it('should preserve class expressions (Hermes 0.83 supports them)', async () => {
-      const code = `var Bar = class Bar { #val = 1; };`;
-      const result = await callTransform(code);
-      expect(result).not.toBeNull();
-      expect(result.code).not.toContain('#val');
-      expect(result.code).toContain('class');
-    });
-
     it('should handle multiple private fields', async () => {
-      const code = `class Point {
-  #x; #y;
-  constructor(x, y) { this.#x = x; this.#y = y; }
-  toString() { return this.#x + "," + this.#y; }
-}`;
+      const code = `class Point { #x; #y; constructor(x, y) { this.#x = x; this.#y = y; } }`;
       const result = await callTransform(code);
       expect(result).not.toBeNull();
       expect(result.code).not.toContain('#x');

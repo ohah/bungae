@@ -1,11 +1,10 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * 1. Private fields downlevel — `transform` hook (per-module):
- *    Hermes (0.83) supports class expressions but NOT private fields (#field).
- *    SWC `target: 'es2015'` transforms only private fields/methods to
- *    regular properties, while preserving let/const, arrow functions,
- *    class expressions, template literals, etc.
+ * 1. ES5 downlevel — `transform` hook (per-module, before bundling):
+ *    Hermes doesn't support class expressions or private fields.
+ *    SWC `target: 'es5'` converts each module individually before
+ *    Rolldown bundles them. Same approach as Rollipop.
  *
  * 2. Configurable exports — `renderChunk` hook (post-bundling):
  *    Rolldown's runtime helpers create module exports with
@@ -36,9 +35,6 @@ export function hermesCompatPlugin(): Plugin {
       async handler(code, id) {
         if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
 
-        // Quick check: skip if no private fields/methods
-        if (!code.includes('#')) return null;
-
         try {
           const swc = await getSwc();
 
@@ -46,7 +42,7 @@ export function hermesCompatPlugin(): Plugin {
             filename: id,
             jsc: {
               parser: { syntax: 'ecmascript' },
-              target: 'es2015',
+              target: 'es5',
               assumptions: {
                 setPublicClassFields: true,
                 privateFieldsAsProperties: true,
