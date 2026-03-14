@@ -1,15 +1,15 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * Two separate concerns, handled at different stages:
+ * Two concerns handled in `renderChunk` (post-bundling):
  *
- * 1. ES5 downlevel — `transform` hook (per-module, before bundling):
- *    Hermes doesn't support class expressions, private fields, optional
- *    chaining, nullish coalescing, etc. SWC `target: 'es5'` converts
- *    each module individually. Per-module transform avoids SWC bugs that
- *    occur when transforming the entire 4MB+ bundle chunk at once.
+ * 1. Class expressions → function expressions:
+ *    Hermes doesn't support class expressions (`var X = class {}`).
+ *    Rolldown generates these when bundling ESM modules.
+ *    Uses Babel with only @babel/plugin-transform-classes to avoid
+ *    changing let/const/arrow/template-literal scoping semantics.
  *
- * 2. Configurable exports — `renderChunk` hook (post-bundling):
+ * 2. Configurable exports:
  *    Rolldown's runtime helpers create module exports with
  *    `configurable: false`. React Native's deepFreezeAndThrowOnMutationInDev
  *    needs `configurable: true` to add mutation-throwing setters in dev mode.
@@ -18,77 +18,46 @@
 
 import type { Plugin } from 'rolldown';
 
-let swcModule: typeof import('@swc/core') | null = null;
-
-async function getSwc() {
-  if (!swcModule) {
-    swcModule = await import('@swc/core');
-  }
-  return swcModule;
-}
-
-/**
- * Per-module SWC es5 transform for Hermes compatibility.
- * Runs in `transform` hook — each module is small, fast, and isolated
- * from Rolldown's runtime code.
- */
 export function hermesCompatPlugin(): Plugin {
   return {
     name: 'bungae:hermes-compat',
 
-    transform: {
-      filter: {
-        id: {
-          exclude: [/\.json$/],
-        },
-      },
-      async handler(code, id) {
-        // Skip non-JS modules
-        if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
+    renderChunk: {
+      async handler(code, _chunk) {
+        let result = code;
 
+        // 1. Transform class expressions to function expressions for Hermes.
+        //    Only @babel/plugin-transform-classes — no other ES5 transforms.
+        //    This preserves let/const, arrow functions, template literals, etc.
         try {
-          const swc = await getSwc();
+          const babel = await import('@babel/core');
 
-          const result = await swc.transform(code, {
-            filename: id,
-            jsc: {
-              parser: { syntax: 'ecmascript' },
-              target: 'es5',
-              assumptions: {
-                setPublicClassFields: true,
-                privateFieldsAsProperties: true,
-              },
-            },
+          const babelResult = await babel.transformAsync(result, {
+            babelrc: false,
+            configFile: false,
+            sourceType: 'script',
+            plugins: [
+              '@babel/plugin-transform-classes',
+              '@babel/plugin-transform-private-methods',
+              '@babel/plugin-transform-class-properties',
+            ],
             sourceMaps: true,
           });
 
-          return {
-            code: result.code,
-            map: result.map || undefined,
-          };
-        } catch {
-          // If SWC fails (e.g., syntax not supported), pass through unchanged
-          return null;
+          if (babelResult?.code) {
+            result = babelResult.code;
+          }
+        } catch (error: any) {
+          console.warn(`[hermes-compat] Babel class transform failed: ${error.message}`);
         }
-      },
-    },
 
-    renderChunk: {
-      handler(code, _chunk) {
-        // Patch Rolldown's __defProp to always set configurable: true.
-        // This only touches Rolldown's runtime (first few lines of the chunk),
-        // not user/library code.
-        const patched = code.replace(
+        // 2. Patch Rolldown's __defProp to always set configurable: true.
+        result = result.replace(
           /var __defProp = Object\.defineProperty;/,
           `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
         );
-        if (patched === code) {
-          console.warn(
-            '[hermes-compat] Failed to patch __defProp — Rolldown runtime pattern may have changed.',
-          );
-        }
 
-        return { code: patched };
+        return { code: result };
       },
     },
   };
