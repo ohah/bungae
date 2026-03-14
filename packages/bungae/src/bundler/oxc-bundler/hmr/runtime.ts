@@ -23,6 +23,7 @@ declare var __esmMin_debug_last: string;
 declare global {
   var __rolldown_runtime__: any;
   var __turboModuleProxy: (moduleName: string) => any;
+  // Used at line 198 via globalThis.nativeModuleProxy
   var nativeModuleProxy: Record<string, any>;
   var globalEvalWithSourceUrl: (code: string, sourceURL?: string) => void;
   var __ReactRefresh: any;

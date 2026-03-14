@@ -19,7 +19,7 @@ import { dev, transformSync, type DevEngine, type BindingClientHmrUpdate } from 
 
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
-import { hermesCompatPlugin, hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
+import { hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
 import { generatePreludeCode } from '../plugins/prelude';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';

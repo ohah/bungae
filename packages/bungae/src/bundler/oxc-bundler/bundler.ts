@@ -25,8 +25,6 @@ import {
   assetPlugin,
   preludePlugin,
   hermesCompatPlugin,
-  hmrClientReplacePlugin,
-  reactRefreshPlugin,
   generatePreludeCode,
 } from './plugins';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
