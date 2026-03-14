@@ -171,8 +171,7 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
           });
 
           // Calculate comparison (handle edge cases for division by zero)
-          const speedup =
-            oxcResult.totalTime > 0 ? metroResult.totalTime / oxcResult.totalTime : 0;
+          const speedup = oxcResult.totalTime > 0 ? metroResult.totalTime / oxcResult.totalTime : 0;
           const sizeDiff = metroResult.bundleSize - oxcResult.bundleSize;
           const sizeDiffPercent =
             metroResult.bundleSize > 0 ? (sizeDiff / metroResult.bundleSize) * 100 : 0;
