@@ -25,6 +25,7 @@ import {
 import type { ResolvedConfig } from '../../../config/types';
 import { createRolldownOptions } from '../bundler';
 import { hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
+import { generateChunkLoaderRuntime } from '../plugins/chunk-loader';
 import { generatePreludeCode } from '../plugins/prelude';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
@@ -46,6 +47,8 @@ interface CachedBundle {
   code: string;
   map?: string;
   needsHermesCompat?: boolean;
+  /** Non-entry chunks (when code splitting is enabled) */
+  chunks?: Map<string, { code: string; map?: string }>;
 }
 
 /**
@@ -106,13 +109,24 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         sourcemap: true,
         minify: false,
         dev: true,
+        host: this.options.host === '0.0.0.0' ? 'localhost' : this.options.host,
+        port: this.options.port,
         extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
       });
+
+      // Build intro with optional chunk loader runtime
+      const codeSplitting = this.config.experimental?.codeSplitting === true && this.config.bundler === 'oxc';
+      let introCode = `var global = globalThis;\n${prelude}\n${polyfillCode}`;
+      if (codeSplitting) {
+        const devHost = this.options.host === '0.0.0.0' ? 'localhost' : this.options.host;
+        introCode += `\n${generateChunkLoaderRuntime({ host: devHost, port: this.options.port, dev: true })}`;
+      }
+      introCode += '\n(function() {';
 
       // Store for fallback build
       const devOutputOptions = {
         ...outputOptions,
-        intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
+        intro: introCode,
         outro: '}).call(globalThis);',
       };
       this.rolldownInputOptions = inputOptions;
@@ -173,12 +187,30 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
       console.log(`[dev-engine] Fallback build done (${mainChunk.code.length} chars)`);
 
+      // Collect non-entry chunks (code splitting)
+      let chunks: Map<string, { code: string; map?: string }> | undefined;
+      const nonEntryChunks = output.filter(
+        (o) => o.type === 'chunk' && !o.isEntry,
+      );
+      if (nonEntryChunks.length > 0) {
+        chunks = new Map();
+        for (const chunk of nonEntryChunks) {
+          if (chunk.type === 'chunk') {
+            chunks.set(chunk.fileName, {
+              code: chunk.code,
+              map: chunk.map?.toString(),
+            });
+          }
+        }
+      }
+
       // rolldown() runs renderChunk hooks (hermesCompatPlugin), so the code
       // is already Hermes-compatible. Mark needsHermesCompat=false.
       this.cachedBundle = {
         code: mainChunk.code,
         map: mainChunk.map?.toString(),
         needsHermesCompat: false,
+        chunks,
       };
       this.buildError = null;
       this.state = 'ready';
@@ -250,10 +282,29 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     // DevEngine's dev() API DOES run renderChunk hooks (hermesCompatPlugin),
     // so the output is already Hermes-compatible. No need for applyHermesCompat.
+
+    // Collect non-entry chunks (code splitting)
+    let chunks: Map<string, { code: string; map?: string }> | undefined;
+    const nonEntryChunks = result.output.filter(
+      (o) => o.type === 'chunk' && !o.isEntry,
+    );
+    if (nonEntryChunks.length > 0) {
+      chunks = new Map();
+      for (const chunk of nonEntryChunks) {
+        if (chunk.type === 'chunk') {
+          chunks.set(chunk.fileName, {
+            code: chunk.code,
+            map: chunk.map?.toString(),
+          });
+        }
+      }
+    }
+
     this.cachedBundle = {
       code: mainChunk.code,
       map: mainChunk.map?.toString(),
       needsHermesCompat: false,
+      chunks,
     };
     this.buildError = null;
     this.state = 'ready';
@@ -303,6 +354,14 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     }
 
     return this.cachedBundle;
+  }
+
+  /**
+   * Get a specific chunk by filename (for code splitting)
+   */
+  async getChunk(fileName: string): Promise<{ code: string; map?: string } | null> {
+    const bundle = await this.getBundle();
+    return bundle.chunks?.get(fileName) || null;
   }
 
   /**

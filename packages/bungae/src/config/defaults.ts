@@ -36,7 +36,8 @@ export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
  * Default experimental configuration
  */
 export const DEFAULT_EXPERIMENTAL: Required<ExperimentalConfig> = {
-  treeShaking: false, // Disabled by default (experimental feature)
+  treeShaking: false,
+  codeSplitting: false,
 };
 
 /**

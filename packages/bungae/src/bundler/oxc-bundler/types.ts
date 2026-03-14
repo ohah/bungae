@@ -2,8 +2,21 @@
  * Type definitions for OXC Bundler (Rolldown-based)
  */
 
+export interface ChunkInfo {
+  /** Chunk name (e.g., 'settings-abc123') */
+  name: string;
+  /** Chunk file name (e.g., 'settings-abc123.js') */
+  fileName: string;
+  /** Generated chunk code */
+  code: string;
+  /** Source map (JSON string) */
+  map?: string;
+  /** Whether this chunk was created from a dynamic import() */
+  isDynamicEntry: boolean;
+}
+
 export interface OxcBuildResult {
-  /** Generated bundle code */
+  /** Generated bundle code (entry chunk) */
   code: string;
   /** Source map (JSON string) */
   map?: string;
@@ -11,6 +24,8 @@ export interface OxcBuildResult {
   hermesBytecode?: string;
   /** Detected assets */
   assets: AssetData[];
+  /** Non-entry chunks (only when code splitting is enabled) */
+  chunks?: ChunkInfo[];
 }
 
 export interface OxcBuildOptions {

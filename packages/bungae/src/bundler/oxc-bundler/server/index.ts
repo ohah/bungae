@@ -117,6 +117,12 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
       return;
     }
 
+    // Chunk request: /chunks/{chunkFileName} (code splitting)
+    if (pathname.startsWith('/chunks/')) {
+      await handleChunkRequest(pathname, res, devEngine);
+      return;
+    }
+
     // Asset request: /assets/... (Metro-compatible asset serving)
     if (pathname.startsWith('/assets/') || pathname.includes('/assets/')) {
       handleAssetRequest(req, res, config);
@@ -319,6 +325,28 @@ async function handleSourceMapRequest(res: ServerResponse, devEngine: OxcDevEngi
       res.end(bundle.map);
     } else {
       sendText(res, 404, 'No source map available');
+    }
+  } catch (error: any) {
+    sendJson(res, 500, { error: error.message });
+  }
+}
+
+async function handleChunkRequest(
+  pathname: string,
+  res: ServerResponse,
+  devEngine: OxcDevEngine,
+): Promise<void> {
+  const chunkFileName = pathname.slice('/chunks/'.length);
+  try {
+    const chunk = await devEngine.getChunk(chunkFileName);
+    if (chunk) {
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript',
+        'Content-Length': Buffer.byteLength(chunk.code),
+      });
+      res.end(chunk.code);
+    } else {
+      sendText(res, 404, `Chunk not found: ${chunkFileName}`);
     }
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });

@@ -10,3 +10,4 @@ export { preludePlugin, generatePreludeCode } from './prelude';
 export { hermesCompatPlugin } from './hermes-compat';
 export { hmrClientReplacePlugin } from './hmr-client-replace';
 export { reactRefreshPlugin } from './react-refresh';
+export { chunkLoaderPlugin, generateChunkLoaderRuntime } from './chunk-loader';
