@@ -16,10 +16,10 @@ function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 7: {info}</Text>
-      {info === 'done' && (
+      <Text style={styles.text}>Step 8: {info}</Text>
+      {info === 'done' ? (
         <Text style={styles.text}>Conditional: works!</Text>
-      )}
+      ) : null}
     </View>
   );
 }
