@@ -14,7 +14,8 @@ import { readFileSync } from 'fs';
 import type { Plugin } from 'rolldown';
 import { transformSync } from 'rolldown/experimental';
 
-const HMR_CLIENT_PATTERN = /react-native[/\\]Libraries[/\\]Utilities[/\\]HMRClient/;
+const HMR_CLIENT_PATTERN =
+  /metro-runtime[/\\]src[/\\]modules[/\\]HMRClient|react-native[/\\]Libraries[/\\]Utilities[/\\]HMRClient/;
 
 /**
  * Compile the HMR client TypeScript source to JavaScript.
