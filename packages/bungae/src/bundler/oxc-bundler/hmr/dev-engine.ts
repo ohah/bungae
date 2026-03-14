@@ -127,7 +127,14 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
       this.engine = await dev(devInputOptions, devOutputOptions, {
         onHmrUpdates: (result) => {
-          console.log('[dev-engine] onHmrUpdates fired:', result instanceof Error ? result.message : `${result.updates.length} updates, ${result.changedFiles.length} files`);
+          if (result instanceof Error) {
+            console.log('[dev-engine] onHmrUpdates error:', result.message);
+          } else {
+            console.log(`[dev-engine] onHmrUpdates: ${result.updates.length} updates, files: ${result.changedFiles.join(', ')}`);
+            for (const u of result.updates) {
+              console.log(`  [update] client=${u.clientId} type=${u.update.type}`);
+            }
+          }
           this.handleHmrUpdates(result);
         },
         onOutput: (result) => {
