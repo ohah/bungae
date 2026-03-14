@@ -20,15 +20,16 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
+          // DEBUG: dump raw Rolldown output
+          try { require('fs').writeFileSync('/tmp/bungae-raw.js', code); } catch {}
+
           // Pre-process before SWC es5:
-          // 1. Strip (0, fn) comma expressions → fn
-          //    SWC es5 bug: in `&& (0, fn)(args)`, SWC replaces (0, fn) with (void 0).
-          //    The comma expression is only for unbinding `this`, which is unnecessary
-          //    in React Native bundled context.
-          // 2. Strip /* @__PURE__ */ annotations (only for tree-shaking, already done).
           const preProcessed = code
             .replace(/\(0,\s*([\w$]+(?:\.[\w$]+)*)\s*\)\s*\(/g, '$1(')
             .replace(/\/\* @__PURE__ \*\/ /g, '');
+
+          // DEBUG: dump after pre-processing
+          try { require('fs').writeFileSync('/tmp/bungae-preprocessed.js', preProcessed); } catch {}
 
           const result = await swc.transform(preProcessed, {
             jsc: {
