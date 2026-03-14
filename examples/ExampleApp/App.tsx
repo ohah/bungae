@@ -1,22 +1,11 @@
 /**
- * Step 4: useState re-render + conditional rendering with badges
+ * Step 4b: useState re-render WITHOUT NewAppScreen
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function App() {
-  return (
-    <SafeAreaProvider>
-      <AppContent />
-    </SafeAreaProvider>
-  );
-}
-
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
   const [info, setInfo] = useState<string | null>(null);
 
   useEffect(() => {
@@ -26,7 +15,7 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
+      <Text style={styles.badgeText}>Step 4b: re-render without NewAppScreen</Text>
       {info && (
         <View style={styles.badge}>
           <Text style={styles.badgeText}>{info}</Text>
