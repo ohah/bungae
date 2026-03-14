@@ -116,17 +116,22 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
       // Build intro with optional chunk loader runtime
       const codeSplitting = this.config.experimental?.codeSplitting === true && this.config.bundler === 'oxc';
-      let introCode = `var global = globalThis;\n${prelude}\n${polyfillCode}`;
+      const devHost = this.options.host === '0.0.0.0' ? 'localhost' : this.options.host;
+
+      let introOption: string | ((chunk: any) => string);
       if (codeSplitting) {
-        const devHost = this.options.host === '0.0.0.0' ? 'localhost' : this.options.host;
-        introCode += `\n${generateChunkLoaderRuntime({ host: devHost, port: this.options.port, dev: true })}`;
+        const chunkLoaderRuntime = generateChunkLoaderRuntime({ host: devHost, port: this.options.port, dev: true });
+        const entryIntro = `var global = globalThis;\n${prelude}\n${polyfillCode}\n${chunkLoaderRuntime}\n(function() {`;
+        const chunkIntro = '(function() {';
+        introOption = (chunk: any) => chunk.isEntry ? entryIntro : chunkIntro;
+      } else {
+        introOption = `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`;
       }
-      introCode += '\n(function() {';
 
       // Store for fallback build
       const devOutputOptions = {
         ...outputOptions,
-        intro: introCode,
+        intro: introOption,
         outro: '}).call(globalThis);',
       };
       this.rolldownInputOptions = inputOptions;
@@ -139,29 +144,36 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         incrementalBuild: true,
       };
 
-      this.engine = await dev(devInputOptions, devOutputOptions, {
-        onHmrUpdates: (result) => this.handleHmrUpdates(result),
-        onOutput: (result) => this.handleOutput(result),
-        rebuildStrategy: 'auto',
-      });
-
-      await this.engine.run();
-
-      // DevEngine's onOutput may not fire on initial build.
-      // Wait for output, and if still no bundle, fall back to rolldown() build.
-      if (!this.cachedBundle && !this.buildError) {
-        try {
-          await this.engine.ensureLatestBuildOutput();
-        } catch {
-          // ensureLatestBuildOutput may fail if no output was produced
-        }
-      }
-
-      if (!this.cachedBundle && !this.buildError) {
-        console.log(
-          '[dev-engine] onOutput not fired, falling back to rolldown() for initial build...',
-        );
+      // Code splitting requires generateBundle hook which DevEngine's dev() API
+      // may not support. Use fallback build (rolldown + generate) for code splitting.
+      if (codeSplitting) {
+        console.log('[dev-engine] Code splitting enabled, using rolldown() build...');
         await this.fallbackBuild();
+      } else {
+        this.engine = await dev(devInputOptions, devOutputOptions, {
+          onHmrUpdates: (result) => this.handleHmrUpdates(result),
+          onOutput: (result) => this.handleOutput(result),
+          rebuildStrategy: 'auto',
+        });
+
+        await this.engine.run();
+
+        // DevEngine's onOutput may not fire on initial build.
+        // Wait for output, and if still no bundle, fall back to rolldown() build.
+        if (!this.cachedBundle && !this.buildError) {
+          try {
+            await this.engine.ensureLatestBuildOutput();
+          } catch {
+            // ensureLatestBuildOutput may fail if no output was produced
+          }
+        }
+
+        if (!this.cachedBundle && !this.buildError) {
+          console.log(
+            '[dev-engine] onOutput not fired, falling back to rolldown() for initial build...',
+          );
+          await this.fallbackBuild();
+        }
       }
     } catch (error: any) {
       this.buildError = error;
