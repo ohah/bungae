@@ -7,11 +7,11 @@
  */
 
 import { existsSync, rmSync } from 'fs';
-import { join, resolve } from 'path';
+import { join } from 'path';
 
 import { buildWithOxc } from '../../bundler/oxc-bundler';
 import { getDefaultConfig } from '../../config/defaults';
-import type { BenchmarkResult, PhaseTimer } from './types';
+import type { BenchmarkResult } from './types';
 import { createPhaseTimer } from './types';
 
 export interface OxcBenchmarkOptions {
