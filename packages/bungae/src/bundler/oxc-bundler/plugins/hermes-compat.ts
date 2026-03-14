@@ -83,6 +83,13 @@ export function hermesCompatPlugin(): Plugin {
           // while avoiding SWC's ES5 bug where `(0, module.fn)` comma
           // expressions in conditional contexts are incorrectly replaced
           // with `(void 0)`.
+
+          // DEBUG: Check if void 0 callee exists BEFORE SWC
+          const voidBeforeCount = (code.match(/\(void 0\)\(/g) || []).length;
+          if (voidBeforeCount > 0) {
+            console.warn(`[hermes-compat] BEFORE SWC: found ${voidBeforeCount} "(void 0)(" patterns`);
+          }
+
           const result = await swc.transform(code, {
             jsc: {
               parser: {
@@ -96,6 +103,15 @@ export function hermesCompatPlugin(): Plugin {
             },
             sourceMaps: true,
           });
+
+          // DEBUG: Check if void 0 callee exists AFTER SWC
+          const voidAfterCount = (result.code.match(/\(void 0\)\(/g) || []).length;
+          if (voidAfterCount > 0) {
+            console.warn(`[hermes-compat] AFTER SWC: found ${voidAfterCount} "(void 0)(" patterns`);
+          }
+          if (voidAfterCount > voidBeforeCount) {
+            console.warn(`[hermes-compat] ⚠️ SWC introduced ${voidAfterCount - voidBeforeCount} new "(void 0)(" — this is likely the bug!`);
+          }
 
           // Patch Rolldown runtime for React Native compatibility
           let patched = patchRolldownRuntime(result.code);
