@@ -98,6 +98,10 @@ class HMRClient implements HMRClientNativeInterface {
 
     socket.addEventListener('open', () => {
       socket.send(JSON.stringify({ type: 'hmr:connected', bundleEntry, platform }));
+      // Connect runtime AFTER socket is open, so queued messages can be flushed
+      if (globalThis.__rolldown_runtime__ != null) {
+        globalThis.__rolldown_runtime__.setup(socket, origin);
+      }
     });
 
     socket.addEventListener('error', (event: any) => {
@@ -117,11 +121,6 @@ class HMRClient implements HMRClientNativeInterface {
         });
       }
     });
-
-    // Connect runtime to socket for HMR code evaluation
-    if (globalThis.__rolldown_runtime__ != null) {
-      globalThis.__rolldown_runtime__.setup(socket, origin);
-    }
 
     this.enabled = isEnabled;
   }
