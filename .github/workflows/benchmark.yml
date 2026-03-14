@@ -55,6 +55,8 @@ jobs:
 
       - name: Run OXC benchmark
         id: oxc-benchmark
+        env:
+          NODE_PATH: ${{ github.workspace }}/packages/bungae/node_modules
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --oxc-only \
@@ -67,6 +69,8 @@ jobs:
         if: github.event.inputs.compare_with_metro == 'true' || github.event_name == 'pull_request'
         id: metro-benchmark
         continue-on-error: true
+        env:
+          NODE_PATH: ${{ github.workspace }}/packages/bungae/node_modules
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --runs ${{ inputs.runs || '1' }} \
