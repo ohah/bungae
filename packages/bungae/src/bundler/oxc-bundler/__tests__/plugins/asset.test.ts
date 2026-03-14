@@ -244,6 +244,31 @@ describe('httpServerLocation normalization', () => {
     rmSync(repoRoot, { recursive: true, force: true });
   });
 
+  it('should simplify pnpm .pnpm cache paths', () => {
+    const repoRoot = join(tmpdir(), 'bungae-pnpm-cache-test-' + Date.now());
+    const projectRoot = join(repoRoot, 'packages', 'app');
+    const pnpmDir = join(
+      repoRoot,
+      'node_modules',
+      '.pnpm',
+      'react-native@0.83.1',
+      'node_modules',
+      'react-native',
+      'Libraries',
+      'LogBox',
+    );
+    mkdirSync(projectRoot, { recursive: true });
+    mkdirSync(pnpmDir, { recursive: true });
+    createPng(join(pnpmDir, 'close.png'));
+
+    const result = resolveAsset(join(pnpmDir, 'close.png'), projectRoot, 'ios');
+
+    expect(result.httpServerLocation).not.toContain('.pnpm');
+    expect(result.httpServerLocation).toContain('react-native/Libraries/LogBox');
+
+    rmSync(repoRoot, { recursive: true, force: true });
+  });
+
   it('should simplify Bun .bun cache paths', () => {
     const repoRoot = join(tmpdir(), 'bungae-bun-cache-test-' + Date.now());
     const projectRoot = join(repoRoot, 'packages', 'app');
