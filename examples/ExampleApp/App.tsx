@@ -1,21 +1,25 @@
 /**
- * Step 2: useState + useEffect re-render test
+ * Step 3: SafeAreaProvider + NewAppScreen test
  */
 
-import { useEffect, useState } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { NewAppScreen } from '@react-native/new-app-screen';
+import { View, StyleSheet } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function App() {
-  const [count, setCount] = useState(0);
+  return (
+    <SafeAreaProvider>
+      <AppContent />
+    </SafeAreaProvider>
+  );
+}
 
-  useEffect(() => {
-    setCount(1);
-  }, []);
+function AppContent() {
+  const safeAreaInsets = useSafeAreaInsets();
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 2: Re-render test</Text>
-      <Text style={styles.text}>Count: {count}</Text>
+      <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
     </View>
   );
 }
