@@ -8,8 +8,9 @@
  * Reuses: terminal-actions, dev-middleware, server utils from graph-bundler.
  */
 
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { basename, dirname, extname, join } from 'node:path';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -113,6 +114,12 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
         messageSocket.broadcast('devMenu');
       }
       sendText(res, 200, 'OK');
+      return;
+    }
+
+    // Asset request: /assets/... (Metro-compatible asset serving)
+    if (pathname.startsWith('/assets/') || pathname.includes('/assets/')) {
+      handleAssetRequest(req, res, config);
       return;
     }
 
@@ -389,6 +396,101 @@ function tryMiddleware(
     });
     res.on('finish', () => resolve(true));
   });
+}
+
+/** MIME types for common asset files */
+const ASSET_MIME_TYPES: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  bmp: 'image/bmp',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+  tiff: 'image/tiff',
+  ico: 'image/x-icon',
+  ttf: 'font/ttf',
+  otf: 'font/otf',
+  woff: 'font/woff',
+  woff2: 'font/woff2',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  mp3: 'audio/mpeg',
+  wav: 'audio/wav',
+  json: 'application/json',
+};
+
+/**
+ * Handle asset requests: /assets/{path}?platform=ios
+ * Serves the best scale variant for the requested asset.
+ * Metro-compatible: RN Image component requests assets via this endpoint.
+ */
+function handleAssetRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: ResolvedConfig,
+): void {
+  const url = new URL(req.url || '/', `http://localhost`);
+  const platform = (url.searchParams.get('platform') || config.platform) as string;
+
+  // Extract asset path from URL
+  // URL format: /assets/path/to/image.png or /path/to/assets/image.png
+  let assetPath = decodeURIComponent(url.pathname);
+
+  // Remove leading /assets/ prefix if present
+  if (assetPath.startsWith('/assets/')) {
+    assetPath = assetPath.slice('/assets/'.length);
+  } else if (assetPath.startsWith('/')) {
+    assetPath = assetPath.slice(1);
+  }
+
+  // Resolve to absolute path within project root
+  const absolutePath = join(config.root, assetPath);
+  const dir = dirname(absolutePath);
+  const ext = extname(absolutePath).slice(1);
+  const nameWithoutExt = basename(absolutePath, `.${ext}`);
+
+  // Try to find the best asset file
+  // 1. Try exact path first
+  if (existsSync(absolutePath)) {
+    serveAssetFile(absolutePath, ext, res);
+    return;
+  }
+
+  // 2. Try platform-specific variant
+  const platformPath = join(dir, `${nameWithoutExt}.${platform}.${ext}`);
+  if (existsSync(platformPath)) {
+    serveAssetFile(platformPath, ext, res);
+    return;
+  }
+
+  // 3. Try with node_modules resolution
+  const nodeModulesSearchPaths = [config.root, ...(config.resolver.nodeModulesPaths || [])];
+  for (const searchPath of nodeModulesSearchPaths) {
+    const nmPath = join(searchPath, assetPath);
+    if (existsSync(nmPath)) {
+      serveAssetFile(nmPath, ext, res);
+      return;
+    }
+  }
+
+  sendText(res, 404, `Asset not found: ${assetPath}`);
+}
+
+function serveAssetFile(filePath: string, ext: string, res: ServerResponse): void {
+  try {
+    const content = readFileSync(filePath);
+    const mimeType = ASSET_MIME_TYPES[ext.toLowerCase()] || 'application/octet-stream';
+
+    res.writeHead(200, {
+      'Content-Type': mimeType,
+      'Content-Length': content.length,
+      'Cache-Control': 'public, max-age=31536000',
+    });
+    res.end(content);
+  } catch {
+    sendText(res, 500, 'Failed to read asset file');
+  }
 }
 
 function printServerInfo(host: string, port: number, config: ResolvedConfig): void {

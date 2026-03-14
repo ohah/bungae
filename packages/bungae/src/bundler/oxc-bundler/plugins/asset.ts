@@ -4,20 +4,28 @@
  * Handles image/font/media assets for React Native.
  * Generates AssetRegistry-compatible code that React Native uses to load assets.
  *
- * Supports:
+ * Metro-compatible features:
  * - Scale variants (@2x, @3x)
  * - Platform-specific assets (.ios.png, .android.png)
- * - Image dimensions (width/height)
+ * - Image dimensions (width/height) via image-size
+ * - Asset collection for production extraction
  */
 
 import { createHash } from 'crypto';
-import { existsSync, readFileSync } from 'fs';
-import { basename, dirname, extname, relative, sep } from 'path';
+import { existsSync, readdirSync, readFileSync } from 'fs';
+import { basename, dirname, extname, join, relative, sep } from 'path';
 
+import { imageSize } from 'image-size';
 import type { Plugin } from 'rolldown';
 
 import type { ResolvedConfig } from '../../../config/types';
 import type { AssetData } from '../types';
+
+/** Image types that support dimension detection */
+const IMAGE_TYPES = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'svg', 'tiff', 'psd']);
+
+/** Scale variant regex: name@2x.ext or name@1.5x.ext */
+const SCALE_REGEX = /@(\d+(?:\.\d+)?)x$/;
 
 export function assetPlugin(config: ResolvedConfig): Plugin {
   const assetExts = config.resolver.assetExts.map((ext) => (ext.startsWith('.') ? ext : `.${ext}`));
@@ -37,7 +45,6 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
         const assetData = resolveAsset(id, config.root, config.platform);
         collectedAssets.push(assetData);
 
-        // Generate AssetRegistry code
         const code = generateAssetRegistryCode(assetData);
         return {
           code,
@@ -49,20 +56,22 @@ export function assetPlugin(config: ResolvedConfig): Plugin {
 }
 
 /**
- * Resolve asset metadata including scales and dimensions
+ * Resolve asset metadata including scales, dimensions, and platform variants
  */
-export function resolveAsset(filePath: string, projectRoot: string, _platform: string): AssetData {
+export function resolveAsset(filePath: string, projectRoot: string, platform: string): AssetData {
   const ext = extname(filePath).slice(1);
   const nameWithoutExt = basename(filePath, `.${ext}`);
   const dir = dirname(filePath);
   const relativePath = relative(projectRoot, dir);
 
-  // Find scale variants (@2x, @3x)
-  const scales = findScaleVariants(dir, nameWithoutExt, ext);
+  // Find scale variants and platform-specific files
+  const { scales, files } = findAssetVariants(dir, nameWithoutExt, ext, platform);
 
-  // Compute hash from file content
-  const content = readFileSync(filePath);
-  const hash = createHash('md5').update(content).digest('hex').slice(0, 8);
+  // Compute hash from all variant file contents
+  const hash = computeAssetHash(files);
+
+  // Detect image dimensions from the base (1x) file
+  const dimensions = getImageDimensions(filePath, ext);
 
   // HTTP server location (Metro-compatible path)
   const httpServerLocation = '/' + relativePath.split(sep).join('/');
@@ -75,46 +84,171 @@ export function resolveAsset(filePath: string, projectRoot: string, _platform: s
     name: nameWithoutExt,
     scales,
     type: ext,
+    ...(dimensions && { width: dimensions.width, height: dimensions.height }),
   };
 }
 
 /**
- * Find scale variants for an asset (@1x, @2x, @3x)
+ * Find all scale variants and platform-specific variants for an asset.
+ * Returns sorted scales and file paths for hash computation.
  */
-function findScaleVariants(dir: string, name: string, ext: string): number[] {
+export function findAssetVariants(
+  dir: string,
+  name: string,
+  ext: string,
+  platform: string,
+): { scales: number[]; files: string[] } {
   const scales: number[] = [];
-  // Check base file (1x)
-  const basePath = `${dir}/${name}.${ext}`;
-  if (existsSync(basePath)) {
-    scales.push(1);
+  const files: string[] = [];
+
+  let dirEntries: string[];
+  try {
+    dirEntries = readdirSync(dir);
+  } catch {
+    return { scales: [1], files: [join(dir, `${name}.${ext}`)] };
   }
 
-  // Check common scale variants
-  for (const scale of [1.5, 2, 3, 4]) {
-    const scaledName = `${name}@${scale}x.${ext}`;
-    const scaledPath = `${dir}/${scaledName}`;
-    if (existsSync(scaledPath)) {
-      if (!scales.includes(scale)) {
+  for (const entry of dirEntries) {
+    const entryExt = extname(entry).slice(1);
+    if (entryExt !== ext) continue;
+
+    const entryBase = basename(entry, `.${ext}`);
+
+    // Check platform-specific: name.ios.ext or name@2x.ios.ext
+    const platformSuffix = `.${platform}`;
+    const isPlatformSpecific = entryBase.endsWith(platformSuffix);
+    const baseName = isPlatformSpecific ? entryBase.slice(0, -platformSuffix.length) : entryBase;
+
+    // Skip other platform files (e.g., .android when building for ios)
+    if (!isPlatformSpecific) {
+      const otherPlatforms = ['ios', 'android', 'native', 'web'];
+      const hasOtherPlatform = otherPlatforms.some(
+        (p) => p !== platform && entryBase.endsWith(`.${p}`),
+      );
+      if (hasOtherPlatform) continue;
+    }
+
+    // Extract scale
+    const scaleMatch = baseName.match(SCALE_REGEX);
+    const scale = scaleMatch ? parseFloat(scaleMatch[1]!) : 1;
+    const assetName = scaleMatch ? baseName.replace(SCALE_REGEX, '') : baseName;
+
+    if (assetName !== name) continue;
+
+    // Platform-specific files take priority
+    if (isPlatformSpecific || !scales.includes(scale)) {
+      if (isPlatformSpecific && scales.includes(scale)) {
+        // Replace generic with platform-specific
+        const idx = scales.indexOf(scale);
+        files[idx] = join(dir, entry);
+      } else {
         scales.push(scale);
+        files.push(join(dir, entry));
       }
     }
   }
 
-  // If no variants found, assume 1x
   if (scales.length === 0) {
     scales.push(1);
+    files.push(join(dir, `${name}.${ext}`));
   }
 
-  return scales.sort((a, b) => a - b);
+  // Sort by scale
+  const sorted = scales
+    .map((s, i) => ({ scale: s, file: files[i]! }))
+    .sort((a, b) => a.scale - b.scale);
+
+  return {
+    scales: sorted.map((s) => s.scale),
+    files: sorted.map((s) => s.file),
+  };
 }
 
 /**
- * Generate AssetRegistry-compatible module code
+ * Compute MD5 hash from all asset variant files
+ */
+function computeAssetHash(files: string[]): string {
+  const hash = createHash('md5');
+  for (const file of files) {
+    try {
+      hash.update(readFileSync(file));
+    } catch {
+      // File might not exist for computed variants
+    }
+  }
+  return hash.digest('hex').slice(0, 8);
+}
+
+/**
+ * Detect image dimensions using image-size package.
+ * Returns null for non-image assets.
+ */
+export function getImageDimensions(
+  filePath: string,
+  ext: string,
+): { width: number; height: number } | null {
+  if (!IMAGE_TYPES.has(ext.toLowerCase())) return null;
+
+  try {
+    const buffer = readFileSync(filePath);
+    const result = imageSize(buffer);
+    if (result.width && result.height) {
+      return { width: result.width, height: result.height };
+    }
+  } catch {
+    // image-size might fail on corrupted/unsupported files
+  }
+  return null;
+}
+
+/**
+ * Generate AssetRegistry-compatible module code.
+ * Excludes fileSystemLocation and files from the bundle (Metro compat).
  */
 function generateAssetRegistryCode(asset: AssetData): string {
+  // Metro excludes fileSystemLocation from the bundle
+  const bundleAsset = {
+    __packager_asset: asset.__packager_asset,
+    httpServerLocation: asset.httpServerLocation,
+    hash: asset.hash,
+    name: asset.name,
+    scales: asset.scales,
+    type: asset.type,
+    ...(asset.width != null && { width: asset.width }),
+    ...(asset.height != null && { height: asset.height }),
+  };
+
   return `
 import { registerAsset } from 'react-native/Libraries/Image/AssetRegistry';
 
-export default registerAsset(${JSON.stringify(asset, null, 2)});
+export default registerAsset(${JSON.stringify(bundleAsset, null, 2)});
 `;
+}
+
+/**
+ * Resolve the best asset file for a given scale.
+ * Used by the asset server to serve the right variant.
+ */
+export function resolveAssetFile(
+  dir: string,
+  name: string,
+  ext: string,
+  platform: string,
+  requestedScale: number,
+): string | null {
+  const { scales, files } = findAssetVariants(dir, name, ext, platform);
+
+  // Find the best scale: pick the smallest scale >= requested, or the largest available
+  let bestIdx = 0;
+  for (let i = 0; i < scales.length; i++) {
+    if (scales[i]! >= requestedScale) {
+      bestIdx = i;
+      break;
+    }
+    bestIdx = i;
+  }
+
+  const file = files[bestIdx];
+  if (file && existsSync(file)) return file;
+  return null;
 }
