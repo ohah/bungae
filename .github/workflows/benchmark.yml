@@ -37,6 +37,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -55,10 +60,8 @@ jobs:
 
       - name: Run OXC benchmark
         id: oxc-benchmark
-        env:
-          NODE_PATH: ${{ github.workspace }}/packages/bungae/node_modules
         run: |
-          bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          npx tsx packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --oxc-only \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
@@ -69,10 +72,8 @@ jobs:
         if: github.event.inputs.compare_with_metro == 'true' || github.event_name == 'pull_request'
         id: metro-benchmark
         continue-on-error: true
-        env:
-          NODE_PATH: ${{ github.workspace }}/packages/bungae/node_modules
         run: |
-          bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          npx tsx packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \

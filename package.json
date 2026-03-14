@@ -51,6 +51,7 @@
     "flow-remove-types": "^2.297.0",
     "oxfmt": "latest",
     "oxlint": "latest",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "engines": {
