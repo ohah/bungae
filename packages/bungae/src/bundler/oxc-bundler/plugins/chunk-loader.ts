@@ -60,7 +60,12 @@ export function generateChunkLoaderRuntime(options: ChunkLoaderOptions): string 
   };
 
   globalThis.__bungae_loadChunkSync = function(chunkId) {
-    return _registry[chunkId] || {};
+    var chunk = _registry[chunkId];
+    if (!chunk) {
+      console.warn("[bungae] Chunk not found in registry: " + chunkId);
+      console.warn("[bungae] Available chunks:", Object.keys(_registry));
+    }
+    return chunk || {};
   };
 })();
 /* __BUNGAE_SHARED_CHUNKS__ */
