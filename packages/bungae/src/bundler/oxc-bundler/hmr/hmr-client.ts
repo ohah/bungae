@@ -34,7 +34,8 @@ class HMRClient {
       this._connected = true;
 
       // Register with the dev server so it knows where to send updates
-      ws.send(JSON.stringify({ type: 'hmr:connected', platform: 'ios', bundleEntry: 'index' }));
+      const platform = (globalThis as any).__BUNGAE_PLATFORM__ || 'unknown';
+      ws.send(JSON.stringify({ type: 'hmr:connected', platform, bundleEntry: 'index' }));
 
       // Integrate with Rolldown runtime for module registration
       if (typeof __rolldown_runtime__ !== 'undefined' && __rolldown_runtime__ != null) {
@@ -109,7 +110,6 @@ class HMRClient {
   }
 
   private _handleMessage(data: any): void {
-    console.log('[HMR-CLIENT] message:', data.type, data.code ? `(${data.code.length} chars)` : '');
     switch (data.type) {
       case 'hmr:update-start':
         this._pendingUpdates++;

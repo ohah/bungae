@@ -64,7 +64,7 @@ export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = 
 /**
  * Generate prelude code that sets up React Native globals
  */
-export function generatePreludeCode(dev: boolean, _platform: string): string {
+export function generatePreludeCode(dev: boolean, platform: string): string {
   return `
 // Bungae prelude - React Native globals
 var __DEV__ = ${dev};
@@ -76,5 +76,6 @@ globalThis.__DEV__ = __DEV__;
 globalThis.process = process;
 globalThis.__BUNGAE_BUNDLER__ = true;
 globalThis.__BUNGAE_VERSION__ = "oxc";
+globalThis.__BUNGAE_PLATFORM__ = ${JSON.stringify(platform)};
 `.trim();
 }

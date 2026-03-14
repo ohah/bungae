@@ -126,32 +126,12 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       };
 
       this.engine = await dev(devInputOptions, devOutputOptions, {
-        onHmrUpdates: (result) => {
-          if (result instanceof Error) {
-            console.log('[dev-engine] onHmrUpdates error:', result.message);
-          } else {
-            console.log(
-              `[dev-engine] onHmrUpdates: ${result.updates.length} updates, files: ${result.changedFiles.join(', ')}`,
-            );
-            for (const u of result.updates) {
-              console.log(`  [update] client=${u.clientId} type=${u.update.type}`);
-            }
-          }
-          this.handleHmrUpdates(result);
-        },
-        onOutput: (result) => {
-          console.log(
-            '[dev-engine] onOutput fired:',
-            result instanceof Error ? result.message : 'success',
-          );
-          this.handleOutput(result);
-        },
+        onHmrUpdates: (result) => this.handleHmrUpdates(result),
+        onOutput: (result) => this.handleOutput(result),
         rebuildStrategy: 'auto',
       });
 
-      console.log('[dev-engine] DevEngine created, calling run()...');
       await this.engine.run();
-      console.log('[dev-engine] run() completed, engine active');
 
       // DevEngine's onOutput may not fire on initial build.
       // Wait for output, and if still no bundle, fall back to rolldown() build.
