@@ -40,17 +40,6 @@ function AppContent() {
 
   // Double-check: Verify which bundler was used
   useEffect(() => {
-    // HMR runtime check
-    console.log(
-      '[HMR-DEBUG] __rolldown_runtime__:',
-      typeof (globalThis as any).__rolldown_runtime__,
-    );
-    if ((globalThis as any).__rolldown_runtime__) {
-      const rt = (globalThis as any).__rolldown_runtime__;
-      console.log('[HMR-DEBUG] runtime keys:', Object.keys(rt).join(', '));
-      console.log('[HMR-DEBUG] modules count:', Object.keys(rt.modules || {}).length);
-    }
-
     // Check if Bungae bundler was used
     const isBungae =
       typeof (globalThis as any).__BUNGAE_BUNDLER__ !== 'undefined' &&
