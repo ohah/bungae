@@ -66,7 +66,9 @@ function sendModuleRegistered(moduleId: string): void {
         _regSetLength = _regCache.length;
         return;
       }
-      send(JSON.stringify({ type: 'hmr:module-registered', modules: _regCache }));
+      var msg = JSON.stringify({ type: 'hmr:module-registered', modules: _regCache });
+      console.log('[HMR-RT] sending module-registered: ' + _regCache.length + ' modules, socket=' + (!!_socket) + ' readyState=' + (_socket ? _socket.readyState : 'none'));
+      send(msg);
       _regCache = [];
       _regTimeout = null;
       _regSetLength = 0;
@@ -178,6 +180,7 @@ function send(msg: string): void {
 
 function flushQueue(): void {
   if (!_socket) return;
+  console.log('[HMR-RT] flushQueue: ' + _queuedMessages.length + ' queued, socket readyState=' + _socket.readyState);
   for (var i = 0; i < _queuedMessages.length; i++) {
     _socket.send(_queuedMessages[i]!);
   }
@@ -276,6 +279,7 @@ var __rolldown_runtime__: any = {
       return;
     }
 
+    console.log('[HMR-RT] setup() called, regCache=' + _regCache.length + ' queuedMsgs=' + _queuedMessages.length);
     _socket = socket;
     flushQueue();
 
