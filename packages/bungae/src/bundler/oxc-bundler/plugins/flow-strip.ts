@@ -13,6 +13,9 @@
 
 import { readFileSync } from 'fs';
 
+import flowStripTypesPlugin from '@babel/plugin-transform-flow-strip-types';
+// Direct imports to avoid require.resolve issues in monorepo/CI environments
+import hermesParserPlugin from 'babel-plugin-syntax-hermes-parser';
 import type { Plugin } from 'rolldown';
 
 import type { ResolvedConfig } from '../../../config/types';
@@ -32,18 +35,8 @@ export function containsFlowSyntax(code: string): boolean {
   return false;
 }
 
-export function flowStripPlugin(config: ResolvedConfig): Plugin {
+export function flowStripPlugin(_config: ResolvedConfig): Plugin {
   let babel: typeof import('@babel/core') | null = null;
-
-  // Resolve Babel plugin paths at plugin creation time using both
-  // bungae package's node_modules and the project's node_modules.
-  const resolvePaths = [__dirname, config.root];
-  const hermesParserPath = require.resolve('babel-plugin-syntax-hermes-parser', {
-    paths: resolvePaths,
-  });
-  const flowStripPath = require.resolve('@babel/plugin-transform-flow-strip-types', {
-    paths: resolvePaths,
-  });
 
   return {
     name: 'bungae:flow-strip',
@@ -80,13 +73,13 @@ export function flowStripPlugin(config: ResolvedConfig): Plugin {
         sourceMaps: true,
         plugins: [
           [
-            hermesParserPath,
+            hermesParserPlugin,
             {
               parseLangTypes: 'flow',
               reactRuntimeTarget: '19',
             },
           ],
-          flowStripPath,
+          flowStripTypesPlugin,
         ],
       });
 
