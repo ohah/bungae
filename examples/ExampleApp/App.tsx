@@ -1,14 +1,16 @@
 /**
- * Step 9b: static && (no useState, no re-render)
+ * Step 11: && with LogBox disabled
  */
 
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, LogBox } from 'react-native';
+
+LogBox.ignoreAllLogs();
 
 function App() {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 10</Text>
-      {true && <Text style={styles.text}>AND auto-patched!</Text>}
+      <Text style={styles.text}>Step 11</Text>
+      {true && <Text style={styles.text}>AND with LogBox disabled</Text>}
     </View>
   );
 }
