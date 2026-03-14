@@ -300,7 +300,10 @@ function AppContent() {
       )}
 
       {/* Asset test - verifies image loading */}
-      <Image source={testIcon} style={styles.testIcon} />
+      <View style={styles.assetBadge}>
+        <Image source={testIcon} style={styles.testIcon} />
+        <Text style={styles.assetText}>Asset OK</Text>
+      </View>
 
       {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
       <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
@@ -323,12 +326,26 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  testIcon: {
-    width: 10,
-    height: 10,
+  assetBadge: {
     position: 'absolute',
     top: 120,
     right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(99, 102, 241, 0.9)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  testIcon: {
+    width: 24,
+    height: 24,
+  },
+  assetText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
   },
   bundlerBadge: {
     position: 'absolute',
