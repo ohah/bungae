@@ -55,7 +55,6 @@ jobs:
 
       - name: Run OXC benchmark
         id: oxc-benchmark
-        continue-on-error: true
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --oxc-only \
