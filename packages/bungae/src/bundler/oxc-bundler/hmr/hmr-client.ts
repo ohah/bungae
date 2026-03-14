@@ -14,7 +14,7 @@ declare var __rolldown_runtime__: any;
 
 // RN native modules accessed dynamically to avoid import resolution issues
 declare var __turboModuleProxy: (moduleName: string) => any;
-declare var nativeModuleProxy: Record<string, any>;
+
 
 interface HMRClientNativeInterface {
   enable(): void;
