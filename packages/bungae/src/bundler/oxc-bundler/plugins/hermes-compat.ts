@@ -26,6 +26,12 @@ export function hermesCompatPlugin(): Plugin {
           // These annotations are only for tree-shaking (already done by Rolldown).
           const stripped = code.replace(/\/\* @__PURE__ \*\/ /g, '');
 
+          // DEBUG: verify @__PURE__ was stripped
+          const fs = require('fs');
+          const pureCount = (stripped.match(/@__PURE__/g) || []).length;
+          console.log(`[hermes-compat] @__PURE__ remaining after strip: ${pureCount}, code length: ${stripped.length}`);
+          try { fs.writeFileSync('/tmp/bungae-stripped.js', stripped); } catch {}
+
           const result = await swc.transform(stripped, {
             jsc: {
               parser: { syntax: 'ecmascript' },
@@ -37,6 +43,8 @@ export function hermesCompatPlugin(): Plugin {
             },
             sourceMaps: true,
           });
+
+          try { fs.writeFileSync('/tmp/bungae-post-swc2.js', result.code); } catch {}
 
           const patched = result.code.replace(
             /var __defProp = Object\.defineProperty;/,
