@@ -3,6 +3,7 @@ declare module 'hermes-parser' {
     babel?: boolean;
     sourceType?: 'module' | 'script';
     flow?: 'all' | 'detect';
+    sourceFilename?: string;
   }
 
   export function parse(code: string, options?: ParseOptions): any;
