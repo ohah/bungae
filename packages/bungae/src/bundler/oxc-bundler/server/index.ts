@@ -464,13 +464,29 @@ function handleAssetRequest(
     return;
   }
 
-  // 3. Try with node_modules resolution
+  // 3. Try with node_modules resolution (including monorepo parent dirs)
   const nodeModulesSearchPaths = [config.root, ...(config.resolver.nodeModulesPaths || [])];
   for (const searchPath of nodeModulesSearchPaths) {
     const nmPath = join(searchPath, assetPath);
     if (existsSync(nmPath)) {
       serveAssetFile(nmPath, ext, res);
       return;
+    }
+  }
+
+  // 4. Try require.resolve for node_modules assets (handles .bun cache paths)
+  if (assetPath.startsWith('node_modules/')) {
+    const packagePath = assetPath.replace(/^node_modules\//, '');
+    try {
+      const resolved = require.resolve(packagePath, {
+        paths: [config.root, ...(config.resolver.nodeModulesPaths || [])],
+      });
+      if (existsSync(resolved)) {
+        serveAssetFile(resolved, ext, res);
+        return;
+      }
+    } catch {
+      // require.resolve can't find it — fall through to 404
     }
   }
 
