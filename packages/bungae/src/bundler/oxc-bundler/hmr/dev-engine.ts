@@ -244,12 +244,12 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       return;
     }
 
-    // Store raw output — Hermes compat transform is applied lazily in getBundle()
-    // because Rolldown's onOutput callback doesn't support async.
+    // DevEngine's dev() API DOES run renderChunk hooks (hermesCompatPlugin),
+    // so the output is already Hermes-compatible. No need for applyHermesCompat.
     this.cachedBundle = {
       code: mainChunk.code,
       map: mainChunk.map?.toString(),
-      needsHermesCompat: true,
+      needsHermesCompat: false,
     };
     this.buildError = null;
     this.state = 'ready';
