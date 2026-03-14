@@ -33,6 +33,9 @@ class HMRClient {
     ws.addEventListener('open', () => {
       this._connected = true;
 
+      // Register with the dev server so it knows where to send updates
+      ws.send(JSON.stringify({ type: 'hmr:connected', platform: 'ios', bundleEntry: 'index' }));
+
       // Integrate with Rolldown runtime for module registration
       if (typeof __rolldown_runtime__ !== 'undefined' && __rolldown_runtime__ != null) {
         __rolldown_runtime__.setup(ws, url.replace('/hot', ''));
