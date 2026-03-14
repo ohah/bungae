@@ -106,6 +106,7 @@ class HMRClient {
   }
 
   private _handleMessage(data: any): void {
+    console.log('[HMR-CLIENT] message:', data.type, data.code ? `(${data.code.length} chars)` : '');
     switch (data.type) {
       case 'hmr:update-start':
         this._pendingUpdates++;
