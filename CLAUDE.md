@@ -13,11 +13,11 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 Bungae는 세 가지 번들러 구현을 제공합니다:
 
-| 번들러  | 설명                      | 상태              | 사용 시기                  |
-| ------- | ------------------------- | ----------------- | -------------------------- |
-| `graph` | Babel 기반, Metro 호환    | **기본값 (안정)** | 프로덕션, 모든 RN 프로젝트 |
-| `bun`   | Bun.Transpiler 기반       | 실험적            | 빠른 빌드가 필요한 경우    |
-| `oxc`   | Rolldown 기반, ESM 번들링 | 실험적            | ESM 번들링, 빠른 빌드      |
+| 번들러  | 설명                      | 상태               | 사용 시기                     |
+| ------- | ------------------------- | ------------------ | ----------------------------- |
+| `graph` | Babel 기반, Metro 호환    | **기본값 (안정)**  | 프로덕션, 모든 RN 프로젝트    |
+| `bun`   | Bun.Transpiler 기반       | 보류               | 구현 예정 없음                |
+| `oxc`   | Rolldown 기반, ESM 번들링 | **개발 환경 완료** | ESM 번들링, HMR, Fast Refresh |
 
 ### 설정 방법
 
@@ -49,10 +49,23 @@ bundler/
 │   ├── graph.ts          # 의존성 그래프 빌드
 │   ├── transformer.ts    # Babel 변환
 │   └── ...
-└── bun-bundler/          # Bun.Transpiler 기반 (빠름, 실험적)
-    ├── graph.ts          # Bun.Transpiler로 의존성 그래프 빌드
-    ├── transformer.ts    # Bun.Transpiler 변환
-    └── ...
+├── bun-bundler/          # Bun.Transpiler 기반 (빠름, 실험적)
+│   ├── graph.ts          # Bun.Transpiler로 의존성 그래프 빌드
+│   ├── transformer.ts    # Bun.Transpiler 변환
+│   └── ...
+└── oxc-bundler/          # Rolldown 기반 (ESM, HMR 지원)
+    ├── bundler.ts        # Rolldown 빌드 + 공유 옵션
+    ├── plugins/          # Rolldown 플러그인
+    │   ├── hermes-compat.ts  # SWC es5 + (void 0) 수정 + __defProp 패치
+    │   ├── flow-strip.ts     # Flow 타입 제거 (Babel)
+    │   ├── hmr-client-replace.ts  # metro-runtime HMRClient 교체
+    │   └── react-refresh.ts  # React Refresh 경계 래핑
+    ├── hmr/              # HMR 시스템
+    │   ├── dev-engine.ts     # Rolldown DevEngine 래퍼
+    │   ├── hmr-client.ts     # metro-runtime API 호환 HMR 클라이언트
+    │   └── runtime.ts        # DevEngine 런타임 (모듈 등록, 패치 실행)
+    └── server/           # 개발 서버
+        └── index.ts      # HTTP + WebSocket HMR 서버
 ```
 
 ## 번들링 프로세스
@@ -370,35 +383,17 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
    - `extractExports()`, `extractImports()` - import/export 분석
    - `hasSideEffects()` - side effects 체크
 
-### Phase 4: Bun.Transpiler 최적화 🚧 진행 중
+### Phase 4: Bun.Transpiler 최적화 ⏸️ 보류
 
-`config.bundler: 'bun'` 옵션으로 선택 가능 (실험적)
+`config.bundler: 'bun'` — graph-bundler의 Bun.Transpiler 최적화 버전.
+OXC 번들러(Rolldown)에 집중하기 위해 추가 개발 보류.
 
-1. **bun-bundler 구현** ✅
-   - `bundler/bun-bundler/` 폴더 구조 생성
-   - `BungaeConfig.bundler` 옵션 추가 (`'graph' | 'bun'`)
-   - `bundler/index.ts`에서 분기 로직 구현
+### OXC 번들러 (Rolldown 기반) — 메인 개발 대상
 
-2. **Bun.Transpiler 변환** ✅
-   - TypeScript/TSX/JSX 파일: `Bun.Transpiler.transformSync()` 사용
-   - Flow 파일: hermes-parser + Babel 폴백 (Metro 호환)
-   - 예상 속도 개선: 10-100x (TypeScript 파일)
-
-3. **Bun.Transpiler.scanImports()** ✅
-   - AST 순회 없이 빠른 의존성 추출
-   - `@babel/traverse` 대비 10-50x 빠름
-   - Flow 파일은 기존 방식 폴백
-
-4. **향후 개선 예정**
-   - 벤치마크 테스트 추가
-   - Flow 파일 최적화 (hermes-parser WASM 직접 사용)
-   - 병렬 처리 (`Bun.worker()`)
-
-### OXC 번들러 (Rolldown 기반) 🚧 진행 중
-
-`config.bundler: 'oxc'` 옵션으로 선택 가능 (실험적)
+`config.bundler: 'oxc'` 옵션으로 선택 가능.
 
 Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리 CJS 래핑 없이 ESM 모듈 그대로 번들링합니다.
+핵심 번들링 + 개발 환경(HMR, React Refresh) 완료.
 
 #### Phase 1: 핵심 번들링 ✅
 
@@ -410,7 +405,10 @@ Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리
 #### Phase 2: 개발 환경 ✅
 
 - **개발 서버**: HTTP + WebSocket HMR
-- **HMR**: Full rebuild 방식 (buildWithOxc + fs.watch → hmr:reload)
+- **HMR**: Rolldown DevEngine Patch HMR (변경 모듈만 패치 전송, 상태 보존)
+- **React Refresh**: `import.meta.hot.accept()` 경계 래핑, Fast Refresh 지원
+- **HMR 클라이언트**: metro-runtime HMRClient API 호환 (`new HMRClient(url)` + 이벤트 기반)
+- **모듈 등록**: DevEngine에 클라이언트 모듈 등록 → 정확한 패치 생성
 - **터미널 단축키**: graph-bundler 재사용
 
 #### Hermes 호환성: hermes-compat 플러그인 ✅ 해결됨
@@ -420,36 +418,29 @@ Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리
 
 **1. ES5 다운레벨 (SWC renderChunk)**
 
-Hermes는 class expressions, private class fields를 지원하지 않고,
-Rolldown은 ESM 번들링 시 class declarations → class expressions 변환 (최소 타겟 ES2015).
+Hermes는 class expressions, private class fields를 지원하지 않음.
 SWC `renderChunk`로 `target: 'es5'` 변환하여 class → function, `#private` → 일반 속성으로 변환.
 
-**2. Rolldown 런타임 `__defProp` 패치**
+**2. Rolldown `(void 0)` 버그 수정**
 
-Rolldown의 런타임 헬퍼(`__exportAll`, `__copyProps`, `__toCommonJS`)가
-`Object.defineProperty`로 모듈 export를 생성할 때 `configurable: false` (기본값)를 사용.
-React Native의 `deepFreezeAndThrowOnMutationInDev`는 dev 모드에서 props를
-freeze하면서 `Object.defineProperty(obj, key, { set: throwFn })`으로 setter를 추가하는데,
-`configurable: false`면 "property is not configurable" TypeError 발생.
+Rolldown이 `&&` 컨텍스트에서 JSX 함수 참조를 `(void 0)`으로 교체하는 버그 존재.
+예: `cond && /* @__PURE__ */ (void 0)(Text, {...})` — `(0, jsxDEV)` 대신 `(void 0)`.
+`renderChunk`에서 번들 내 정상 JSX 함수명을 감지하여 `(void 0)(` → `(0, jsxFn)(` 복원.
 
-해결: `renderChunk`에서 `var __defProp = Object.defineProperty;`를
-`configurable: true`를 강제하는 래퍼로 교체.
+**3. Rolldown 런타임 `__defProp` 패치**
 
-**3. IIFE 래핑 (intro/outro)**
+Rolldown 런타임이 `configurable: false`로 export 생성 → RN dev mode `deepFreezeAndThrowOnMutationInDev` 충돌.
+`renderChunk`에서 `__defProp`를 `configurable: true` 강제 래퍼로 교체.
 
-Rolldown `format: 'esm'` 출력에서 top-level `var` 선언이
-`globalThis`에 `configurable: false` 속성을 생성 (JS 스펙).
-예: `var Headers`(fetch.js export) → `globalThis.Headers = undefined, configurable: false`
-→ React Native의 `polyfillGlobal("Headers", ...)`에서 `Object.defineProperty` 실패.
+**4. IIFE 래핑 (intro/outro)**
 
-해결: `bundle.generate()`의 `intro`/`outro` 옵션으로 Rolldown 청크를 IIFE로 래핑,
-`var` 선언이 function scope에 머물도록 함.
+Rolldown `format: 'esm'` 출력에서 top-level `var` 선언이 `globalThis`에 `configurable: false` 속성 생성.
+`intro`/`outro`로 IIFE 래핑하여 `var` 선언이 function scope에 머물도록 함.
 
-**4. RN 폴리필 ES5 변환**
+**5. RN 폴리필 ES5 변환**
 
-`rn-get-polyfills()`로 로드하는 RN 폴리필 파일(console.js, error-guard.js)에
-ES6+ 구문(const, let, arrow functions)이 포함되어 있어 Hermes에서 파싱 실패.
-Babel로 Flow 타입 제거 후 SWC `target: 'es5'`로 추가 변환.
+RN 폴리필 파일(console.js, error-guard.js)에 ES6+ 구문 포함.
+Babel로 Flow 타입 제거 후 SWC `target: 'es5'`로 변환.
 
 #### Rolldown upstream 기여 계획
 
@@ -480,16 +471,19 @@ Rolldown upstream에 기여하여 근본적으로 해결할 수 있습니다:
 - `globalIdentifiers` 옵션 추가하여 특정 식별자가 top-level var로 선언되지 않도록 함
 - DevEngine `dev()` API를 사용하기 위해 `format: 'esm'` 유지 필수 → IIFE 불가 → 포크 선택
 
-#### Rolldown DevEngine 사용하지 않는 이유
+#### Rolldown DevEngine ✅ 전환 완료
 
-Rolldown의 실험적 `dev()` API (DevEngine)를 현재 사용하지 않는 이유:
+Rolldown의 실험적 `dev()` API (DevEngine)로 전환 완료:
 
-1. **`devMode.implement` 제약**: 사전 컴파일된 JS 파일 경로만 허용 (TS 파일 불가, 경로가 정규식 리터럴로 파싱됨)
-2. **`renderChunk` 실행 여부 미확인**: `dev()` API가 `renderChunk` 훅을 실행하는지 확인 필요 — 실행된다면 hermes-compat으로 `#private` 문제 해결 가능
-3. **Private fields 문제는 해결됨**: hermes-compat 플러그인이 `#private` → WeakMap 변환을 처리하므로, DevEngine의 `renderChunk` 지원 여부만 확인하면 전환 가능
+- **Patch HMR**: 변경 모듈만 패치 코드 전송 (전체 리빌드 아님)
+- **`renderChunk` 지원 확인**: DevEngine이 `renderChunk` 훅을 실행하여 hermes-compat (SWC es5 + `(void 0)` 수정) 적용
+- **`devMode.implement`**: runtime.ts를 `transformSync`로 사전 컴파일하여 전달
+- **React Refresh**: `import.meta.hot.accept()` 경계로 컴포넌트 상태 보존
 
-**현재 접근**: `buildWithOxc()` + `fs.watch()` (전체 리빌드 HMR, ~1초)
-**향후**: DevEngine `dev()` API가 `renderChunk`를 지원하면 전환하여 패치 HMR 구현
+**알려진 Rolldown 버그 (워크어라운드 적용)**:
+
+- `(void 0)` 버그: `&&` 컨텍스트에서 JSX 함수 참조를 `(void 0)`으로 교체 → 감지 후 복원
+- `__defProp` configurable: `configurable: false` 기본값 → 문자열 패치
 
 ### Phase 5: 고급 기능 (미구현)
 
