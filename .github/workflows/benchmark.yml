@@ -53,11 +53,11 @@ jobs:
           cd examples/ExampleApp
           bun install
 
-      - name: Run Bungae benchmark
-        id: bungae-benchmark
+      - name: Run OXC benchmark
+        id: oxc-benchmark
         run: |
           bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
-            --bungae-only \
+            --oxc-only \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \

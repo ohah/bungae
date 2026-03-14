@@ -2,11 +2,11 @@
 /**
  * Benchmark Runner
  *
- * Runs Metro vs Bungae comparison benchmarks and outputs results
+ * Runs Metro vs OXC (Rolldown-based) comparison benchmarks and outputs results
  *
  * Usage:
  *   bun run benchmark                    # Run full benchmark
- *   bun run benchmark --bungae-only      # Run Bungae benchmark only
+ *   bun run benchmark --oxc-only         # Run OXC benchmark only
  *   bun run benchmark --output json      # Output as JSON
  *   bun run benchmark --output markdown  # Output as Markdown (for GitHub PR comments)
  */
@@ -15,8 +15,8 @@ import { execSync } from 'child_process';
 import { existsSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 
-import { runBungaeBenchmark, runBungaeBenchmarkWithCache } from './bungae-benchmark';
 import { runMetroBenchmark } from './metro-benchmark';
+import { runOxcBenchmark, runOxcBenchmarkWithCache } from './oxc-benchmark';
 import type { BenchmarkResult, BenchmarkSummary, ComparisonResult } from './types';
 
 interface BenchmarkOptions {
@@ -24,7 +24,7 @@ interface BenchmarkOptions {
   entryFile: string;
   platforms: ('ios' | 'android')[];
   modes: ('dev' | 'release')[];
-  bungaeOnly: boolean;
+  oxcOnly: boolean;
   outputFormat: 'console' | 'json' | 'markdown';
   outputFile?: string;
   warmupRuns: number;
@@ -42,7 +42,7 @@ function parseArgs(): BenchmarkOptions {
     entryFile: 'index.js',
     platforms: ['ios', 'android'],
     modes: ['dev', 'release'],
-    bungaeOnly: false,
+    oxcOnly: false,
     outputFormat: 'console',
     warmupRuns: 1,
     measureRuns: 3,
@@ -51,8 +51,8 @@ function parseArgs(): BenchmarkOptions {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     switch (arg) {
-      case '--bungae-only':
-        options.bungaeOnly = true;
+      case '--oxc-only':
+        options.oxcOnly = true;
         break;
       case '--output':
         options.outputFormat = (args[++i] ?? 'console') as 'console' | 'json' | 'markdown';
@@ -89,13 +89,13 @@ function parseArgs(): BenchmarkOptions {
       }
       case '--help':
         console.log(`
-Bungae Benchmark Runner
+Bungae OXC Benchmark Runner
 
 Usage:
   bun run benchmark [options]
 
 Options:
-  --bungae-only       Run Bungae benchmark only (skip Metro)
+  --oxc-only          Run OXC benchmark only (skip Metro)
   --output <format>   Output format: console, json, markdown (default: console)
   --output-file <f>   Write output to file
   --project <path>    Project root path (default: examples/ExampleApp)
@@ -114,7 +114,7 @@ Options:
 
 async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummary> {
   const comparisons: ComparisonResult[] = [];
-  const bungaeResults: BenchmarkResult[] = [];
+  const oxcResults: BenchmarkResult[] = [];
 
   console.log('🚀 Starting benchmark...\n');
   console.log(`Project: ${options.projectRoot}`);
@@ -130,9 +130,9 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
 
       console.log(`\n📦 Benchmarking ${platform} ${mode}...`);
 
-      // Run Bungae benchmark (cold build)
-      console.log('  ⚡ Running Bungae (cold)...');
-      const bungaeResult = await runBungaeBenchmark({
+      // Run OXC benchmark (cold build)
+      console.log('  ⚡ Running OXC (cold)...');
+      const oxcResult = await runOxcBenchmark({
         projectRoot: options.projectRoot,
         entryFile: options.entryFile,
         platform,
@@ -141,11 +141,11 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
         measureRuns: options.measureRuns,
         clearCache: true,
       });
-      bungaeResults.push(bungaeResult);
+      oxcResults.push(oxcResult);
 
-      // Run Bungae benchmark (warm build with cache)
-      console.log('  ⚡ Running Bungae (warm)...');
-      const bungaeWarmResult = await runBungaeBenchmarkWithCache({
+      // Run OXC benchmark (warm build with cache)
+      console.log('  ⚡ Running OXC (warm)...');
+      const oxcWarmResult = await runOxcBenchmarkWithCache({
         projectRoot: options.projectRoot,
         entryFile: options.entryFile,
         platform,
@@ -153,10 +153,10 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
         warmupRuns: 0,
         measureRuns: options.measureRuns,
       });
-      bungaeWarmResult.metadata = { ...bungaeWarmResult.metadata, cached: true };
-      bungaeResults.push(bungaeWarmResult);
+      oxcWarmResult.metadata = { ...oxcWarmResult.metadata, cached: true };
+      oxcResults.push(oxcWarmResult);
 
-      if (!options.bungaeOnly) {
+      if (!options.oxcOnly) {
         // Run Metro benchmark
         console.log('  🚇 Running Metro...');
         try {
@@ -172,14 +172,14 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
 
           // Calculate comparison (handle edge cases for division by zero)
           const speedup =
-            bungaeResult.totalTime > 0 ? metroResult.totalTime / bungaeResult.totalTime : 0;
-          const sizeDiff = metroResult.bundleSize - bungaeResult.bundleSize;
+            oxcResult.totalTime > 0 ? metroResult.totalTime / oxcResult.totalTime : 0;
+          const sizeDiff = metroResult.bundleSize - oxcResult.bundleSize;
           const sizeDiffPercent =
             metroResult.bundleSize > 0 ? (sizeDiff / metroResult.bundleSize) * 100 : 0;
 
           comparisons.push({
             metro: metroResult,
-            bungae: bungaeResult,
+            bungae: oxcResult,
             speedup,
             sizeDiff,
             sizeDiffPercent,
@@ -192,7 +192,7 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
   }
 
   // Calculate phase statistics
-  const phaseStats = calculatePhaseStats(bungaeResults.filter((r) => !r.metadata?.cached));
+  const phaseStats = calculatePhaseStats(oxcResults.filter((r) => !r.metadata?.cached));
 
   // Get git info
   let gitCommit: string | undefined;
@@ -206,14 +206,14 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
 
   return {
     comparisons,
-    bungaePhases: phaseStats,
+    oxcPhases: phaseStats,
     timestamp: new Date(),
     gitCommit,
     gitBranch,
   };
 }
 
-function calculatePhaseStats(results: BenchmarkResult[]): BenchmarkSummary['bungaePhases'] {
+function calculatePhaseStats(results: BenchmarkResult[]): BenchmarkSummary['oxcPhases'] {
   if (results.length === 0) return [];
 
   const firstResult = results[0]!;
@@ -243,7 +243,7 @@ function formatConsole(summary: BenchmarkSummary): string {
   lines.push('');
 
   if (summary.comparisons.length > 0) {
-    lines.push('📊 Metro vs Bungae Comparison:');
+    lines.push('📊 Metro vs OXC Comparison:');
     lines.push('───────────────────────────────────────────────────────────────');
 
     for (const comp of summary.comparisons) {
@@ -252,7 +252,7 @@ function formatConsole(summary: BenchmarkSummary): string {
         `    Metro:  ${comp.metro.totalTime.toFixed(0)}ms (${formatBytes(comp.metro.bundleSize)})`,
       );
       lines.push(
-        `    Bungae: ${comp.bungae.totalTime.toFixed(0)}ms (${formatBytes(comp.bungae.bundleSize)})`,
+        `    OXC:    ${comp.bungae.totalTime.toFixed(0)}ms (${formatBytes(comp.bungae.bundleSize)})`,
       );
       lines.push(`    Speedup: ${comp.speedup.toFixed(2)}x ${comp.speedup > 1 ? '🚀' : '🐢'}`);
       lines.push(
@@ -261,14 +261,14 @@ function formatConsole(summary: BenchmarkSummary): string {
     }
   }
 
-  if (summary.bungaePhases.length > 0) {
-    lines.push('\n\n📈 Bungae Phase Breakdown:');
+  if (summary.oxcPhases.length > 0) {
+    lines.push('\n\n📈 OXC Phase Breakdown:');
     lines.push('───────────────────────────────────────────────────────────────');
 
-    const totalAvg = summary.bungaePhases.reduce((sum, p) => sum + p.avgDuration, 0);
+    const totalAvg = summary.oxcPhases.reduce((sum, p) => sum + p.avgDuration, 0);
     const safeTotalAvg = totalAvg > 0 ? totalAvg : 1; // Prevent division by zero
 
-    for (const phase of summary.bungaePhases) {
+    for (const phase of summary.oxcPhases) {
       const percent = ((phase.avgDuration / safeTotalAvg) * 100).toFixed(1);
       const bar = '█'.repeat(Math.round((phase.avgDuration / safeTotalAvg) * 20));
       lines.push(
@@ -303,9 +303,9 @@ function formatMarkdown(summary: BenchmarkSummary): string {
   }
 
   if (summary.comparisons.length > 0) {
-    lines.push('### Metro vs Bungae Comparison\n');
-    lines.push('| Platform | Mode | Metro | Bungae | Speedup | Size Diff |');
-    lines.push('|----------|------|-------|--------|---------|-----------|');
+    lines.push('### Metro vs OXC Comparison\n');
+    lines.push('| Platform | Mode | Metro | OXC | Speedup | Size Diff |');
+    lines.push('|----------|------|-------|-----|---------|-----------|');
 
     for (const comp of summary.comparisons) {
       const speedupEmoji = comp.speedup > 1.5 ? '🚀' : comp.speedup > 1 ? '✅' : '⚠️';
@@ -315,15 +315,15 @@ function formatMarkdown(summary: BenchmarkSummary): string {
     }
   }
 
-  if (summary.bungaePhases.length > 0) {
-    lines.push('\n### Bungae Phase Breakdown\n');
+  if (summary.oxcPhases.length > 0) {
+    lines.push('\n### OXC Phase Breakdown\n');
     lines.push('| Phase | Avg | Min | Max |');
     lines.push('|-------|-----|-----|-----|');
 
-    const totalAvg = summary.bungaePhases.reduce((sum, p) => sum + p.avgDuration, 0);
+    const totalAvg = summary.oxcPhases.reduce((sum, p) => sum + p.avgDuration, 0);
     const safeTotalAvg = totalAvg > 0 ? totalAvg : 1; // Prevent division by zero
 
-    for (const phase of summary.bungaePhases) {
+    for (const phase of summary.oxcPhases) {
       const percent = ((phase.avgDuration / safeTotalAvg) * 100).toFixed(1);
       lines.push(
         `| ${phase.name} | ${phase.avgDuration.toFixed(0)}ms (${percent}%) | ${phase.minDuration.toFixed(0)}ms | ${phase.maxDuration.toFixed(0)}ms |`,
@@ -376,9 +376,9 @@ async function main() {
       console.log(output);
     }
 
-    // Exit with error if Bungae is slower
+    // Exit with error if OXC is slower
     if (summary.comparisons.some((c) => c.speedup < 1)) {
-      console.warn('\n⚠️  Warning: Bungae is slower than Metro in some cases!');
+      console.warn('\n⚠️  Warning: OXC is slower than Metro in some cases!');
       process.exit(1);
     }
   } catch (error) {
