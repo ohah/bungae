@@ -9,6 +9,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import { writeFileSync } from 'node:fs';
 
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -65,6 +66,19 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     const url = parseRequestUrl(req, host, port);
     const pathname = url.pathname;
 
+    // Bundle request: *.bundle or *.bundle.js
+    // Handle BEFORE middlewares — CLI server middleware may intercept bundle requests
+    if (pathname.endsWith('.bundle') || pathname.endsWith('.bundle.js')) {
+      await handleBundleRequest(res, devEngine, config);
+      return;
+    }
+
+    // Source map request: *.map or *.bundle.map
+    if (pathname.endsWith('.map')) {
+      await handleSourceMapRequest(res, devEngine);
+      return;
+    }
+
     // DevTools middleware (handles /json, /open-debugger, etc.)
     if (devMiddleware) {
       const handled = await tryMiddleware(devMiddleware.middleware, req, res);
@@ -75,18 +89,6 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     if (cliServerMiddleware) {
       const handled = await tryMiddleware(cliServerMiddleware, req, res);
       if (handled) return;
-    }
-
-    // Bundle request: *.bundle or *.bundle.js
-    if (pathname.endsWith('.bundle') || pathname.endsWith('.bundle.js')) {
-      await handleBundleRequest(res, devEngine, config);
-      return;
-    }
-
-    // Source map request: *.map or *.bundle.map
-    if (pathname.endsWith('.map')) {
-      await handleSourceMapRequest(res, devEngine);
-      return;
     }
 
     // Status endpoint — RN native code expects exact plain text "packager-status:running"
@@ -188,6 +190,10 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
             break;
 
           case 'FullReload':
+            // Rebuild bundle so next request gets fresh code
+            devEngine.rebuild().catch((err) => {
+              console.error('[HMR] Rebuild failed:', err);
+            });
             client.send(JSON.stringify({ type: 'hmr:reload' }));
             break;
 
@@ -268,6 +274,13 @@ async function handleBundleRequest(
     const bundle = await devEngine.getBundle();
 
     let code = bundle.code;
+
+    // DEBUG: dump bundle to file for analysis
+    try {
+      writeFileSync('/tmp/bungae-bundle-debug.js', code, 'utf-8');
+      console.log(`[DEBUG] Bundle dumped to /tmp/bungae-bundle-debug.js (${code.length} chars)`);
+    } catch {}
+
     const entryName = config.entry.replace(/\.(js|ts|tsx)$/, '');
     if (bundle.map) {
       code += `\n//# sourceMappingURL=${entryName}.map`;

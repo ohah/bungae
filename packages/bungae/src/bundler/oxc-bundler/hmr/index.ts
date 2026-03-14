@@ -12,4 +12,4 @@ export type {
   HMRUpdateResult,
   BindingClientHmrUpdate,
 } from './types';
-export { patchRolldownRuntime, transformToES5 } from './hermes-compat-utils';
+export { patchRolldownRuntime, applyHermesCompat, transformForHermes } from './hermes-compat-utils';
