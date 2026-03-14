@@ -1,11 +1,11 @@
 /**
  * Hermes Compatibility Plugin for Rolldown
  *
- * 1. ES5 downlevel — `transform` hook (per-module, before bundling):
- *    Hermes doesn't support class expressions, private fields, etc.
- *    SWC `target: 'es5'` converts each module individually.
- *    Modules already processed by flow-strip are skipped to avoid
- *    breaking React/RN internal scoping (let/const → var issues).
+ * 1. Private fields downlevel — `transform` hook (per-module):
+ *    Hermes (0.83) supports class expressions but NOT private fields (#field).
+ *    SWC `target: 'es2015'` transforms only private fields/methods to
+ *    regular properties, while preserving let/const, arrow functions,
+ *    class expressions, template literals, etc.
  *
  * 2. Configurable exports — `renderChunk` hook (post-bundling):
  *    Rolldown's runtime helpers create module exports with
@@ -13,8 +13,6 @@
  */
 
 import type { Plugin } from 'rolldown';
-
-import { flowStrippedModules } from './flow-strip';
 
 let swcModule: typeof import('@swc/core') | null = null;
 
@@ -38,9 +36,8 @@ export function hermesCompatPlugin(): Plugin {
       async handler(code, id) {
         if (!id.match(/\.[jt]sx?$|\.mjs$|\.cjs$/)) return null;
 
-        // Skip modules already processed by flow-strip (React/RN internals).
-        // SWC es5 let→var conversion breaks their scoping semantics.
-        if (flowStrippedModules.has(id)) return null;
+        // Quick check: skip if no private fields/methods
+        if (!code.includes('#')) return null;
 
         try {
           const swc = await getSwc();
@@ -49,7 +46,7 @@ export function hermesCompatPlugin(): Plugin {
             filename: id,
             jsc: {
               parser: { syntax: 'ecmascript' },
-              target: 'es5',
+              target: 'es2015',
               assumptions: {
                 setPublicClassFields: true,
                 privateFieldsAsProperties: true,
