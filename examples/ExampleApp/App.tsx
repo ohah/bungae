@@ -14,8 +14,10 @@ function App() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 4e: {info}</Text>
-      <Text style={styles.text}>Always visible</Text>
+      <Text style={styles.text}>Step 4f: {info}</Text>
+      {info === 'done' ? (
+        <Text style={styles.text}>Ternary: done!</Text>
+      ) : null}
     </View>
   );
 }
