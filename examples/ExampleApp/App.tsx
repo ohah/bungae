@@ -1,13 +1,21 @@
 /**
- * Minimal App for debugging oxc-bundler runtime errors
+ * Step 2: useState + useEffect re-render test
  */
 
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 function App() {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    setCount(1);
+  }, []);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 1: Basic render works</Text>
+      <Text style={styles.text}>Step 2: Re-render test</Text>
+      <Text style={styles.text}>Count: {count}</Text>
     </View>
   );
 }
