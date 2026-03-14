@@ -82,11 +82,12 @@ export function resolveAsset(filePath: string, projectRoot: string, platform: st
     const nmIdx = httpPath.indexOf('node_modules/');
     if (nmIdx !== -1) {
       httpPath = httpPath.slice(nmIdx);
-      // Bun's .bun cache: node_modules/.bun/pkg@ver+hash/node_modules/pkg/...
-      // Simplify to: node_modules/pkg/...
-      const bunCacheMatch = httpPath.match(/node_modules\/\.bun\/[^/]+\/node_modules\/(.*)/);
-      if (bunCacheMatch) {
-        httpPath = 'node_modules/' + bunCacheMatch[1];
+      // Package manager cache paths → simplify to node_modules/pkg/...
+      // Bun:  node_modules/.bun/pkg@ver+hash/node_modules/pkg/...
+      // pnpm: node_modules/.pnpm/pkg@ver/node_modules/pkg/...
+      const cacheMatch = httpPath.match(/node_modules\/\.(?:bun|pnpm)\/[^/]+\/node_modules\/(.*)/);
+      if (cacheMatch) {
+        httpPath = 'node_modules/' + cacheMatch[1];
       }
     }
   }
