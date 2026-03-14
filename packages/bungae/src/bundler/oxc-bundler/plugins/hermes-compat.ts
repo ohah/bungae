@@ -48,6 +48,9 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
+          // DEBUG: dump pre-SWC bundle
+          try { require('fs').writeFileSync('/tmp/bungae-pre-swc.js', code); } catch {}
+
           const result = await swc.transform(code, {
             jsc: {
               parser: { syntax: 'ecmascript' },
@@ -59,6 +62,9 @@ export function hermesCompatPlugin(): Plugin {
             },
             sourceMaps: true,
           });
+
+          // DEBUG: dump post-SWC bundle
+          try { require('fs').writeFileSync('/tmp/bungae-post-swc.js', result.code); } catch {}
 
           let patched = result.code;
 
