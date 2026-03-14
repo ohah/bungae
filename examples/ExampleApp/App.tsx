@@ -1,23 +1,14 @@
 /**
- * Step 7: && test without array destructuring (avoid _sliced_to_array)
+ * Step 9b: static && (no useState, no re-render)
  */
 
-import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 function App() {
-  const state = React.useState('loading');
-  const info = state[0];
-  const setInfo = state[1];
-
-  React.useEffect(function () {
-    setInfo('done');
-  }, []);
-
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 9: {info}</Text>
-      {info === 'done' && <Text style={styles.text}>AND works!</Text>}
+      <Text style={styles.text}>Step 9b</Text>
+      {true && <Text style={styles.text}>Static AND</Text>}
     </View>
   );
 }
