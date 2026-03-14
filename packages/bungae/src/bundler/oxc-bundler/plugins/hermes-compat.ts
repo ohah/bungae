@@ -52,7 +52,13 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          const result = await swc.transform(code, {
+          // Strip /* @__PURE__ */ annotations before SWC transform.
+          // Rolldown adds these for tree-shaking (already done). SWC es5 mishandles
+          // them inside && expressions, turning `cond && /* @__PURE__ */ (0, fn)()`
+          // into undefined function calls at runtime.
+          const stripped = code.replace(/\/\* @__PURE__ \*\/ /g, '');
+
+          const result = await swc.transform(stripped, {
             jsc: {
               parser: {
                 syntax: 'ecmascript',

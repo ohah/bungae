@@ -12,12 +12,12 @@ function App() {
     setInfo('done');
   }, []);
 
-  const renderBadge = () => <Text style={styles.text}>Wrapped &&: done!</Text>;
-
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 4h: {info}</Text>
-      {info === 'done' && renderBadge()}
+      <Text style={styles.text}>Step 5: {info}</Text>
+      {info === 'done' && (
+        <Text style={styles.text}>Conditional &&: works!</Text>
+      )}
     </View>
   );
 }
