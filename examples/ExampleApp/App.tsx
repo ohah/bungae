@@ -12,9 +12,19 @@ function App() {
     setInfo('done');
   }, []);
 
+  // Debug: check what's available before render
+  if (info === 'done') {
+    const RN = require('react-native');
+    const JSX = require('react/jsx-runtime');
+    console.log('[DEBUG] Text:', typeof RN.Text, typeof Text);
+    console.log('[DEBUG] jsx:', typeof JSX.jsx, typeof JSX.jsxs);
+    console.log('[DEBUG] View:', typeof RN.View, typeof View);
+    console.log('[DEBUG] styles:', typeof styles, typeof styles?.text);
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 5: {info}</Text>
+      <Text style={styles.text}>Step 6: {info}</Text>
       {info === 'done' && (
         <Text style={styles.text}>Conditional &&: works!</Text>
       )}
