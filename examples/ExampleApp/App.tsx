@@ -1,32 +1,24 @@
 /**
- * Step 4c: useState re-render WITHOUT conditional rendering
+ * Step 7: && test without array destructuring (avoid _sliced_to_array)
  */
 
-import { useEffect, useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 
 function App() {
-  const [info, setInfo] = useState('loading');
+  const state = React.useState('loading');
+  const info = state[0];
+  const setInfo = state[1];
 
-  useEffect(() => {
+  React.useEffect(function () {
     setInfo('done');
   }, []);
 
-  // Debug: check what's available before render
-  if (info === 'done') {
-    const RN = require('react-native');
-    const JSX = require('react/jsx-runtime');
-    console.log('[DEBUG] Text:', typeof RN.Text, typeof Text);
-    console.log('[DEBUG] jsx:', typeof JSX.jsx, typeof JSX.jsxs);
-    console.log('[DEBUG] View:', typeof RN.View, typeof View);
-    console.log('[DEBUG] styles:', typeof styles, typeof styles?.text);
-  }
-
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Step 6: {info}</Text>
+      <Text style={styles.text}>Step 7: {info}</Text>
       {info === 'done' && (
-        <Text style={styles.text}>Conditional &&: works!</Text>
+        <Text style={styles.text}>Conditional: works!</Text>
       )}
     </View>
   );
