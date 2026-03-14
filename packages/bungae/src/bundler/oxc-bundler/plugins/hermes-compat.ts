@@ -100,14 +100,34 @@ export function hermesCompatPlugin(): Plugin {
           // Patch Rolldown runtime for React Native compatibility
           let patched = patchRolldownRuntime(result.code);
 
-          // DEBUG: Add logging around BatchedBridge's MessageQueue initialization
+          // DEBUG: Use function replacement to avoid $1 interpretation issues
+          patched = patched.replace(
+            /MessageQueue\$1 = class MessageQueue\$11 \{/,
+            function() { return 'MessageQueue$1 = class MessageQueue$11 {\n        /* DEBUG_MQ_ASSIGNED */'; }
+          );
+
+          // Add logging after class closing, before factory end
+          patched = patched.replace(
+            /\/\* DEBUG_MQ_ASSIGNED \*\//,
+            function() { return ''; }
+          );
+
+          // Patch the BatchedBridge init with function replacer (avoids $1/$3 issues)
           patched = patched.replace(
             /MessageQueue = \(init_MessageQueue\(\), __toCommonJS\(MessageQueue_exports\)\)\.default;\s*BatchedBridge\$3 = new MessageQueue\(\);/,
-            `MessageQueue = (init_MessageQueue(), __toCommonJS(MessageQueue_exports)).default;
-console.error("[DEBUG BatchedBridge] MessageQueue value:", typeof MessageQueue, MessageQueue);
-console.error("[DEBUG BatchedBridge] MessageQueue_exports:", typeof MessageQueue_exports, Object.keys(MessageQueue_exports || {}));
-try { console.error("[DEBUG BatchedBridge] MessageQueue_exports.default:", typeof (MessageQueue_exports && MessageQueue_exports.default)); } catch(e) { console.error("[DEBUG BatchedBridge] .default access failed:", e.message); }
-BatchedBridge$3 = new MessageQueue();`,
+            function() {
+              return [
+                'init_MessageQueue();',
+                'console.error("[DEBUG BB] MessageQueue$" + "1:", typeof MessageQueue$1, MessageQueue$1 != null ? "exists" : "NULL");',
+                'console.error("[DEBUG BB] exports.default getter:", typeof MessageQueue_exports.default, MessageQueue_exports.default != null ? "exists" : "NULL");',
+                'console.error("[DEBUG BB] exports obj:", JSON.stringify(Object.getOwnPropertyNames(MessageQueue_exports)));',
+                'var _desc = Object.getOwnPropertyDescriptor(MessageQueue_exports, "default");',
+                'if (_desc && _desc.get) { console.error("[DEBUG BB] getter result:", typeof _desc.get(), _desc.get()); }',
+                'MessageQueue = (init_MessageQueue(), __toCommonJS(MessageQueue_exports)).default;',
+                'console.error("[DEBUG BB] final MessageQueue:", typeof MessageQueue);',
+                'BatchedBridge$3 = new MessageQueue();',
+              ].join('\n');
+            }
           );
 
           return {
