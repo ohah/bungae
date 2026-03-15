@@ -396,6 +396,26 @@ describe('parseCliArgs', () => {
       expect(result.port).toBeUndefined();
     });
 
+    test('should reject port out of range (0)', () => {
+      const result = parseCliArgs(['serve', '--port', '0']);
+      expect(result.port).toBeUndefined();
+    });
+
+    test('should reject port out of range (65536)', () => {
+      const result = parseCliArgs(['serve', '--port', '65536']);
+      expect(result.port).toBeUndefined();
+    });
+
+    test('should reject negative port', () => {
+      const result = parseCliArgs(['serve', '--port', '-1']);
+      expect(result.port).toBeUndefined();
+    });
+
+    test('should accept valid port boundaries', () => {
+      expect(parseCliArgs(['serve', '--port', '1']).port).toBe(1);
+      expect(parseCliArgs(['serve', '--port', '65535']).port).toBe(65535);
+    });
+
     test('should handle invalid max-workers gracefully', () => {
       const result = parseCliArgs(['build', '--max-workers', 'xyz']);
       expect(result.maxWorkers).toBeUndefined();

@@ -3,7 +3,7 @@
  */
 
 import { writeFileSync, mkdirSync, copyFileSync, existsSync, statSync } from 'fs';
-import { resolve, join, dirname } from 'path';
+import { resolve, join, dirname, basename } from 'path';
 
 import { build as buildBundler } from './bundler';
 import type { ResolvedConfig } from './config/types';
@@ -14,7 +14,7 @@ export async function build(config: ResolvedConfig): Promise<void> {
 
   console.log(`Building bundle for ${platform}...`);
   console.log(`Entry: ${entry}`);
-  console.log(`Output: ${outDir}`);
+  console.log(`Output: ${config.bundleOutput || outDir}`);
 
   // Build using bundler based on config.bundler option
   // This ensures correct module execution order for React Native
@@ -30,28 +30,44 @@ export async function build(config: ResolvedConfig): Promise<void> {
     console.log(`   ⚠️  No asset files detected in bundle`);
   }
 
-  // Ensure output directory exists
-  const outputDir = resolve(root, outDir);
-  mkdirSync(outputDir, { recursive: true });
+  // Determine bundle output path
+  // Priority: --bundle-output (exact path) > --outDir (directory)
+  let bundlePath: string;
+  let mapPath: string;
 
-  // Generate bundle file name
-  const entryBaseName =
-    entry
-      .split('/')
-      .pop()
-      ?.replace(/\.(js|ts|jsx|tsx)$/, '') || 'index';
-  let bundleFileName: string;
-  if (platform === 'ios') {
-    bundleFileName = dev ? `${entryBaseName}.jsbundle` : 'main.jsbundle';
-  } else if (platform === 'android') {
-    bundleFileName = `${entryBaseName}.android.bundle`;
+  if (config.bundleOutput) {
+    // --bundle-output: use exact path (Metro/RN CLI compatible)
+    bundlePath = resolve(root, config.bundleOutput);
+    mkdirSync(dirname(bundlePath), { recursive: true });
+
+    // Sourcemap path: --sourcemap-output or default to <bundle>.map
+    mapPath = config.sourcemapOutput ? resolve(root, config.sourcemapOutput) : `${bundlePath}.map`;
   } else {
-    bundleFileName = `${entryBaseName}.bundle.js`;
+    // --outDir: use directory with auto-generated filename
+    const outputDir = resolve(root, outDir);
+    mkdirSync(outputDir, { recursive: true });
+
+    const entryBaseName =
+      entry
+        .split('/')
+        .pop()
+        ?.replace(/\.(js|ts|jsx|tsx)$/, '') || 'index';
+    let bundleFileName: string;
+    if (platform === 'ios') {
+      bundleFileName = dev ? `${entryBaseName}.jsbundle` : 'main.jsbundle';
+    } else if (platform === 'android') {
+      bundleFileName = `${entryBaseName}.android.bundle`;
+    } else {
+      bundleFileName = `${entryBaseName}.bundle.js`;
+    }
+
+    bundlePath = join(outputDir, bundleFileName);
+    mapPath = config.sourcemapOutput
+      ? resolve(root, config.sourcemapOutput)
+      : join(outputDir, `${bundleFileName}.map`);
   }
 
-  const bundlePath = join(outputDir, bundleFileName);
-  const mapFileName = `${bundleFileName}.map`;
-  const mapPath = join(outputDir, mapFileName);
+  const mapFileName = config.sourceMapUrl || basename(mapPath);
 
   // Add sourcemap reference to bundle if map exists
   let bundleCode = buildResult.code;
@@ -59,10 +75,12 @@ export async function build(config: ResolvedConfig): Promise<void> {
     bundleCode = `${bundleCode}\n//# sourceMappingURL=${mapFileName}`;
   }
 
-  writeFileSync(bundlePath, bundleCode, 'utf-8');
+  const encoding = config.bundleEncoding || 'utf-8';
+  writeFileSync(bundlePath, bundleCode, encoding);
 
   // Write sourcemap to separate file
   if (buildResult.map) {
+    mkdirSync(dirname(mapPath), { recursive: true });
     writeFileSync(mapPath, buildResult.map, 'utf-8');
     console.log(`\n✅ Bundle written to: ${bundlePath}`);
     console.log(`   Sourcemap: ${mapPath}`);
@@ -78,17 +96,19 @@ export async function build(config: ResolvedConfig): Promise<void> {
   // Metro behavior:
   // - Development mode: Assets are served over HTTP from dev server (not copied to filesystem)
   // - Release mode: Assets are copied to drawable folders via `react-native bundle --assets-dest`
-  // We copy assets in both dev and release builds for better compatibility
+  // When --assets-dest is specified, use that path for asset copying (Metro/RN CLI compatible)
+  const assetsDest = config.assetsDest ? resolve(root, config.assetsDest) : '';
+
   if (platform === 'android' || platform === 'ios') {
     console.log(`   🔄 Attempting to copy bundle for ${platform} (dev: ${dev})...`);
     if (platform === 'android') {
-      // Android: Copy to android/app/src/main/assets/
-      const androidAssetsDir = join(root, 'android', 'app', 'src', 'main', 'assets');
+      // Android: Copy to --assets-dest or default android/app/src/main/assets/
+      const androidAssetsDir = assetsDest || join(root, 'android', 'app', 'src', 'main', 'assets');
       const androidParentDir = dirname(androidAssetsDir);
       console.log(`   📍 Checking Android directory: ${androidParentDir}`);
       if (existsSync(androidParentDir)) {
         mkdirSync(androidAssetsDir, { recursive: true });
-        const androidBundlePath = join(androidAssetsDir, bundleFileName);
+        const androidBundlePath = join(androidAssetsDir, basename(bundlePath));
         copyFileSync(bundlePath, androidBundlePath);
         console.log(`   📦 Copied bundle to: ${androidBundlePath}`);
 
@@ -153,15 +173,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
             const scales = asset.scales || [1];
             for (const scale of scales) {
               const drawableFolderName = getDrawableFolderName(scale);
-              const drawableDir = join(
-                root,
-                'android',
-                'app',
-                'src',
-                'main',
-                'res',
-                drawableFolderName,
-              );
+              const drawableDir = assetsDest
+                ? join(assetsDest, drawableFolderName)
+                : join(root, 'android', 'app', 'src', 'main', 'res', drawableFolderName);
               mkdirSync(drawableDir, { recursive: true });
 
               const targetPath = join(drawableDir, assetFileName);
@@ -181,7 +195,9 @@ export async function build(config: ResolvedConfig): Promise<void> {
           // Generate/update keep.xml file (Metro-compatible)
           // Metro creates keep.xml to prevent Android resource shrinking from removing drawable resources
           if (drawableResourceNames.length > 0) {
-            const rawDir = join(root, 'android', 'app', 'src', 'main', 'res', 'raw');
+            const rawDir = assetsDest
+              ? join(assetsDest, 'raw')
+              : join(root, 'android', 'app', 'src', 'main', 'res', 'raw');
             mkdirSync(rawDir, { recursive: true });
             const keepXmlPath = join(rawDir, 'keep.xml');
 
@@ -200,11 +216,12 @@ export async function build(config: ResolvedConfig): Promise<void> {
         console.log(`   ⚠️  Android assets directory not found: ${androidParentDir}`);
       }
     } else if (platform === 'ios') {
-      // iOS: Copy to ios/ directory (will be included in Xcode project)
-      const iosDir = join(root, 'ios');
+      // iOS: Copy to --assets-dest or default ios/ directory
+      const iosDir = assetsDest || join(root, 'ios');
       console.log(`   📍 Checking iOS directory: ${iosDir}`);
-      if (existsSync(iosDir)) {
-        const iosBundlePath = join(iosDir, bundleFileName);
+      if (assetsDest || existsSync(iosDir)) {
+        mkdirSync(iosDir, { recursive: true });
+        const iosBundlePath = join(iosDir, basename(bundlePath));
         console.log(`   📍 Target iOS bundle path: ${iosBundlePath}`);
         copyFileSync(bundlePath, iosBundlePath);
         console.log(`   📦 Copied to: ${iosBundlePath}`);

@@ -25,7 +25,8 @@ import type { HMRClient, HMRClientMessage, HMRServerError, HMRUpdateResult } fro
  * Start the OXC dev server
  */
 export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
-  const host = '0.0.0.0';
+  // Use config host or default to 0.0.0.0 (allows Android emulator 10.0.2.2 and other devices)
+  const host = config.server?.host || '0.0.0.0';
   const port = config.server?.port || 8081;
 
   // Initialize DevEngine (buildWithOxc + file watcher)
