@@ -95,7 +95,8 @@ export function buildConfigFromArgs(args: ParsedArgs): BungaeConfig {
     maxWorkers: args.maxWorkers,
     watchFolders: args.watchFolders,
     sourceExts: args.sourceExts,
-    unstableTransformProfile: args.unstableTransformProfile as BungaeConfig['unstableTransformProfile'],
+    unstableTransformProfile:
+      args.unstableTransformProfile as BungaeConfig['unstableTransformProfile'],
     interactive: args.interactive,
     transformOptions: args.transformOption ? parseKeyValuePairs(args.transformOption) : undefined,
     resolverOptions: args.resolverOption ? parseKeyValuePairs(args.resolverOption) : undefined,

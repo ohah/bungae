@@ -82,7 +82,10 @@ export function parseKeyValuePairs(pairs: string[]): Record<string, string> {
  * Parse comma-separated string into array
  */
 export function parseCommaSeparated(value: string): string[] {
-  return value.split(',').map((s) => s.trim()).filter(Boolean);
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 /**
@@ -160,7 +163,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   const port = portStr ? parseInt(portStr, 10) : undefined;
 
   // Parse max-workers (string -> number)
-  const maxWorkersStr = (values['max-workers'] as string | undefined);
+  const maxWorkersStr = values['max-workers'] as string | undefined;
   const maxWorkers = maxWorkersStr ? parseInt(maxWorkersStr, 10) : undefined;
 
   // Handle --no-interactive (negation pattern)
@@ -172,7 +175,8 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   }
 
   // Handle --reset-cache and --resetCache (both forms)
-  const resetCache = (values['reset-cache'] as boolean) || (values.resetCache as boolean) || undefined;
+  const resetCache =
+    (values['reset-cache'] as boolean) || (values.resetCache as boolean) || undefined;
 
   // Handle watch-folders (camelCase and kebab-case)
   const watchFoldersStr = (values.watchFolders as string) || (values['watch-folders'] as string);
@@ -203,13 +207,13 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     config: values.config as string | undefined,
     root: values.root as string | undefined,
     bundler: values.bundler as string | undefined,
-    maxWorkers: (maxWorkers !== undefined && !isNaN(maxWorkers)) ? maxWorkers : undefined,
+    maxWorkers: maxWorkers !== undefined && !isNaN(maxWorkers) ? maxWorkers : undefined,
     resetCache,
     interactive,
 
     // Server
     host: values.host as string | undefined,
-    port: (port !== undefined && !isNaN(port)) ? port : undefined,
+    port: port !== undefined && !isNaN(port) ? port : undefined,
     https: values.https as boolean | undefined,
     key: values.key as string | undefined,
     cert: values.cert as string | undefined,
