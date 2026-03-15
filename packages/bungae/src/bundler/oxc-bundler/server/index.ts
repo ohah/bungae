@@ -70,7 +70,7 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
     // Bundle request: *.bundle or *.bundle.js
     // Handle BEFORE middlewares — CLI server middleware may intercept bundle requests
     if (pathname.endsWith('.bundle') || pathname.endsWith('.bundle.js')) {
-      await handleBundleRequest(res, devEngine, config);
+      await handleBundleRequest(req, res, devEngine, config);
       return;
     }
 
@@ -278,42 +278,107 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
 
 // --- Request Handlers ---
 
+/**
+ * Prepare bundle code: strip Rolldown's sourceMappingURL and append correct one.
+ */
+function prepareBundleCode(bundle: { code: string; map?: string }, config: ResolvedConfig): string {
+  // Strip Rolldown's own //# sourceMappingURL comment (it points to a wrong filename).
+  let code = bundle.code.replace(/\n?\/\/#\s*sourceMappingURL=[^\n]*/g, '');
+
+  const entryName = config.entry.replace(/\.(js|ts|tsx)$/, '');
+  if (bundle.map) {
+    code += `\n//# sourceMappingURL=${entryName}.map`;
+  }
+
+  // DEBUG: dump bundle + source map for analysis
+  try {
+    writeFileSync('/tmp/bungae-bundle-debug.js', code, 'utf-8');
+    if (bundle.map) {
+      writeFileSync('/tmp/bungae-sourcemap-debug.json', bundle.map, 'utf-8');
+    }
+  } catch {}
+
+  return code;
+}
+
 async function handleBundleRequest(
+  req: IncomingMessage,
   res: ServerResponse,
   devEngine: OxcDevEngine,
   config: ResolvedConfig,
 ): Promise<void> {
-  try {
-    const bundle = await devEngine.getBundle();
+  // Check if client supports multipart/mixed (React Native loading indicator)
+  const acceptHeader = req.headers.accept || '';
+  const supportsMultipart = acceptHeader === 'multipart/mixed';
 
-    // Strip Rolldown's own //# sourceMappingURL comment (it points to a wrong filename).
-    // We append the correct one below.
-    let code = bundle.code.replace(/\n?\/\/#\s*sourceMappingURL=[^\n]*/g, '');
+  const BOUNDARY = '3beqjf3apnqeu3h5jqorms4i';
+  const CRLF = '\r\n';
 
-    const entryName = config.entry.replace(/\.(js|ts|tsx)$/, '');
-    if (bundle.map) {
-      code += `\n//# sourceMappingURL=${entryName}.map`;
-    }
-
-    // DEBUG: dump bundle + source map for analysis
-    try {
-      writeFileSync('/tmp/bungae-bundle-debug.js', code, 'utf-8');
-      if (bundle.map) {
-        writeFileSync('/tmp/bungae-sourcemap-debug.json', bundle.map, 'utf-8');
-      }
-    } catch {}
-
+  if (supportsMultipart) {
+    // Start multipart response immediately so client sees progress
     res.writeHead(200, {
-      'Content-Type': 'application/javascript',
-      'Content-Length': Buffer.byteLength(code),
+      'Content-Type': `multipart/mixed; boundary="${BOUNDARY}"`,
+      'Cache-Control': 'no-cache',
+      'X-React-Native-Project-Root': config.root,
     });
-    res.end(code);
-  } catch (error: any) {
-    sendJson(res, 500, {
-      type: 'InternalError',
-      message: error.message,
-      errors: [{ description: error.message }],
-    });
+
+    // Initial message for clients that don't support multipart
+    res.write('If you are seeing this, your client does not support multipart response');
+
+    // Send initial 0% progress chunk
+    const initialProgressChunk =
+      `${CRLF}--${BOUNDARY}${CRLF}` +
+      `Content-Type: application/json${CRLF}${CRLF}` +
+      JSON.stringify({ done: 0, total: 1 });
+    res.write(initialProgressChunk);
+
+    try {
+      const bundle = await devEngine.getBundle();
+      const code = prepareBundleCode(bundle, config);
+
+      // Send final 100% progress chunk
+      const finalProgressChunk =
+        `${CRLF}--${BOUNDARY}${CRLF}` +
+        `Content-Type: application/json${CRLF}${CRLF}` +
+        JSON.stringify({ done: 1, total: 1 });
+      res.write(finalProgressChunk);
+
+      // Send bundle code as final chunk
+      const bundleBytes = Buffer.byteLength(code);
+      const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+      const bundleChunk =
+        `${CRLF}--${BOUNDARY}${CRLF}` +
+        `X-Metro-Files-Changed-Count: 0${CRLF}` +
+        `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
+        `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
+        `Content-Length: ${bundleBytes}${CRLF}` +
+        `Last-Modified: ${new Date().toUTCString()}${CRLF}${CRLF}` +
+        code +
+        `${CRLF}--${BOUNDARY}--${CRLF}`;
+      res.end(bundleChunk);
+    } catch (error: any) {
+      console.error('Build error:', error);
+      res.end(`${CRLF}--${BOUNDARY}--${CRLF}`);
+    }
+  } else {
+    // Standard non-multipart response
+    try {
+      const bundle = await devEngine.getBundle();
+      const code = prepareBundleCode(bundle, config);
+
+      res.writeHead(200, {
+        'Content-Type': 'application/javascript; charset=UTF-8',
+        'Cache-Control': 'no-cache',
+        'X-React-Native-Project-Root': config.root,
+      });
+      res.end(code);
+    } catch (error: any) {
+      sendJson(res, 500, {
+        type: 'InternalError',
+        message: error.message,
+        errors: [{ description: error.message }],
+      });
+    }
   }
 }
 
