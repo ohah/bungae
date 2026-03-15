@@ -516,6 +516,11 @@ function handleHMRConnection(
           };
           clients.set(clientId, client);
           console.log(`[HMR] Client registered: ${clientId} (${message.platform})`);
+
+          // Send initial update sequence to dismiss RN loading indicator.
+          // RN's HMRClient.js calls DevLoadingView.hide() on 'update-done'.
+          client.send(JSON.stringify({ type: 'hmr:update-start', isInitialUpdate: true }));
+          client.send(JSON.stringify({ type: 'hmr:update-done' }));
           break;
         }
 
