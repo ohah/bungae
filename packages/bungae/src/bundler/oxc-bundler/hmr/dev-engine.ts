@@ -212,11 +212,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     // but if needed, the server can apply async transform before sending.
     const processedUpdates = result.updates.map((update) => {
       if (update.update.type === 'Patch') {
-        let code = update.update.code;
-        code = patchRolldownRuntime(code);
+        const patched = patchRolldownRuntime(update.update.code);
         return {
           ...update,
-          update: { ...update.update, code },
+          update: { ...update.update, code: patched.code },
         };
       }
       return update;
@@ -297,7 +296,8 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       try {
         this.cachedBundle.code = await applyHermesCompat(this.cachedBundle.code);
       } catch {
-        this.cachedBundle.code = patchRolldownRuntime(this.cachedBundle.code);
+        const patched = patchRolldownRuntime(this.cachedBundle.code);
+        this.cachedBundle.code = patched.code;
       }
       this.cachedBundle.needsHermesCompat = false;
     }
