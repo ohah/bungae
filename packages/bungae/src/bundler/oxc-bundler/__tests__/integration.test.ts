@@ -105,7 +105,10 @@ afterEach(() => {
 
 describe('Integration: Full Build Pipeline', () => {
   it('should bundle multiple modules with cross-file imports', async () => {
-    writeEntry('math.ts', `export function add(a: number, b: number) { return a + b; }\nexport function mul(a: number, b: number) { return a * b; }\n`);
+    writeEntry(
+      'math.ts',
+      `export function add(a: number, b: number) { return a + b; }\nexport function mul(a: number, b: number) { return a * b; }\n`,
+    );
     writeEntry('greet.ts', `export function greet(name: string) { return "Hello, " + name; }\n`);
     writeEntry(
       'index.ts',
@@ -136,7 +139,10 @@ describe('Integration: Full Build Pipeline', () => {
   });
 
   it('should handle re-exports correctly', async () => {
-    writeEntry('internal.ts', `export const SECRET = "hidden";\nexport const PUBLIC = "visible";\n`);
+    writeEntry(
+      'internal.ts',
+      `export const SECRET = "hidden";\nexport const PUBLIC = "visible";\n`,
+    );
     writeEntry('api.ts', `export { PUBLIC } from './internal';\n`);
     writeEntry('index.ts', `import { PUBLIC } from './api';\nconsole.log(PUBLIC);\n`);
 
@@ -164,8 +170,14 @@ describe('Integration: Full Build Pipeline', () => {
   });
 
   it('should handle circular imports without hanging', async () => {
-    writeEntry('moduleA.ts', `import { b } from './moduleB';\nexport const a = "A" + (typeof b === "string" ? b : "");\n`);
-    writeEntry('moduleB.ts', `import { a } from './moduleA';\nexport const b = "B" + (typeof a === "string" ? a : "");\n`);
+    writeEntry(
+      'moduleA.ts',
+      `import { b } from './moduleB';\nexport const a = "A" + (typeof b === "string" ? b : "");\n`,
+    );
+    writeEntry(
+      'moduleB.ts',
+      `import { a } from './moduleA';\nexport const b = "B" + (typeof a === "string" ? a : "");\n`,
+    );
     writeEntry('index.ts', `import { a } from './moduleA';\nconsole.log(a);\n`);
 
     const { buildWithOxc } = await import('../bundler');
@@ -196,11 +208,9 @@ describe('Integration: IIFE Wrapping & Prelude', () => {
     writeEntry('index.ts', `console.log(__DEV__);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ dev: true }),
-      undefined,
-      { hermes: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ dev: true }), undefined, {
+      hermes: false,
+    });
 
     expect(result.code).toContain('__DEV__');
     expect(result.code).toMatch(/__DEV__\s*=\s*true/);
@@ -210,11 +220,10 @@ describe('Integration: IIFE Wrapping & Prelude', () => {
     writeEntry('index.ts', `console.log(__DEV__);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ dev: false }),
-      undefined,
-      { hermes: false, sourcemap: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ dev: false }), undefined, {
+      hermes: false,
+      sourcemap: false,
+    });
 
     expect(result.code).toContain('__DEV__');
     expect(result.code).toMatch(/__DEV__\s*=\s*false/);
@@ -388,7 +397,12 @@ describe('Integration: postProcessSourceMap', () => {
 
     const inputMap = JSON.stringify({
       version: 3,
-      sources: ['src/app.ts', 'node_modules/react/index.js', 'src/utils.ts', 'node_modules/lodash/index.js'],
+      sources: [
+        'src/app.ts',
+        'node_modules/react/index.js',
+        'src/utils.ts',
+        'node_modules/lodash/index.js',
+      ],
       mappings: '',
     });
 
@@ -523,11 +537,9 @@ describe('Integration: Platform Resolution', () => {
     writeEntry('index.ts', `import { platform } from './component';\nconsole.log(platform);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ platform: 'ios' }),
-      undefined,
-      { hermes: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ platform: 'ios' }), undefined, {
+      hermes: false,
+    });
 
     // Should pick the .ios.ts variant
     expect(result.code).toContain('"ios"');
@@ -539,11 +551,9 @@ describe('Integration: Platform Resolution', () => {
     writeEntry('index.ts', `import { platform } from './component';\nconsole.log(platform);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ platform: 'android' }),
-      undefined,
-      { hermes: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ platform: 'android' }), undefined, {
+      hermes: false,
+    });
 
     expect(result.code).toContain('"android"');
   });
@@ -553,11 +563,9 @@ describe('Integration: Platform Resolution', () => {
     writeEntry('index.ts', `import { platform } from './component';\nconsole.log(platform);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ platform: 'ios' }),
-      undefined,
-      { hermes: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ platform: 'ios' }), undefined, {
+      hermes: false,
+    });
 
     expect(result.code).toContain('"generic"');
   });
@@ -736,26 +744,27 @@ describe('Integration: Production Build', () => {
     writeEntry('index.ts', `const msg = "prod";\nconsole.log(msg);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ dev: false, minify: false }),
-      undefined,
-      { hermes: false, sourcemap: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ dev: false, minify: false }), undefined, {
+      hermes: false,
+      sourcemap: false,
+    });
 
     expect(result.code).toBeTruthy();
     expect(result.map).toBeFalsy();
   });
 
   it('should enable tree shaking in production', async () => {
-    writeEntry('lib.ts', `export function used() { return "used"; }\nexport function unused() { return "unused"; }\n`);
+    writeEntry(
+      'lib.ts',
+      `export function used() { return "used"; }\nexport function unused() { return "unused"; }\n`,
+    );
     writeEntry('index.ts', `import { used } from './lib';\nconsole.log(used());\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ dev: false, minify: false }),
-      undefined,
-      { hermes: false, sourcemap: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ dev: false, minify: false }), undefined, {
+      hermes: false,
+      sourcemap: false,
+    });
 
     expect(result.code).toContain('used');
     // Tree shaking should remove unused function
@@ -782,10 +791,7 @@ describe('Integration: TypeScript', () => {
   });
 
   it('should handle enums', async () => {
-    writeEntry(
-      'index.ts',
-      `enum Color { Red, Green, Blue }\nconsole.log(Color.Red);\n`,
-    );
+    writeEntry('index.ts', `enum Color { Red, Green, Blue }\nconsole.log(Color.Red);\n`);
 
     const { buildWithOxc } = await import('../bundler');
     const result = await buildWithOxc(createTestConfig(), undefined, { hermes: false });
@@ -796,17 +802,12 @@ describe('Integration: TypeScript', () => {
   });
 
   it('should handle TSX/JSX', async () => {
-    writeEntry(
-      'index.tsx',
-      `const App = () => <div>Hello</div>;\nconsole.log(App);\n`,
-    );
+    writeEntry('index.tsx', `const App = () => <div>Hello</div>;\nconsole.log(App);\n`);
 
     const { buildWithOxc } = await import('../bundler');
-    const result = await buildWithOxc(
-      createTestConfig({ entry: 'index.tsx' }),
-      undefined,
-      { hermes: false },
-    );
+    const result = await buildWithOxc(createTestConfig({ entry: 'index.tsx' }), undefined, {
+      hermes: false,
+    });
 
     expect(result.code).toBeTruthy();
     // JSX should be compiled away
