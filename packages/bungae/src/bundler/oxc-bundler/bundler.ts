@@ -246,7 +246,7 @@ export function postProcessSourceMap(mapStr: string): string {
     // Add x_facebook_sources (Metro-compatible function map metadata).
     // Rolldown doesn't generate function maps, so all entries are null.
     // DevTools/Hermes uses this field for stack trace function name resolution.
-    map.x_facebook_sources = new Array(map.sources.length).fill(null);
+    map.x_facebook_sources = Array.from({ length: map.sources.length }, () => null);
 
     return JSON.stringify(map);
   } catch {
