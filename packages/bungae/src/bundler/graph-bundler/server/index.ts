@@ -37,8 +37,8 @@ export async function serveWithGraph(
 ): Promise<{ stop: () => Promise<void> }> {
   const { platform, server } = config;
   const port = server?.port ?? 8081;
-  // Use 0.0.0.0 to allow connections from Android emulator (10.0.2.2) and other devices
-  const hostname = '0.0.0.0';
+  // Use config host or default to 0.0.0.0 (allows Android emulator 10.0.2.2 and other devices)
+  const hostname = server?.host || '0.0.0.0';
 
   // Print ASCII art banner
   printBanner(VERSION);
