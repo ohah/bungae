@@ -44,3 +44,4 @@ coverage/
 
 # Reference
 reference/
+.claude/worktrees/
