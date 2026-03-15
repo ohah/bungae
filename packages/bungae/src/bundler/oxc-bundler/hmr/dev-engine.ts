@@ -171,13 +171,16 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         throw new Error('No output chunk generated from fallback build');
       }
 
-      console.log(`[dev-engine] Fallback build done (${mainChunk.code.length} chars)`);
+      const mapStr = mainChunk.map?.toString();
+      console.log(
+        `[dev-engine] Fallback build done (${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'})`,
+      );
 
       // rolldown() runs renderChunk hooks (hermesCompatPlugin), so the code
       // is already Hermes-compatible. Mark needsHermesCompat=false.
       this.cachedBundle = {
         code: mainChunk.code,
-        map: mainChunk.map?.toString(),
+        map: mapStr,
         needsHermesCompat: false,
       };
       this.buildError = null;
@@ -249,9 +252,13 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     // DevEngine's dev() API DOES run renderChunk hooks (hermesCompatPlugin),
     // so the output is already Hermes-compatible. No need for applyHermesCompat.
+    const mapStr = mainChunk.map?.toString();
+    console.log(
+      `[dev-engine] Output: ${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'}`,
+    );
     this.cachedBundle = {
       code: mainChunk.code,
-      map: mainChunk.map?.toString(),
+      map: mapStr,
       needsHermesCompat: false,
     };
     this.buildError = null;
