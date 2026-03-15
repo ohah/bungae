@@ -80,6 +80,12 @@ export async function serveWithOxc(config: ResolvedConfig): Promise<{ stop: () =
       return;
     }
 
+    // Symbolicate endpoint: resolve stack traces to original source locations
+    if (pathname === '/symbolicate') {
+      await handleSymbolicateRequest(req, res, devEngine);
+      return;
+    }
+
     // DevTools middleware (handles /json, /open-debugger, etc.)
     if (devMiddleware) {
       const handled = await tryMiddleware(devMiddleware.middleware, req, res);
@@ -324,6 +330,95 @@ async function handleSourceMapRequest(res: ServerResponse, devEngine: OxcDevEngi
     } else {
       sendText(res, 404, 'No source map available');
     }
+  } catch (error: any) {
+    sendJson(res, 500, { error: error.message });
+  }
+}
+
+/**
+ * Handle /symbolicate POST requests.
+ * React Native sends stack traces here to resolve bundle line/column
+ * positions back to original source file locations.
+ *
+ * Request body: { stack: [{ file, lineNumber, column, methodName }] }
+ * Response: { stack: [{ file, lineNumber, column, methodName, collapse }] }
+ */
+let cachedTraceMap: any = null;
+let cachedTraceMapSrc: string | undefined;
+
+async function handleSymbolicateRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  devEngine: OxcDevEngine,
+): Promise<void> {
+  try {
+    // Read request body
+    const body = await new Promise<string>((resolve, reject) => {
+      let data = '';
+      req.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
+      req.on('end', () => resolve(data));
+      req.on('error', reject);
+    });
+
+    const { stack } = JSON.parse(body) as {
+      stack: Array<{
+        file?: string;
+        lineNumber?: number;
+        column?: number;
+        methodName?: string;
+      }>;
+    };
+
+    if (!stack || !Array.isArray(stack)) {
+      sendJson(res, 400, { error: 'Invalid stack trace format' });
+      return;
+    }
+
+    // Get source map and create TraceMap (cached)
+    const bundle = await devEngine.getBundle();
+    if (!bundle.map) {
+      sendJson(res, 200, { stack });
+      return;
+    }
+
+    // Re-create TraceMap only when map changes
+    if (cachedTraceMapSrc !== bundle.map) {
+      const { TraceMap } = await import('@jridgewell/trace-mapping');
+      cachedTraceMap = new TraceMap(bundle.map);
+      cachedTraceMapSrc = bundle.map;
+    }
+
+    const { originalPositionFor } = await import('@jridgewell/trace-mapping');
+
+    // Symbolicate each frame
+    const symbolicatedStack = stack.map((frame) => {
+      if (!frame.lineNumber || frame.lineNumber < 1) return frame;
+
+      try {
+        const pos = originalPositionFor(cachedTraceMap, {
+          line: frame.lineNumber,
+          column: frame.column ?? 0,
+        });
+
+        if (pos.source) {
+          return {
+            file: pos.source,
+            lineNumber: pos.line,
+            column: pos.column,
+            methodName: pos.name || frame.methodName,
+            collapse: pos.source.indexOf('node_modules') >= 0,
+          };
+        }
+      } catch {
+        // Fall through to return original frame
+      }
+
+      return frame;
+    });
+
+    sendJson(res, 200, { stack: symbolicatedStack });
   } catch (error: any) {
     sendJson(res, 500, { error: error.message });
   }
