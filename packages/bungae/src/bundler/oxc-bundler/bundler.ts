@@ -26,6 +26,7 @@ import {
   preludePlugin,
   hermesCompatPlugin,
   babelPluginsPlugin,
+  generatePreludeCode,
 } from './plugins';
 import { resolvePolyfillPaths } from './polyfills';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
@@ -125,14 +126,14 @@ export async function buildWithOxc(
   const bundle = await rolldown(inputOptions);
 
   // Generate output
-  // IIFE prevents top-level `var` declarations (e.g., `var Headers` from
-  // fetch.js) from creating non-configurable properties on globalThis,
-  // which would break React Native's polyfillGlobal().
-  // Prelude code and polyfills are injected by preludePlugin (module-based,
-  // with proper source maps) — no longer in intro.
+  // Prelude globals (__DEV__, process.env) go in intro because they must be
+  // available before any module code. Polyfills are imported as modules via
+  // preludePlugin for proper source maps.
+  // IIFE prevents top-level `var` from creating non-configurable globalThis props.
+  const prelude = generatePreludeCode(config.dev, config.platform);
   const { output } = await bundle.generate({
     ...outputOptions,
-    intro: 'var global = globalThis;\n(function() {',
+    intro: `var global = globalThis;\n${prelude}\n(function() {`,
     outro: '}).call(globalThis);',
   });
 

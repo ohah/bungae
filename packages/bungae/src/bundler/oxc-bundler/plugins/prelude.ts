@@ -52,8 +52,9 @@ export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = 
 
         const originalSource = readFileSync(id, 'utf-8');
 
-        // Build prelude code (RN globals: __DEV__, process.env, etc.)
-        const preludeCode = generatePreludeCode(dev, platform);
+        // Prelude globals (__DEV__, process.env, etc.) are set in `intro` because
+        // they must be available before ANY module code (including polyfills).
+        // Here we only inject polyfill and prelude module imports.
 
         // Build polyfill imports (console.js, error-guard.js — must run before prelude modules)
         const polyfillImports = polyfillPaths.map((mod) => `import '${mod}';`).join('\n');
@@ -61,7 +62,7 @@ export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = 
         // Build prelude module imports (InitializeCore, etc.)
         const preludeImports = preludeModules.map((mod) => `import '${mod}';`).join('\n');
 
-        const modifiedSource = [preludeCode, polyfillImports, preludeImports, originalSource]
+        const modifiedSource = [polyfillImports, preludeImports, originalSource]
           .filter(Boolean)
           .join('\n');
 

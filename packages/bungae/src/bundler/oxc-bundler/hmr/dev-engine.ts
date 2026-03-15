@@ -24,7 +24,7 @@ import {
 
 import type { ResolvedConfig } from '../../../config/types';
 import { addIgnoreList, createRolldownOptions } from '../bundler';
-import { hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
+import { hmrClientReplacePlugin, reactRefreshPlugin, generatePreludeCode } from '../plugins';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
 
@@ -106,11 +106,13 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
       });
 
-      // Prelude code and polyfills are injected by preludePlugin (module-based).
-      // Intro only needs IIFE wrapper + global alias.
+      // Prelude globals (__DEV__, process.env) go in intro because they must be
+      // available before any module code. Polyfills are imported as modules via
+      // preludePlugin for proper source maps.
+      const prelude = generatePreludeCode(true, this.config.platform);
       const devOutputOptions = {
         ...outputOptions,
-        intro: 'var global = globalThis;\n(function() {',
+        intro: `var global = globalThis;\n${prelude}\n(function() {`,
         outro: '}).call(globalThis);',
       };
       this.rolldownInputOptions = inputOptions;
