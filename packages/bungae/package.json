@@ -91,6 +91,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
+    "@ampproject/remapping": "^2.3.0",
     "@babel/plugin-proposal-export-default-from": "^7.27.1",
     "@babel/plugin-transform-arrow-functions": "^7.27.1",
     "@babel/plugin-transform-async-generator-functions": "^7.28.6",
@@ -120,6 +121,7 @@
     "babel-plugin-minify-dead-code-elimination": "^0.5.2",
     "babel-plugin-minify-simplify": "^0.5.1",
     "image-size": "^2.0.2",
+    "magic-string": "^0.30.21",
     "typescript": "^5"
   },
   "peerDependencies": {

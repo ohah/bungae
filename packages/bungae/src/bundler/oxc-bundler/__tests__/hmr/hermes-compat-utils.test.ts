@@ -7,22 +7,32 @@ describe('patchRolldownRuntime', () => {
     const input = 'var __defProp = Object.defineProperty;\nvar x = 1;';
     const result = patchRolldownRuntime(input);
 
-    expect(result).not.toContain('var __defProp = Object.defineProperty;');
-    expect(result).toContain('desc.configurable = true');
-    expect(result).toContain('Object.defineProperty(obj, key, desc)');
+    expect(result.code).not.toContain('var __defProp = Object.defineProperty;');
+    expect(result.code).toContain('desc.configurable = true');
+    expect(result.code).toContain('Object.defineProperty(obj, key, desc)');
+  });
+
+  it('should return source map when patching', () => {
+    const input = 'var __defProp = Object.defineProperty;\nvar x = 1;';
+    const result = patchRolldownRuntime(input);
+
+    expect(result.map).toBeDefined();
+    const map = JSON.parse(result.map!);
+    expect(map.mappings).toBeTruthy();
   });
 
   it('should return code unchanged when __defProp pattern is not found', () => {
     const input = 'var x = 1;\nconsole.log(x);';
     const result = patchRolldownRuntime(input);
-    expect(result).toBe(input);
+    expect(result.code).toBe(input);
+    expect(result.map).toBeUndefined();
   });
 
   it('should not modify code when __defProp pattern does not match', () => {
     const input = 'var __defProp = someOtherFunction;\n__defProp(obj, key, desc);';
     const result = patchRolldownRuntime(input);
     // No match → code unchanged
-    expect(result).toBe(input);
+    expect(result.code).toBe(input);
   });
 
   it('should not warn when __defProp is not used at all', () => {
@@ -44,9 +54,9 @@ describe('patchRolldownRuntime', () => {
     const result = patchRolldownRuntime(input);
 
     // First one patched
-    expect(result).toContain('desc.configurable = true');
+    expect(result.code).toContain('desc.configurable = true');
     // Second one remains (different variable name, no match)
-    expect(result).toContain('var __defProp2 = Object.defineProperty;');
+    expect(result.code).toContain('var __defProp2 = Object.defineProperty;');
   });
 });
 
