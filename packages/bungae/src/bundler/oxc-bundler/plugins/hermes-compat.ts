@@ -7,9 +7,18 @@
  *    private fields, let/const, arrow functions, etc.
  *
  * 2. Configurable exports: Patch __defProp to set `configurable: true`.
+ *
+ * All string manipulations use MagicString to preserve source maps.
  */
 
+import remapping from '@ampproject/remapping';
+import MagicString from 'magic-string';
 import type { Plugin } from 'rolldown';
+
+const VOID0_CALL_REGEX = /\(void 0\)\(/g;
+const DEFPROP_REGEX = /var __defProp = Object\.defineProperty;/;
+const DEFPROP_REPLACEMENT =
+  'var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };';
 
 export function hermesCompatPlugin(): Plugin {
   return {
@@ -20,20 +29,28 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          // Fix Rolldown bug: in `&& /* @__PURE__ */ (void 0)(args)` context,
-          // Rolldown replaces the JSX function reference with `void 0`.
-          // Detect the JSX function name from working calls and restore broken ones.
-          let fixed = code;
+          // Step 1: Fix Rolldown (void 0) bug with MagicString (preserves source map)
           const jsxDevMatch = code.match(/\(0,\s*([\w$]+\.jsxDEV)\s*\)/);
           const jsxMatch = code.match(/\(0,\s*([\w$]+\.jsx)\s*\)/);
           const jsxFn = jsxDevMatch?.[1] || jsxMatch?.[1];
+
+          let swcInput = code;
+          let voidFixMap: ReturnType<MagicString['generateMap']> | null = null;
+
           if (jsxFn) {
-            // Replace `(void 0)(Component,` with `(0, jsxFn)(Component,`
-            // Only match (void 0) used as a function call (never legitimate)
-            fixed = code.replace(/\(void 0\)\(/g, `(0, ${jsxFn})(`);
+            const s = new MagicString(code);
+            const replacement = `(0, ${jsxFn})(`;
+            let match: RegExpExecArray | null;
+            VOID0_CALL_REGEX.lastIndex = 0;
+            while ((match = VOID0_CALL_REGEX.exec(code)) !== null) {
+              s.overwrite(match.index, match.index + match[0].length, replacement);
+            }
+            swcInput = s.toString();
+            voidFixMap = s.generateMap({ hires: true });
           }
 
-          const result = await swc.transform(fixed, {
+          // Step 2: SWC ES5 transform with inputSourceMap for (void 0) fix chain
+          const result = await swc.transform(swcInput, {
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
@@ -43,16 +60,43 @@ export function hermesCompatPlugin(): Plugin {
               },
             },
             sourceMaps: true,
+            inputSourceMap: voidFixMap ? JSON.stringify(voidFixMap) : undefined,
           });
 
-          const patched = result.code.replace(
-            /var __defProp = Object\.defineProperty;/,
-            `var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };`,
+          // Step 3: Patch __defProp with MagicString (preserves source map)
+          const swcCode = result.code;
+          const defPropMatch = DEFPROP_REGEX.exec(swcCode);
+
+          if (!defPropMatch || defPropMatch.index === undefined) {
+            // No __defProp to patch — return SWC result directly
+            return {
+              code: swcCode,
+              map: result.map || undefined,
+            };
+          }
+
+          const s2 = new MagicString(swcCode);
+          s2.overwrite(
+            defPropMatch.index,
+            defPropMatch.index + defPropMatch[0].length,
+            DEFPROP_REPLACEMENT,
+          );
+          const finalCode = s2.toString();
+          const defPropMap = s2.generateMap({ hires: true });
+
+          // Step 4: Compose defProp map with SWC map (which already includes void0 fix)
+          if (!result.map) {
+            return { code: finalCode, map: JSON.stringify(defPropMap) };
+          }
+
+          const composedMap = remapping(
+            [defPropMap as any, JSON.parse(result.map)],
+            () => null,
           );
 
           return {
-            code: patched,
-            map: result.map || undefined,
+            code: finalCode,
+            map: JSON.stringify(composedMap),
           };
         } catch (error: any) {
           console.warn(`[hermes-compat] SWC transform failed: ${error.message}`);
