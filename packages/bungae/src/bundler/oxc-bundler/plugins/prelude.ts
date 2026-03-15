@@ -29,8 +29,7 @@ export interface PreludeOptions {
   polyfillPaths?: string[];
 }
 
-export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = {}): Plugin {
-  const { dev, platform } = config;
+export function preludePlugin(_config: ResolvedConfig, options: PreludeOptions = {}): Plugin {
   const { preludeModules = [], polyfillPaths = [] } = options;
 
   return {
