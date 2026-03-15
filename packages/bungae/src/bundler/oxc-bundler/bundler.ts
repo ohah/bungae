@@ -218,13 +218,38 @@ export async function buildWithOxc(
 }
 
 /**
- * Add x_google_ignoreList to source map.
+ * Normalize Bun cache paths in source map sources.
+ * Bun resolves node_modules to `.bun` cache paths like:
+ *   node_modules/.bun/@react-native+js-polyfills@0.83.1+hash/node_modules/@react-native/js-polyfills/console.js
+ * Chrome DevTools doesn't recognize these as third-party (node_modules) paths.
+ * Normalize to standard format:
+ *   node_modules/@react-native/js-polyfills/console.js
+ */
+const BUN_CACHE_REGEX = /node_modules\/\.bun\/[^/]+\/node_modules\//;
+
+function normalizeBunCachePath(source: string): string {
+  // Replace: node_modules/.bun/{pkg}@{ver}+{hash}/node_modules/ → node_modules/
+  return source.replace(BUN_CACHE_REGEX, 'node_modules/');
+}
+
+/**
+ * Post-process source map: normalize Bun cache paths and add x_google_ignoreList.
  * Marks node_modules sources so DevTools skips them for console.log locations.
  */
 export function addIgnoreList(mapStr: string): string {
   try {
     const map = JSON.parse(mapStr);
     if (!map.sources) return mapStr;
+
+    // Normalize Bun cache paths so DevTools recognizes them as node_modules
+    let modified = false;
+    for (let i = 0; i < map.sources.length; i++) {
+      const source = map.sources[i];
+      if (source && BUN_CACHE_REGEX.test(source)) {
+        map.sources[i] = normalizeBunCachePath(source);
+        modified = true;
+      }
+    }
 
     const ignoreList: number[] = [];
     for (let i = 0; i < map.sources.length; i++) {
@@ -234,7 +259,7 @@ export function addIgnoreList(mapStr: string): string {
       }
     }
 
-    if (ignoreList.length > 0) {
+    if (ignoreList.length > 0 || modified) {
       map.x_google_ignoreList = ignoreList;
       return JSON.stringify(map);
     }
