@@ -37,23 +37,34 @@ console.log('========================================');
 console.log('');
 
 var fields = [
-  'version', 'file', 'sourceRoot',
-  'sources', 'sourcesContent', 'names', 'mappings',
-  'x_google_ignoreList', 'ignoreList', 'x_facebook_sources',
+  'version',
+  'file',
+  'sourceRoot',
+  'sources',
+  'sourcesContent',
+  'names',
+  'mappings',
+  'x_google_ignoreList',
+  'ignoreList',
+  'x_facebook_sources',
 ];
 
 function describe(field, val) {
   if (val === undefined || val === null) return 'MISSING';
   if (field === 'sources') return val.length + ' sources';
   if (field === 'sourcesContent') {
-    var nonNull = val.filter(function(x) { return x != null; }).length;
+    var nonNull = val.filter(function (x) {
+      return x != null;
+    }).length;
     return val.length + ' entries (' + nonNull + ' non-null)';
   }
   if (field === 'names') return val.length + ' names';
   if (field === 'mappings') return val.length + ' chars';
   if (field === 'x_google_ignoreList' || field === 'ignoreList') return val.length + ' entries';
   if (field === 'x_facebook_sources') {
-    var withData = val.filter(function(x) { return x != null; }).length;
+    var withData = val.filter(function (x) {
+      return x != null;
+    }).length;
     return val.length + ' entries (' + withData + ' with data)';
   }
   return JSON.stringify(val);
@@ -71,21 +82,33 @@ for (var i = 0; i < fields.length; i++) {
 }
 
 // Extra keys in each
-var gKeys = Object.keys(graphMap).filter(function(k) { return fields.indexOf(k) < 0; });
-var oKeys = Object.keys(oxcMap).filter(function(k) { return fields.indexOf(k) < 0; });
+var gKeys = Object.keys(graphMap).filter(function (k) {
+  return fields.indexOf(k) < 0;
+});
+var oKeys = Object.keys(oxcMap).filter(function (k) {
+  return fields.indexOf(k) < 0;
+});
 if (gKeys.length > 0) console.log('\n  Extra keys in graph-bundler:', gKeys);
 if (oKeys.length > 0) console.log('\n  Extra keys in oxc-bundler:', oKeys);
 
 // Source path format comparison
 console.log('\n--- First 3 sources (graph-bundler) ---');
-(graphMap.sources || []).slice(0, 3).forEach(function(s, i) { console.log('  [' + i + '] ' + s); });
+(graphMap.sources || []).slice(0, 3).forEach(function (s, i) {
+  console.log('  [' + i + '] ' + s);
+});
 console.log('\n--- First 3 sources (oxc-bundler) ---');
-(oxcMap.sources || []).slice(0, 3).forEach(function(s, i) { console.log('  [' + i + '] ' + s); });
+(oxcMap.sources || []).slice(0, 3).forEach(function (s, i) {
+  console.log('  [' + i + '] ' + s);
+});
 
 // User sources
 console.log('\n--- User sources (non-node_modules) ---');
-var gUser = (graphMap.sources || []).filter(function(s) { return s.indexOf('node_modules') < 0; });
-var oUser = (oxcMap.sources || []).filter(function(s) { return s.indexOf('node_modules') < 0; });
+var gUser = (graphMap.sources || []).filter(function (s) {
+  return s.indexOf('node_modules') < 0;
+});
+var oUser = (oxcMap.sources || []).filter(function (s) {
+  return s.indexOf('node_modules') < 0;
+});
 console.log('  graph:', JSON.stringify(gUser));
 console.log('  oxc:  ', JSON.stringify(oUser));
 console.log('');
