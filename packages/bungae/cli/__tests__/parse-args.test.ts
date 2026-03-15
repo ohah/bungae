@@ -82,7 +82,9 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --entry-file (RN CLI compat)', () => {
-      expect(parseCliArgs(['build', '--entry-file', './src/index.ts']).entry).toBe('./src/index.ts');
+      expect(parseCliArgs(['build', '--entry-file', './src/index.ts']).entry).toBe(
+        './src/index.ts',
+      );
     });
 
     test('--entry takes priority over --entry-file', () => {
@@ -91,7 +93,9 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --config / -c', () => {
-      expect(parseCliArgs(['build', '--config', './metro.config.js']).config).toBe('./metro.config.js');
+      expect(parseCliArgs(['build', '--config', './metro.config.js']).config).toBe(
+        './metro.config.js',
+      );
       expect(parseCliArgs(['build', '-c', './bungae.config.ts']).config).toBe('./bungae.config.ts');
     });
 
@@ -183,7 +187,9 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --bundle-output (RN CLI)', () => {
-      expect(parseCliArgs(['build', '--bundle-output', './ios/main.jsbundle']).bundleOutput).toBe('./ios/main.jsbundle');
+      expect(parseCliArgs(['build', '--bundle-output', './ios/main.jsbundle']).bundleOutput).toBe(
+        './ios/main.jsbundle',
+      );
     });
 
     test('should parse --out / -O (Metro)', () => {
@@ -205,31 +211,46 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --source-map-url', () => {
-      expect(parseCliArgs(['build', '--source-map-url', 'https://example.com/map']).sourceMapUrl).toBe('https://example.com/map');
+      expect(
+        parseCliArgs(['build', '--source-map-url', 'https://example.com/map']).sourceMapUrl,
+      ).toBe('https://example.com/map');
     });
 
     test('should parse --sourcemap-output', () => {
-      expect(parseCliArgs(['build', '--sourcemap-output', './dist/bundle.map']).sourcemapOutput).toBe('./dist/bundle.map');
+      expect(
+        parseCliArgs(['build', '--sourcemap-output', './dist/bundle.map']).sourcemapOutput,
+      ).toBe('./dist/bundle.map');
     });
 
     test('should parse --sourcemap-sources-root', () => {
-      expect(parseCliArgs(['build', '--sourcemap-sources-root', '/src']).sourcemapSourcesRoot).toBe('/src');
+      expect(parseCliArgs(['build', '--sourcemap-sources-root', '/src']).sourcemapSourcesRoot).toBe(
+        '/src',
+      );
     });
 
     test('should parse --sourcemap-use-absolute-path', () => {
-      expect(parseCliArgs(['build', '--sourcemap-use-absolute-path']).sourcemapUseAbsolutePath).toBe(true);
+      expect(
+        parseCliArgs(['build', '--sourcemap-use-absolute-path']).sourcemapUseAbsolutePath,
+      ).toBe(true);
     });
 
     test('should parse --assets-dest', () => {
-      expect(parseCliArgs(['build', '--assets-dest', './android/app/src/main/res']).assetsDest).toBe('./android/app/src/main/res');
+      expect(
+        parseCliArgs(['build', '--assets-dest', './android/app/src/main/res']).assetsDest,
+      ).toBe('./android/app/src/main/res');
     });
 
     test('should parse --asset-catalog-dest', () => {
-      expect(parseCliArgs(['build', '--asset-catalog-dest', './ios/assets']).assetCatalogDest).toBe('./ios/assets');
+      expect(parseCliArgs(['build', '--asset-catalog-dest', './ios/assets']).assetCatalogDest).toBe(
+        './ios/assets',
+      );
     });
 
     test('should parse --unstable-transform-profile', () => {
-      expect(parseCliArgs(['build', '--unstable-transform-profile', 'hermes-stable']).unstableTransformProfile).toBe('hermes-stable');
+      expect(
+        parseCliArgs(['build', '--unstable-transform-profile', 'hermes-stable'])
+          .unstableTransformProfile,
+      ).toBe('hermes-stable');
     });
   });
 
@@ -240,8 +261,10 @@ describe('parseCliArgs', () => {
     test('should parse --transform-option (repeatable)', () => {
       const result = parseCliArgs([
         'build',
-        '--transform-option', 'foo=bar',
-        '--transform-option', 'baz=qux',
+        '--transform-option',
+        'foo=bar',
+        '--transform-option',
+        'baz=qux',
       ]);
       expect(result.transformOption).toEqual(['foo=bar', 'baz=qux']);
     });
@@ -249,8 +272,10 @@ describe('parseCliArgs', () => {
     test('should parse --resolver-option (repeatable)', () => {
       const result = parseCliArgs([
         'build',
-        '--resolver-option', 'key1=val1',
-        '--resolver-option', 'key2=val2',
+        '--resolver-option',
+        'key1=val1',
+        '--resolver-option',
+        'key2=val2',
       ]);
       expect(result.resolverOption).toEqual(['key1=val1', 'key2=val2']);
     });
@@ -269,7 +294,9 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --entry-file for dependencies', () => {
-      expect(parseCliArgs(['dependencies', '--entry-file', './src/index.ts']).entry).toBe('./src/index.ts');
+      expect(parseCliArgs(['dependencies', '--entry-file', './src/index.ts']).entry).toBe(
+        './src/index.ts',
+      );
     });
   });
 
@@ -280,12 +307,16 @@ describe('parseCliArgs', () => {
     test('Metro-style build command', () => {
       const result = parseCliArgs([
         'build',
-        '--platform', 'ios',
-        '--out', './dist/main.jsbundle',
+        '--platform',
+        'ios',
+        '--out',
+        './dist/main.jsbundle',
         '--source-map',
         '--minify',
-        '--max-workers', '4',
-        '--config', './metro.config.js',
+        '--max-workers',
+        '4',
+        '--config',
+        './metro.config.js',
       ]);
 
       expect(result.command).toBe('build');
@@ -300,12 +331,17 @@ describe('parseCliArgs', () => {
     test('RN CLI-style bundle command', () => {
       const result = parseCliArgs([
         'build',
-        '--entry-file', './index.js',
-        '--platform', 'android',
+        '--entry-file',
+        './index.js',
+        '--platform',
+        'android',
         '--dev',
-        '--bundle-output', './android/app/build/bundle.js',
-        '--sourcemap-output', './android/app/build/bundle.map',
-        '--assets-dest', './android/app/src/main/res',
+        '--bundle-output',
+        './android/app/build/bundle.js',
+        '--sourcemap-output',
+        './android/app/build/bundle.map',
+        '--assets-dest',
+        './android/app/src/main/res',
         '--reset-cache',
       ]);
 
@@ -322,10 +358,14 @@ describe('parseCliArgs', () => {
     test('Bungae-specific serve command', () => {
       const result = parseCliArgs([
         'serve',
-        '--platform', 'ios',
-        '--bundler', 'oxc',
-        '--port', '9000',
-        '--host', '0.0.0.0',
+        '--platform',
+        'ios',
+        '--bundler',
+        'oxc',
+        '--port',
+        '9000',
+        '--host',
+        '0.0.0.0',
         '--no-interactive',
       ]);
 
@@ -341,9 +381,12 @@ describe('parseCliArgs', () => {
       const result = parseCliArgs([
         'serve',
         '--https',
-        '--key', './certs/server.key',
-        '--cert', './certs/server.crt',
-        '--port', '8443',
+        '--key',
+        './certs/server.key',
+        '--cert',
+        './certs/server.crt',
+        '--port',
+        '8443',
       ]);
 
       expect(result.https).toBe(true);
@@ -355,19 +398,30 @@ describe('parseCliArgs', () => {
     test('Full release build', () => {
       const result = parseCliArgs([
         'build',
-        '--platform', 'ios',
-        '--mode', 'release',
-        '--bundle-output', './ios/main.jsbundle',
-        '--sourcemap-output', './ios/main.jsbundle.map',
-        '--sourcemap-sources-root', '/src',
+        '--platform',
+        'ios',
+        '--mode',
+        'release',
+        '--bundle-output',
+        './ios/main.jsbundle',
+        '--sourcemap-output',
+        './ios/main.jsbundle.map',
+        '--sourcemap-sources-root',
+        '/src',
         '--sourcemap-use-absolute-path',
-        '--assets-dest', './ios/assets',
-        '--asset-catalog-dest', './ios/catalog',
-        '--unstable-transform-profile', 'hermes-stable',
+        '--assets-dest',
+        './ios/assets',
+        '--asset-catalog-dest',
+        './ios/catalog',
+        '--unstable-transform-profile',
+        'hermes-stable',
         '--reset-cache',
-        '--max-workers', '8',
-        '--transform-option', 'optimize=true',
-        '--resolver-option', 'strict=true',
+        '--max-workers',
+        '8',
+        '--transform-option',
+        'optimize=true',
+        '--resolver-option',
+        'strict=true',
       ]);
 
       expect(result.command).toBe('build');

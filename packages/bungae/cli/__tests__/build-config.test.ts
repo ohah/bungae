@@ -165,16 +165,12 @@ describe('buildConfigFromArgs', () => {
   // =============================================
   describe('transform/resolver key-value options', () => {
     test('maps transformOption to transformOptions', () => {
-      const config = buildConfigFromArgs(
-        makeArgs({ transformOption: ['foo=bar', 'baz=qux'] }),
-      );
+      const config = buildConfigFromArgs(makeArgs({ transformOption: ['foo=bar', 'baz=qux'] }));
       expect(config.transformOptions).toEqual({ foo: 'bar', baz: 'qux' });
     });
 
     test('maps resolverOption to resolverOptions', () => {
-      const config = buildConfigFromArgs(
-        makeArgs({ resolverOption: ['key1=val1'] }),
-      );
+      const config = buildConfigFromArgs(makeArgs({ resolverOption: ['key1=val1'] }));
       expect(config.resolverOptions).toEqual({ key1: 'val1' });
     });
 
