@@ -152,7 +152,7 @@ export async function buildWithOxc(
 
   // Add x_google_ignoreList for node_modules sources
   if (map) {
-    map = addIgnoreList(map);
+    map = postProcessSourceMap(map);
   }
 
   // Handle inline source map
@@ -218,16 +218,18 @@ export async function buildWithOxc(
 }
 
 /**
- * Post-process source map: add ignoreList for node_modules sources.
- * Marks node_modules sources so DevTools skips them for console.log locations.
- * Uses both standard `ignoreList` and vendor-prefixed `x_google_ignoreList`
- * for maximum DevTools compatibility.
+ * Post-process source map for Metro/DevTools compatibility:
+ * - ignoreList / x_google_ignoreList: marks node_modules sources so DevTools
+ *   skips them for console.log source links
+ * - x_facebook_sources: Metro-compatible function map metadata (null entries
+ *   since Rolldown doesn't generate function maps)
  */
-export function addIgnoreList(mapStr: string): string {
+export function postProcessSourceMap(mapStr: string): string {
   try {
     const map = JSON.parse(mapStr);
     if (!map.sources) return mapStr;
 
+    // Build ignore list for node_modules sources
     const ignore: number[] = [];
     for (let i = 0; i < map.sources.length; i++) {
       const source = map.sources[i];
@@ -239,8 +241,14 @@ export function addIgnoreList(mapStr: string): string {
     if (ignore.length > 0) {
       map.ignoreList = ignore;
       map.x_google_ignoreList = ignore;
-      return JSON.stringify(map);
     }
+
+    // Add x_facebook_sources (Metro-compatible function map metadata).
+    // Rolldown doesn't generate function maps, so all entries are null.
+    // DevTools/Hermes uses this field for stack trace function name resolution.
+    map.x_facebook_sources = new Array(map.sources.length).fill(null);
+
+    return JSON.stringify(map);
   } catch {
     // If parsing fails, return original
   }
