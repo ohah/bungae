@@ -108,6 +108,14 @@ export interface SerializerConfig {
 export interface ServerConfig {
   /** Port number */
   port?: number;
+  /** Host to bind server to */
+  host?: string;
+  /** Enable HTTPS */
+  https?: boolean;
+  /** Path to SSL key file */
+  key?: string;
+  /** Path to SSL cert file */
+  cert?: string;
   /** Enable global hotkey */
   useGlobalHotkey?: boolean;
   /** Forward client logs */
@@ -144,6 +152,44 @@ export interface BungaeConfig {
    * @default 'graph'
    */
   bundler?: BundlerType;
+
+  // --- Build output options (Metro/RN CLI compatible) ---
+
+  /** Output bundle file path (Metro: --out, RN CLI: --bundle-output) */
+  bundleOutput?: string;
+  /** Source map output file path (RN CLI: --sourcemap-output) */
+  sourcemapOutput?: string;
+  /** Root path for source map sources (RN CLI: --sourcemap-sources-root) */
+  sourcemapSourcesRoot?: string;
+  /** Use absolute paths in source maps (RN CLI: --sourcemap-use-absolute-path) */
+  sourcemapUseAbsolutePath?: boolean;
+  /** Generate source map (Metro: --source-map) */
+  sourceMap?: boolean;
+  /** Source map URL override (Metro: --source-map-url) */
+  sourceMapUrl?: string;
+  /** Assets output directory (RN CLI: --assets-dest) */
+  assetsDest?: string;
+  /** iOS asset catalog destination (RN CLI: --asset-catalog-dest) */
+  assetCatalogDest?: string;
+  /** Bundle encoding (RN CLI: --bundle-encoding) */
+  bundleEncoding?: BufferEncoding;
+  /** Clear bundler cache before building */
+  resetCache?: boolean;
+  /** Maximum number of worker threads */
+  maxWorkers?: number;
+  /** Additional watch folders (RN CLI: --watchFolders) */
+  watchFolders?: string[];
+  /** Additional source extensions (RN CLI: --sourceExts) */
+  sourceExts?: string[];
+  /** Custom transform options (Metro: --transform-option key=value) */
+  transformOptions?: Record<string, string>;
+  /** Custom resolver options (Metro: --resolver-option key=value) */
+  resolverOptions?: Record<string, string>;
+  /** JS engine transform profile (RN CLI: --unstable-transform-profile) */
+  unstableTransformProfile?: 'default' | 'hermes-stable' | 'hermes-canary';
+  /** Disable interactive terminal mode */
+  interactive?: boolean;
+
   /** Resolver configuration */
   resolver?: ResolverConfig;
   /** Transformer configuration */
