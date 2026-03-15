@@ -19,6 +19,8 @@ const VOID0_CALL_REGEX = /\(void 0\)\(/g;
 const DEFPROP_REGEX = /var __defProp = Object\.defineProperty;/;
 const DEFPROP_REPLACEMENT =
   'var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };';
+// Consistent source filename for MagicString maps in renderChunk (no real filename available)
+const CHUNK_SOURCE = 'chunk';
 
 export function hermesCompatPlugin(): Plugin {
   return {
@@ -46,7 +48,7 @@ export function hermesCompatPlugin(): Plugin {
               s.overwrite(match.index, match.index + match[0].length, replacement);
             }
             swcInput = s.toString();
-            voidFixMap = s.generateMap({ hires: true });
+            voidFixMap = s.generateMap({ hires: true, source: CHUNK_SOURCE });
           }
 
           // Step 2: SWC ES5 transform with inputSourceMap for (void 0) fix chain
@@ -82,7 +84,7 @@ export function hermesCompatPlugin(): Plugin {
             DEFPROP_REPLACEMENT,
           );
           const finalCode = s2.toString();
-          const defPropMap = s2.generateMap({ hires: true });
+          const defPropMap = s2.generateMap({ hires: true, source: CHUNK_SOURCE });
 
           // Step 4: Compose defProp map with SWC map (which already includes void0 fix)
           if (!result.map) {
