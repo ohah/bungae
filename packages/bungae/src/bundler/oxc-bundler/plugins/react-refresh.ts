@@ -10,6 +10,7 @@
  * 2. Boundary: Wrap modules with import.meta.hot.accept() for HMR boundary detection
  */
 
+import MagicString from 'magic-string';
 import type { Plugin } from 'rolldown';
 import { transformSync } from 'rolldown/experimental';
 
@@ -68,8 +69,8 @@ export function reactRefreshPlugin(): Plugin[] {
         const hasRefresh = HAS_REFRESH_REGEX.test(code);
         if (!hasRefresh) return;
 
-        const wrappedCode = wrapWithRefreshBoundary(code, id);
-        return { code: wrappedCode };
+        const { code: wrappedCode, map } = wrapWithRefreshBoundary(code, id);
+        return { code: wrappedCode, map };
       },
     },
   };
@@ -77,15 +78,18 @@ export function reactRefreshPlugin(): Plugin[] {
   return [reactRefreshTransform, reactRefreshBoundary];
 }
 
-function wrapWithRefreshBoundary(code: string, id: string): string {
-  const prepend = `
+function wrapWithRefreshBoundary(
+  code: string,
+  id: string,
+): { code: string; map: string } {
+  const prependCode = `
 var __prev$RefreshReg$ = globalThis.$RefreshReg$;
 var __prev$RefreshSig$ = globalThis.$RefreshSig$;
 globalThis.$RefreshReg$ = function(type, id) { if (globalThis.__ReactRefresh) globalThis.__ReactRefresh.register(type, ${JSON.stringify(id)} + ' ' + id); }
 globalThis.$RefreshSig$ = function() { if (globalThis.__ReactRefresh) return globalThis.__ReactRefresh.createSignatureFunctionForTransform(); return function(type) { return type; }; }
 `;
 
-  const append = `
+  const appendCode = `
 if (import.meta.hot) {
   if (import.meta.hot.refresh == null) throw new Error('react-refresh runtime is not initialized');
   import.meta.hot.accept(function(nextExports) {
@@ -99,5 +103,12 @@ globalThis.$RefreshReg$ = __prev$RefreshReg$;
 globalThis.$RefreshSig$ = __prev$RefreshSig$;
 `;
 
-  return prepend + code + append;
+  const s = new MagicString(code);
+  s.prepend(prependCode);
+  s.append(appendCode);
+
+  return {
+    code: s.toString(),
+    map: s.generateMap({ hires: true, source: id }).toString(),
+  };
 }
