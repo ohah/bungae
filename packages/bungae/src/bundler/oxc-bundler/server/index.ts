@@ -280,18 +280,22 @@ async function handleBundleRequest(
   try {
     const bundle = await devEngine.getBundle();
 
-    let code = bundle.code;
-
-    // DEBUG: dump bundle to file for analysis
-    try {
-      writeFileSync('/tmp/bungae-bundle-debug.js', code, 'utf-8');
-      console.log(`[DEBUG] Bundle dumped to /tmp/bungae-bundle-debug.js (${code.length} chars)`);
-    } catch {}
+    // Strip Rolldown's own //# sourceMappingURL comment (it points to a wrong filename).
+    // We append the correct one below.
+    let code = bundle.code.replace(/\n?\/\/#\s*sourceMappingURL=[^\n]*/g, '');
 
     const entryName = config.entry.replace(/\.(js|ts|tsx)$/, '');
     if (bundle.map) {
       code += `\n//# sourceMappingURL=${entryName}.map`;
     }
+
+    // DEBUG: dump bundle + source map for analysis
+    try {
+      writeFileSync('/tmp/bungae-bundle-debug.js', code, 'utf-8');
+      if (bundle.map) {
+        writeFileSync('/tmp/bungae-sourcemap-debug.json', bundle.map, 'utf-8');
+      }
+    } catch {}
 
     res.writeHead(200, {
       'Content-Type': 'application/javascript',
