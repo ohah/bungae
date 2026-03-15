@@ -78,10 +78,7 @@ export function reactRefreshPlugin(): Plugin[] {
   return [reactRefreshTransform, reactRefreshBoundary];
 }
 
-function wrapWithRefreshBoundary(
-  code: string,
-  id: string,
-): { code: string; map: string } {
+function wrapWithRefreshBoundary(code: string, id: string): { code: string; map: string } {
   const prependCode = `
 var __prev$RefreshReg$ = globalThis.$RefreshReg$;
 var __prev$RefreshSig$ = globalThis.$RefreshSig$;
