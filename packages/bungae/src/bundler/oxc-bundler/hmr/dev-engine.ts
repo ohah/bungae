@@ -23,9 +23,8 @@ import {
 } from 'rolldown/experimental';
 
 import type { ResolvedConfig } from '../../../config/types';
-import { createRolldownOptions } from '../bundler';
+import { addIgnoreList, createRolldownOptions } from '../bundler';
 import { hmrClientReplacePlugin, reactRefreshPlugin } from '../plugins';
-import { generatePreludeCode } from '../plugins/prelude';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
 
@@ -99,8 +98,6 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     try {
       const runtimeCode = compileRuntime();
-      const prelude = generatePreludeCode(true, this.config.platform);
-      const polyfillCode = await loadRNPolyfills(this.config.root);
 
       const { inputOptions, outputOptions } = createRolldownOptions(this.config, {
         sourcemap: true,
@@ -109,10 +106,11 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         extraPlugins: [hmrClientReplacePlugin(), ...reactRefreshPlugin()],
       });
 
-      // Store for fallback build
+      // Prelude code and polyfills are injected by preludePlugin (module-based).
+      // Intro only needs IIFE wrapper + global alias.
       const devOutputOptions = {
         ...outputOptions,
-        intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
+        intro: 'var global = globalThis;\n(function() {',
         outro: '}).call(globalThis);',
       };
       this.rolldownInputOptions = inputOptions;
@@ -171,7 +169,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
         throw new Error('No output chunk generated from fallback build');
       }
 
-      const mapStr = mainChunk.map?.toString();
+      let mapStr = mainChunk.map?.toString();
+      if (mapStr) {
+        mapStr = addIgnoreList(mapStr);
+      }
       console.log(
         `[dev-engine] Fallback build done (${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'})`,
       );
@@ -252,7 +253,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
     // DevEngine's dev() API DOES run renderChunk hooks (hermesCompatPlugin),
     // so the output is already Hermes-compatible. No need for applyHermesCompat.
-    const mapStr = mainChunk.map?.toString();
+    let mapStr = mainChunk.map?.toString();
+    if (mapStr) {
+      mapStr = addIgnoreList(mapStr);
+    }
     console.log(
       `[dev-engine] Output: ${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'}`,
     );
@@ -362,61 +366,4 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     this.state = 'idle';
     this.removeAllListeners();
   }
-}
-
-/**
- * Load React Native polyfills (console, error-guard) from rn-get-polyfills.
- * Cached after first load since polyfills don't change during a session.
- */
-let cachedPolyfillCode: string | null = null;
-
-async function loadRNPolyfills(projectRoot: string): Promise<string> {
-  if (cachedPolyfillCode !== null) return cachedPolyfillCode;
-
-  try {
-    const rnGetPolyfills = require(
-      require.resolve('react-native/rn-get-polyfills', { paths: [projectRoot] }),
-    ) as () => string[];
-    const polyfillPaths = rnGetPolyfills();
-
-    const babel = await import('@babel/core');
-    const swc = await import('@swc/core');
-
-    const codes: string[] = [];
-    for (const polyfillPath of polyfillPaths) {
-      const source = readFileSync(polyfillPath, 'utf-8');
-
-      const babelResult = await babel.transformAsync(source, {
-        filename: polyfillPath,
-        babelrc: false,
-        configFile: false,
-        sourceMaps: false,
-        plugins: [
-          [
-            require.resolve('babel-plugin-syntax-hermes-parser'),
-            { parseLangTypes: 'flow', reactRuntimeTarget: '19' },
-          ],
-          require.resolve('@babel/plugin-transform-flow-strip-types'),
-        ],
-      });
-      if (!babelResult?.code) continue;
-
-      const swcResult = await swc.transform(babelResult.code, {
-        jsc: {
-          parser: { syntax: 'ecmascript' },
-          target: 'es5',
-          assumptions: { setPublicClassFields: true, privateFieldsAsProperties: true },
-        },
-        sourceMaps: false,
-      });
-
-      codes.push(`(function(global){${swcResult.code}})(globalThis);`);
-    }
-
-    cachedPolyfillCode = codes.join('\n');
-  } catch {
-    cachedPolyfillCode = '';
-  }
-
-  return cachedPolyfillCode;
 }
