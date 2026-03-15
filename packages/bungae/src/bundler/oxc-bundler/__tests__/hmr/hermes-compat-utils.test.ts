@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
+import { TraceMap, originalPositionFor } from '@jridgewell/trace-mapping';
+
 import { patchRolldownRuntime, transformForHermes } from '../../hmr/hermes-compat-utils';
 
 describe('patchRolldownRuntime', () => {
@@ -57,6 +59,45 @@ describe('patchRolldownRuntime', () => {
     expect(result.code).toContain('desc.configurable = true');
     // Second one remains (different variable name, no match)
     expect(result.code).toContain('var __defProp2 = Object.defineProperty;');
+  });
+
+  describe('source map accuracy', () => {
+    function findLineCol(code: string, search: string): { line: number; column: number } {
+      const lines = code.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const col = lines[i]!.indexOf(search);
+        if (col !== -1) return { line: i + 1, column: col };
+      }
+      throw new Error(`"${search}" not found in code`);
+    }
+
+    it('should map lines after __defProp replacement to correct original lines', () => {
+      const input = 'var __defProp = Object.defineProperty;\nvar userCode = 1;\nvar more = 2;';
+      const result = patchRolldownRuntime(input);
+      const map = new TraceMap(result.map!);
+
+      // "var userCode" is on line 2 of the original
+      const outputPos = findLineCol(result.code, 'var userCode');
+      const original = originalPositionFor(map, outputPos);
+      expect(original.line).toBe(2);
+
+      // "var more" is on line 3 of the original
+      const outputPos2 = findLineCol(result.code, 'var more');
+      const original2 = originalPositionFor(map, outputPos2);
+      expect(original2.line).toBe(3);
+    });
+
+    it('should preserve column accuracy on the patched line', () => {
+      const input = 'var __defProp = Object.defineProperty;\nvar x = 1;';
+      const result = patchRolldownRuntime(input);
+      const map = new TraceMap(result.map!);
+
+      // "var x" on line 2, column 0 — should map to original line 2, column 0
+      const outputPos = findLineCol(result.code, 'var x');
+      const original = originalPositionFor(map, outputPos);
+      expect(original.line).toBe(2);
+      expect(original.column).toBe(0);
+    });
   });
 });
 
