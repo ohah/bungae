@@ -213,7 +213,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
 
     // Server
     host: values.host as string | undefined,
-    port: port !== undefined && !isNaN(port) ? port : undefined,
+    port: port !== undefined && !isNaN(port) && port >= 1 && port <= 65535 ? port : undefined,
     https: values.https as boolean | undefined,
     key: values.key as string | undefined,
     cert: values.cert as string | undefined,
