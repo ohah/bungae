@@ -9,12 +9,9 @@
  * 2. Optionally compiles to Hermes bytecode
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 
-import flowStripTypesPlugin from '@babel/plugin-transform-flow-strip-types';
-// Direct imports to avoid require.resolve issues in monorepo/CI environments
-import hermesParserPlugin from 'babel-plugin-syntax-hermes-parser';
 import type { InputOptions, OutputOptions, Plugin } from 'rolldown';
 import { rolldown } from 'rolldown';
 
@@ -29,8 +26,8 @@ import {
   preludePlugin,
   hermesCompatPlugin,
   babelPluginsPlugin,
-  generatePreludeCode,
 } from './plugins';
+import { resolvePolyfillPaths } from './polyfills';
 import type { OxcBuildResult, OxcBuildOptions } from './types';
 
 export interface RolldownOptionsResult {
@@ -60,6 +57,7 @@ export function createRolldownOptions(
 
   const entryPath = resolve(config.root, config.entry);
   const preludeModules = resolvePreludeModules(config);
+  const polyfillPaths = resolvePolyfillPaths(config.root);
   const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
 
   const inputOptions: InputOptions = {
@@ -74,7 +72,7 @@ export function createRolldownOptions(
     treeshake: dev ? false : true,
     shimMissingExports: true,
     plugins: [
-      preludePlugin(config, { preludeModules }),
+      preludePlugin(config, { preludeModules, polyfillPaths }),
       flowStripPlugin(config),
       assetPlugin(config),
       jsonPlugin(),
@@ -126,18 +124,15 @@ export async function buildWithOxc(
   // Configure Rolldown
   const bundle = await rolldown(inputOptions);
 
-  // Resolve prelude + polyfills (must execute before any module code)
-  const prelude = generatePreludeCode(config.dev, config.platform);
-  const polyfillCode = await loadRNPolyfills(config.root);
-
   // Generate output
-  // Use intro to prepend globals/polyfills and wrap chunk in IIFE.
   // IIFE prevents top-level `var` declarations (e.g., `var Headers` from
   // fetch.js) from creating non-configurable properties on globalThis,
   // which would break React Native's polyfillGlobal().
+  // Prelude code and polyfills are injected by preludePlugin (module-based,
+  // with proper source maps) — no longer in intro.
   const { output } = await bundle.generate({
     ...outputOptions,
-    intro: `var global = globalThis;\n${prelude}\n${polyfillCode}\n(function() {`,
+    intro: 'var global = globalThis;\n(function() {',
     outro: '}).call(globalThis);',
   });
 
@@ -153,6 +148,11 @@ export async function buildWithOxc(
 
   let code = mainChunk.code;
   let map = mainChunk.map?.toString();
+
+  // Add x_google_ignoreList for node_modules sources
+  if (map) {
+    map = addIgnoreList(map);
+  }
 
   // Handle inline source map
   if (sourcemap === 'inline' && map) {
@@ -217,6 +217,33 @@ export async function buildWithOxc(
 }
 
 /**
+ * Add x_google_ignoreList to source map.
+ * Marks node_modules sources so DevTools skips them for console.log locations.
+ */
+export function addIgnoreList(mapStr: string): string {
+  try {
+    const map = JSON.parse(mapStr);
+    if (!map.sources) return mapStr;
+
+    const ignoreList: number[] = [];
+    for (let i = 0; i < map.sources.length; i++) {
+      const source = map.sources[i];
+      if (source && source.indexOf('node_modules') >= 0) {
+        ignoreList.push(i);
+      }
+    }
+
+    if (ignoreList.length > 0) {
+      map.x_google_ignoreList = ignoreList;
+      return JSON.stringify(map);
+    }
+  } catch {
+    // If parsing fails, return original
+  }
+  return mapStr;
+}
+
+/**
  * Resolve modules that must run before the main module
  * (e.g., InitializeCore for React Native)
  */
@@ -232,66 +259,6 @@ function resolvePreludeModules(config: ResolvedConfig): string[] {
   } catch {
     return [];
   }
-}
-
-/**
- * Load React Native polyfills (console, error-guard) from rn-get-polyfills.
- * These are Flow files that need Babel + hermes-parser for type stripping.
- * Same approach as Rollipop: read polyfill files → strip Flow → wrap in IIFE.
- * Cached after first load since polyfills don't change during a session.
- */
-let cachedPolyfillCode: string | null = null;
-
-async function loadRNPolyfills(projectRoot: string): Promise<string> {
-  if (cachedPolyfillCode !== null) return cachedPolyfillCode;
-
-  try {
-    // Get polyfill paths from React Native
-    const rnGetPolyfills = require(
-      require.resolve('react-native/rn-get-polyfills', { paths: [projectRoot] }),
-    ) as () => string[];
-    const polyfillPaths = rnGetPolyfills();
-
-    const babel = await import('@babel/core');
-    const swc = await import('@swc/core');
-
-    // Read each polyfill, strip Flow types with Babel, downlevel to ES5 with SWC, wrap in IIFE
-    const codes: string[] = [];
-    for (const polyfillPath of polyfillPaths) {
-      const source = readFileSync(polyfillPath, 'utf-8');
-
-      // Step 1: Strip Flow types with Babel + hermes-parser
-      const babelResult = await babel.transformAsync(source, {
-        filename: polyfillPath,
-        babelrc: false,
-        configFile: false,
-        sourceMaps: false,
-        plugins: [
-          [hermesParserPlugin, { parseLangTypes: 'flow', reactRuntimeTarget: '19' }],
-          flowStripTypesPlugin,
-        ],
-      });
-      if (!babelResult?.code) continue;
-
-      // Step 2: Downlevel to ES5 with SWC (Hermes compat)
-      const swcResult = await swc.transform(babelResult.code, {
-        jsc: {
-          parser: { syntax: 'ecmascript' },
-          target: 'es5',
-          assumptions: { setPublicClassFields: true, privateFieldsAsProperties: true },
-        },
-        sourceMaps: false,
-      });
-
-      codes.push(`(function(global){${swcResult.code}})(globalThis);`);
-    }
-
-    cachedPolyfillCode = codes.join('\n');
-  } catch {
-    cachedPolyfillCode = '';
-  }
-
-  return cachedPolyfillCode;
 }
 
 function formatSize(bytes: number): string {

@@ -1,12 +1,17 @@
 /**
  * Prelude Plugin for Rolldown
  *
- * Injects React Native global variables and polyfills at the entry point.
- * These must execute before any app code:
- * - __DEV__ (development mode flag)
- * - process.env.NODE_ENV
- * - ErrorUtils (error handling)
- * - global/globalThis setup
+ * Injects React Native global variables, polyfills, and prelude modules
+ * at the entry point. Execution order:
+ *
+ * 1. Prelude code (__DEV__, process.env.NODE_ENV, etc.)
+ * 2. Polyfill imports (console.js, error-guard.js — from rn-get-polyfills)
+ * 3. Prelude module imports (InitializeCore, etc.)
+ * 4. Original entry source
+ *
+ * Polyfills are imported as regular Rolldown modules so they receive proper
+ * source maps. Previously they were injected via `intro` with no mappings,
+ * which broke DevTools console.log source locations.
  */
 
 import { readFileSync } from 'fs';
@@ -20,11 +25,13 @@ const ENTRY_META_KEY = 'bungae:is-entry';
 export interface PreludeOptions {
   /** Additional module paths to import at entry (e.g., InitializeCore) */
   preludeModules?: string[];
+  /** Polyfill file paths (from rn-get-polyfills) to import before prelude modules */
+  polyfillPaths?: string[];
 }
 
 export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = {}): Plugin {
   const { dev, platform } = config;
-  const { preludeModules = [] } = options;
+  const { preludeModules = [], polyfillPaths = [] } = options;
 
   return {
     name: 'bungae:prelude',
@@ -45,13 +52,16 @@ export function preludePlugin(config: ResolvedConfig, options: PreludeOptions = 
 
         const originalSource = readFileSync(id, 'utf-8');
 
-        // Build prelude code
+        // Build prelude code (RN globals: __DEV__, process.env, etc.)
         const preludeCode = generatePreludeCode(dev, platform);
 
-        // Build prelude imports
+        // Build polyfill imports (console.js, error-guard.js — must run before prelude modules)
+        const polyfillImports = polyfillPaths.map((mod) => `import '${mod}';`).join('\n');
+
+        // Build prelude module imports (InitializeCore, etc.)
         const preludeImports = preludeModules.map((mod) => `import '${mod}';`).join('\n');
 
-        const modifiedSource = [preludeCode, preludeImports, originalSource]
+        const modifiedSource = [preludeCode, polyfillImports, preludeImports, originalSource]
           .filter(Boolean)
           .join('\n');
 
