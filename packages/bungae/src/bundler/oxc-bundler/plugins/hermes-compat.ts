@@ -89,10 +89,7 @@ export function hermesCompatPlugin(): Plugin {
             return { code: finalCode, map: JSON.stringify(defPropMap) };
           }
 
-          const composedMap = remapping(
-            [defPropMap as any, JSON.parse(result.map)],
-            () => null,
-          );
+          const composedMap = remapping([defPropMap as any, JSON.parse(result.map)], () => null);
 
           return {
             code: finalCode,
