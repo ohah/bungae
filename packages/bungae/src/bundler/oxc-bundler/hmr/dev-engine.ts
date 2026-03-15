@@ -23,7 +23,7 @@ import {
 } from 'rolldown/experimental';
 
 import type { ResolvedConfig } from '../../../config/types';
-import { addIgnoreList, createRolldownOptions } from '../bundler';
+import { postProcessSourceMap, createRolldownOptions } from '../bundler';
 import { hmrClientReplacePlugin, reactRefreshPlugin, generatePreludeCode } from '../plugins';
 import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
@@ -173,7 +173,7 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
 
       let mapStr = mainChunk.map?.toString();
       if (mapStr) {
-        mapStr = addIgnoreList(mapStr);
+        mapStr = postProcessSourceMap(mapStr);
       }
       console.log(
         `[dev-engine] Fallback build done (${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'})`,
@@ -257,7 +257,7 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     // so the output is already Hermes-compatible. No need for applyHermesCompat.
     let mapStr = mainChunk.map?.toString();
     if (mapStr) {
-      mapStr = addIgnoreList(mapStr);
+      mapStr = postProcessSourceMap(mapStr);
     }
     console.log(
       `[dev-engine] Output: ${mainChunk.code.length} chars, map: ${mapStr ? `${mapStr.length} chars` : 'NONE'}`,
