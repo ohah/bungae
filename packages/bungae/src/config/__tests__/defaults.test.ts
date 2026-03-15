@@ -46,4 +46,38 @@ describe('Config Defaults', () => {
     expect(config.serializer.prelude).toEqual([]);
     expect(config.serializer.bundleType).toBe('plain');
   });
+
+  test('should have default server config with host, https, key, cert', () => {
+    const config = getDefaultConfig();
+
+    expect(config.server.port).toBe(8081);
+    expect(config.server.host).toBe('localhost');
+    expect(config.server.https).toBe(false);
+    expect(config.server.key).toBe('');
+    expect(config.server.cert).toBe('');
+    expect(config.server.useGlobalHotkey).toBe(true);
+    expect(config.server.forwardClientLogs).toBe(true);
+  });
+
+  test('should have default build output options', () => {
+    const config = getDefaultConfig();
+
+    expect(config.bundleOutput).toBe('');
+    expect(config.sourcemapOutput).toBe('');
+    expect(config.sourcemapSourcesRoot).toBe('');
+    expect(config.sourcemapUseAbsolutePath).toBe(false);
+    expect(config.sourceMap).toBe(false);
+    expect(config.sourceMapUrl).toBe('');
+    expect(config.assetsDest).toBe('');
+    expect(config.assetCatalogDest).toBe('');
+    expect(config.bundleEncoding).toBe('utf8');
+    expect(config.resetCache).toBe(false);
+    expect(config.maxWorkers).toBe(0);
+    expect(config.watchFolders).toEqual([]);
+    expect(config.sourceExts).toEqual([]);
+    expect(config.transformOptions).toEqual({});
+    expect(config.resolverOptions).toEqual({});
+    expect(config.unstableTransformProfile).toBe('default');
+    expect(config.interactive).toBe(true);
+  });
 });

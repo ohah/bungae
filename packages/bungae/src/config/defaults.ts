@@ -111,6 +111,10 @@ export const DEFAULT_SERIALIZER: Required<Omit<SerializerConfig, 'shouldAddToIgn
  */
 export const DEFAULT_SERVER: Required<ServerConfig> = {
   port: 8081,
+  host: 'localhost',
+  https: false,
+  key: '',
+  cert: '',
   useGlobalHotkey: true,
   forwardClientLogs: true,
   verifyConnections: false,
@@ -130,6 +134,26 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     outDir: 'dist',
     mode: 'production',
     bundler: 'graph', // Default: Babel-based bundler (Metro-compatible, stable)
+
+    // Build output options (all optional at CLI level, but required in ResolvedConfig)
+    bundleOutput: '',
+    sourcemapOutput: '',
+    sourcemapSourcesRoot: '',
+    sourcemapUseAbsolutePath: false,
+    sourceMap: false,
+    sourceMapUrl: '',
+    assetsDest: '',
+    assetCatalogDest: '',
+    bundleEncoding: 'utf8',
+    resetCache: false,
+    maxWorkers: 0, // 0 = auto (use available CPUs)
+    watchFolders: [],
+    sourceExts: [],
+    transformOptions: {},
+    resolverOptions: {},
+    unstableTransformProfile: 'default',
+    interactive: true,
+
     resolver: { ...DEFAULT_RESOLVER },
     transformer: { ...DEFAULT_TRANSFORMER },
     serializer: { ...DEFAULT_SERIALIZER },
