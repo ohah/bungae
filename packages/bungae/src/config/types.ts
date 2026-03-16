@@ -34,18 +34,22 @@ export interface TransformerConfig {
   /** Enable inline requires */
   inlineRequires?: boolean;
   /**
-   * Babel plugins to apply during transformation (OXC bundler only).
-   * Useful for plugins that require AST-level transforms not supported by OXC,
-   * e.g., react-native-reanimated/plugin.
+   * Babel configuration for OXC bundler.
+   * Runs user-configured Babel presets/plugins as a Rolldown transform hook.
    *
-   * Each entry can be a plugin name (string) or [plugin, options] tuple.
    * @example
-   * babelPlugins: [
-   *   'react-native-reanimated/plugin',
-   *   ['@babel/plugin-proposal-decorators', { legacy: true }],
-   * ]
+   * babel: {
+   *   presets: ['@ohah/react-native-mcp-server/babel-preset'],
+   *   plugins: [
+   *     'react-native-reanimated/plugin',
+   *     ['@babel/plugin-proposal-decorators', { legacy: true }],
+   *   ],
+   * }
    */
-  babelPlugins?: (string | [string, Record<string, unknown>])[];
+  babel?: {
+    presets?: (string | [string, Record<string, unknown>])[];
+    plugins?: (string | [string, Record<string, unknown>])[];
+  };
 }
 
 /**

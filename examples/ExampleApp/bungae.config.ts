@@ -42,6 +42,9 @@ export default defineConfig({
   transformer: {
     minifier: 'terser',
     inlineRequires: false,
+    babel: {
+      presets: ['@ohah/react-native-mcp-server/babel-preset'],
+    },
   },
   serializer: {
     polyfills: [],
