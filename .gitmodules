@@ -1,0 +1,4 @@
+[submodule "rolldown"]
+	path = rolldown
+	url = https://github.com/ohah/rolldown.git
+	branch = develop
