@@ -155,13 +155,22 @@ export function validateConfig(config: BungaeConfig): void {
       );
     }
 
-    if (
-      config.transformer.babelPlugins !== undefined &&
-      !Array.isArray(config.transformer.babelPlugins)
-    ) {
-      throw new ConfigValidationError(
-        `Invalid config: \`transformer.babelPlugins\` must be an array, but received ${typeof config.transformer.babelPlugins}`,
-      );
+    if (config.transformer.babel !== undefined) {
+      if (typeof config.transformer.babel !== 'object' || Array.isArray(config.transformer.babel)) {
+        throw new ConfigValidationError(
+          `Invalid config: \`transformer.babel\` must be an object with \`presets\` and/or \`plugins\` arrays`,
+        );
+      }
+      if (config.transformer.babel.plugins !== undefined && !Array.isArray(config.transformer.babel.plugins)) {
+        throw new ConfigValidationError(
+          `Invalid config: \`transformer.babel.plugins\` must be an array`,
+        );
+      }
+      if (config.transformer.babel.presets !== undefined && !Array.isArray(config.transformer.babel.presets)) {
+        throw new ConfigValidationError(
+          `Invalid config: \`transformer.babel.presets\` must be an array`,
+        );
+      }
     }
   }
 

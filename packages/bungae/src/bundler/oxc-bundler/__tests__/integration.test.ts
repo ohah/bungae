@@ -58,7 +58,7 @@ function createTestConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConf
     transformer: {
       minifier: 'terser',
       inlineRequires: false,
-      babelPlugins: [],
+      babel: { presets: [], plugins: [] },
     },
     serializer: {
       polyfills: [],

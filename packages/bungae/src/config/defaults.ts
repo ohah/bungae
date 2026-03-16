@@ -30,7 +30,7 @@ export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
 export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
   minifier: 'terser', // Metro-compatible: Metro uses Terser by default
   inlineRequires: false,
-  babelPlugins: [],
+  babel: { presets: [], plugins: [] },
 };
 
 /**
