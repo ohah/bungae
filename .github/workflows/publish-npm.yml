@@ -90,7 +90,7 @@ jobs:
         run: |
           cd rolldown
           pnpm install
-          pnpm --filter rolldown run build-binding
+          pnpm --filter rolldown run build-binding --release
           pnpm --filter rolldown run build-node
           pnpm --filter @rolldown/pluginutils run build
 
