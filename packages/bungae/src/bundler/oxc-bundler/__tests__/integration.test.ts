@@ -642,7 +642,9 @@ describe('Integration: Dev Server Lifecycle', () => {
   });
 
   it('should serve source map via HTTP', async () => {
-    writeEntry('index.ts', `export const x = 42;\n`);
+    // Avoid top-level export — IIFE wrapping makes `export` inside function scope,
+    // which is invalid JS and causes SWC/Rolldown sourcemap panic.
+    writeEntry('index.ts', `const x = 42;\nconsole.log(x);\n`);
 
     const { serveWithOxc } = await import('../server');
     const config = createTestConfig({

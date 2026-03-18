@@ -56,7 +56,7 @@ bundler/
 └── oxc-bundler/          # Rolldown 기반 (ESM, HMR 지원)
     ├── bundler.ts        # Rolldown 빌드 + 공유 옵션
     ├── plugins/          # Rolldown 플러그인
-    │   ├── hermes-compat.ts  # SWC es5 + (void 0) 수정 + __defProp 패치
+    │   ├── hermes-compat.ts  # SWC es5 다운레벨 (Hermes 호환)
     │   ├── flow-strip.ts     # Flow 타입 제거 (Babel)
     │   ├── hmr-client-replace.ts  # metro-runtime HMRClient 교체
     │   └── react-refresh.ts  # React Refresh 경계 래핑
@@ -421,43 +421,31 @@ Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리
 Hermes는 class expressions, private class fields를 지원하지 않음.
 SWC `renderChunk`로 `target: 'es5'` 변환하여 class → function, `#private` → 일반 속성으로 변환.
 
-**2. Rolldown `(void 0)` 버그 수정**
-
-Rolldown이 `&&` 컨텍스트에서 JSX 함수 참조를 `(void 0)`으로 교체하는 버그 존재.
-예: `cond && /* @__PURE__ */ (void 0)(Text, {...})` — `(0, jsxDEV)` 대신 `(void 0)`.
-`renderChunk`에서 번들 내 정상 JSX 함수명을 감지하여 `(void 0)(` → `(0, jsxFn)(` 복원.
-
-**3. Rolldown 런타임 `__defProp` 패치**
-
-Rolldown 런타임이 `configurable: false`로 export 생성 → RN dev mode `deepFreezeAndThrowOnMutationInDev` 충돌.
-`renderChunk`에서 `__defProp`를 `configurable: true` 강제 래퍼로 교체.
-
-**4. IIFE 래핑 (intro/outro)**
+**2. IIFE 래핑 (intro/outro)**
 
 Rolldown `format: 'esm'` 출력에서 top-level `var` 선언이 `globalThis`에 `configurable: false` 속성 생성.
 `intro`/`outro`로 IIFE 래핑하여 `var` 선언이 function scope에 머물도록 함.
 
-**5. RN 폴리필 ES5 변환**
+**3. RN 폴리필 ES5 변환**
 
 RN 폴리필 파일(console.js, error-guard.js)에 ES6+ 구문 포함.
 Babel로 Flow 타입 제거 후 SWC `target: 'es5'`로 변환.
 
+#### 해결된 Rolldown 이슈
+
+**1. `(void 0)` 치환** ✅ 근본 해결
+
+- **원인**: flow-strip 플러그인이 CJS Flow 파일을 `moduleType: 'jsx'`(ESM)로 반환 → Rolldown이 named export를 못 찾아 `(void 0)` 치환
+- **해결**: flow-strip에서 hermes AST 기반 CJS 감지 (`isCommonJSFromAST`) → CJS 파일은 `moduleType: 'js'`로 반환 → Rolldown이 `__commonJSMin` 래퍼로 올바르게 처리
+
+**2. `__defProp` configurable** ✅ Rolldown 포크에서 해결
+
+- **원인**: Rolldown 런타임의 `__exportAll`, `__copyProps` 등이 `configurable: false`로 export 생성 → RN dev mode 충돌
+- **해결**: Rolldown 포크(`ohah/rolldown`)에서 런타임 헬퍼에 `configurable: true` 직접 추가
+
 #### Rolldown upstream 기여 계획
 
-현재 `hermes-compat` 플러그인에서 문자열 치환으로 해결하는 두 가지 문제는
-Rolldown upstream에 기여하여 근본적으로 해결할 수 있습니다:
-
-**1. `__defProp`에 `configurable: true` 옵션** (우선순위: 높음)
-
-- **문제**: Rolldown 런타임의 `__exportAll`, `__copyProps` 등이 `configurable: false`로 export 생성
-- **영향**: React Native뿐 아니라 `Object.freeze`/`Object.defineProperty`로 객체를 조작하는 모든 환경
-- **제안**: `output.exportsConfigurable: true` 옵션 또는 런타임 헬퍼에서 기본적으로 `configurable: true` 설정
-- **참고**: Rollipop은 이 문제 때문에 Rolldown을 포크함 (`globalIdentifiers` 옵션 추가)
-- **현재 워크어라운드**: `renderChunk`에서 `var __defProp = Object.defineProperty;` 문자열 치환
-  → Rolldown 버전 업데이트 시 패턴 불일치 위험 (실패 시 경고 출력하도록 구현됨)
-- **upstream 이슈/PR**: 미생성 (TODO)
-
-**2. `format: 'iife'`에서 `strictExecutionOrder` 지원** (우선순위: 낮음)
+**1. `format: 'iife'`에서 `strictExecutionOrder` 지원** (우선순위: 낮음)
 
 - **문제**: `format: 'iife'`를 사용하면 top-level var 문제가 자연스럽게 해결되지만,
   `strictExecutionOrder`와의 호환성 확인 필요
@@ -465,25 +453,24 @@ Rolldown upstream에 기여하여 근본적으로 해결할 수 있습니다:
 - **이상적**: `format: 'iife'` + `strictExecutionOrder` 조합이 정상 동작하면
   `intro`/`outro` 해킹 불필요
 
-**Rollipop의 접근 (참고)**:
+**2. `__defProp` configurable upstream 기여** (우선순위: 중간)
 
-- Rolldown을 `@rollipop/rolldown`으로 포크
-- `globalIdentifiers` 옵션 추가하여 특정 식별자가 top-level var로 선언되지 않도록 함
-- DevEngine `dev()` API를 사용하기 위해 `format: 'esm'` 유지 필수 → IIFE 불가 → 포크 선택
+- Rolldown 포크에서 해결한 `configurable: true` 변경을 upstream PR로 제출 예정
+- 포크 의존성을 제거하고 vanilla Rolldown 사용 가능하게 됨
 
 #### Rolldown DevEngine ✅ 전환 완료
 
 Rolldown의 실험적 `dev()` API (DevEngine)로 전환 완료:
 
 - **Patch HMR**: 변경 모듈만 패치 코드 전송 (전체 리빌드 아님)
-- **`renderChunk` 지원 확인**: DevEngine이 `renderChunk` 훅을 실행하여 hermes-compat (SWC es5 + `(void 0)` 수정) 적용
+- **`renderChunk` 지원 확인**: DevEngine이 `renderChunk` 훅을 실행하여 hermes-compat (SWC es5) 적용
 - **`devMode.implement`**: runtime.ts를 `transformSync`로 사전 컴파일하여 전달
 - **React Refresh**: `import.meta.hot.accept()` 경계로 컴포넌트 상태 보존
 
-**알려진 Rolldown 버그 (워크어라운드 적용)**:
+**해결된 Rolldown 이슈**:
 
-- `(void 0)` 버그: `&&` 컨텍스트에서 JSX 함수 참조를 `(void 0)`으로 교체 → 감지 후 복원
-- `__defProp` configurable: `configurable: false` 기본값 → 문자열 패치
+- `(void 0)` 치환: flow-strip CJS 감지로 근본 해결 (정규식 워크어라운드 제거)
+- `__defProp` configurable: Rolldown 포크에서 런타임 헬퍼 수정 (정규식 워크어라운드 제거)
 
 ### Phase 5: 고급 기능 (미구현)
 
