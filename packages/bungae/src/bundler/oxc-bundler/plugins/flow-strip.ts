@@ -37,6 +37,45 @@ export function containsFlowSyntax(code: string): boolean {
   return false;
 }
 
+/**
+ * Check if hermes AST represents a CommonJS module.
+ * Walks top-level statements looking for `module.exports = ...` or `exports.xxx = ...`.
+ *
+ * This is more reliable than regex because it ignores strings and comments,
+ * and only checks actual assignment expressions at the top level.
+ *
+ * hermes-parser with `babel: true` returns a File node wrapping a Program node.
+ */
+export function isCommonJSFromAST(ast: { type: string; body?: any[]; program?: { body: any[] } }): boolean {
+  const body = ast.type === 'File' ? ast.program?.body : ast.body;
+  if (!body) return false;
+
+  for (const node of body) {
+    if (node.type === 'ExpressionStatement' && node.expression?.type === 'AssignmentExpression') {
+      const left = node.expression.left;
+      // module.exports = ...
+      if (
+        left?.type === 'MemberExpression' &&
+        left.object?.type === 'Identifier' &&
+        left.object.name === 'module' &&
+        left.property?.type === 'Identifier' &&
+        left.property.name === 'exports'
+      ) {
+        return true;
+      }
+      // exports.xxx = ...
+      if (
+        left?.type === 'MemberExpression' &&
+        left.object?.type === 'Identifier' &&
+        left.object.name === 'exports'
+      ) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function flowStripPlugin(_config: ResolvedConfig): Plugin {
   let hermes: typeof import('hermes-parser') | null = null;
   let babel: typeof import('@babel/core') | null = null;
@@ -72,7 +111,8 @@ export function flowStripPlugin(_config: ResolvedConfig): Plugin {
         babel = await import('@babel/core');
       }
 
-      // Fast parse with hermes-parser WASM (babel:true for Babel AST format)
+      // Parse as 'module' first — CJS syntax (module.exports = ...) is valid in module context.
+      // Then detect CJS from the AST for accurate sourceType/moduleType decisions.
       const ast = hermes.parse(code, {
         babel: true,
         flow: 'all',
@@ -80,12 +120,16 @@ export function flowStripPlugin(_config: ResolvedConfig): Plugin {
         sourceFilename: id,
       });
 
+      const cjs = isCommonJSFromAST(ast);
+      const sourceType = cjs ? 'script' : 'module';
+
       // Use Babel only for transform (no re-parsing) - strips Flow types + generates code
       const result = await babel.transformFromAstAsync(ast, code, {
         filename: id,
         babelrc: false,
         configFile: false,
         sourceMaps: true,
+        sourceType,
         plugins: [flowStripTypesPlugin],
       });
 
@@ -94,7 +138,9 @@ export function flowStripPlugin(_config: ResolvedConfig): Plugin {
       return {
         code: result.code,
         map: result.map ? JSON.stringify(result.map) : undefined,
-        moduleType: 'jsx', // JSX will be transformed by hermes-compat's SWC transform
+        // CJS files must use 'js' so Rolldown detects module.exports and wraps with __commonJSMin.
+        // Using 'jsx' for CJS would make Rolldown treat it as ESM → unresolved exports → (void 0).
+        moduleType: cjs ? 'js' : 'jsx',
       };
     },
   };

@@ -63,31 +63,8 @@ describe('hermesCompatPlugin', () => {
     });
   });
 
-  describe('Rolldown (void 0) bug fix', () => {
-    it('should replace (void 0)( with detected jsxDEV function', async () => {
-      const code = `
-        var x = (0, import_jsx.jsxDEV)(Text, {});
-        var y = true && (void 0)(Text, { children: "test" });
-      `;
-      const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('(void 0)(');
-    });
-
-    it('should replace (void 0)( with detected jsx function', async () => {
-      const code = `
-        var a = (0, rt.jsx)(View, {});
-        var b = cond && (void 0)(Text, {});
-      `;
-      const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('(void 0)(');
-    });
-
-    it('should preserve regular && without (void 0)', async () => {
-      const code = `var x = a && b && c;`;
-      const result = await callRenderChunk(code);
-      expect(result.code).toContain('&&');
-    });
-  });
+  // (void 0) workaround removed — root cause fixed in flow-strip (CJS moduleType detection).
+  // See flow-strip-cjs.test.ts for the actual fix verification.
 
   describe('__defProp patch', () => {
     it('should patch __defProp to set configurable: true', async () => {
@@ -137,26 +114,11 @@ describe('hermesCompatPlugin', () => {
       expect(original2.line).toBe(3);
     });
 
-    it('should map lines after (void 0) fix correctly', async () => {
-      const code = [
-        'var jsx = (0, rt.jsx)(View, {});',
-        'var broken = cond && (void 0)(Text, {});',
-        'var after = "hello";',
-      ].join('\n');
-      const result = await callRenderChunk(code);
-      const map = new TraceMap(result.map);
-
-      // "var after" should map to line 3 in original
-      const outputPos = findLineCol(result.code, 'var after');
-      const original = originalPositionFor(map, outputPos);
-      expect(original.line).toBe(3);
-    });
-
-    it('should map correctly with both (void 0) fix and __defProp patch', async () => {
+    it('should map lines after __defProp patch with multiple vars', async () => {
       const code = [
         'var __defProp = Object.defineProperty;',
-        'var jsx = (0, rt.jsx)(View, {});',
-        'var broken = cond && (void 0)(Text, {});',
+        'var first = 1;',
+        'var second = 2;',
         'var userVar = 42;',
       ].join('\n');
       const result = await callRenderChunk(code);

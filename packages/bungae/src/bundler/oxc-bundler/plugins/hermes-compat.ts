@@ -15,7 +15,6 @@ import remapping from '@ampproject/remapping';
 import MagicString from 'magic-string';
 import type { Plugin } from 'rolldown';
 
-const VOID0_CALL_REGEX = /\(void 0\)\(/g;
 const DEFPROP_REGEX = /var __defProp = Object\.defineProperty;/;
 const DEFPROP_REPLACEMENT =
   'var __defProp = function(obj, key, desc) { desc.configurable = true; return Object.defineProperty(obj, key, desc); };';
@@ -31,28 +30,8 @@ export function hermesCompatPlugin(): Plugin {
         try {
           const swc = await import('@swc/core');
 
-          // Step 1: Fix Rolldown (void 0) bug with MagicString (preserves source map)
-          const jsxDevMatch = code.match(/\(0,\s*([\w$]+\.jsxDEV)\s*\)/);
-          const jsxMatch = code.match(/\(0,\s*([\w$]+\.jsx)\s*\)/);
-          const jsxFn = jsxDevMatch?.[1] || jsxMatch?.[1];
-
-          let swcInput = code;
-          let voidFixMap: ReturnType<MagicString['generateMap']> | null = null;
-
-          if (jsxFn) {
-            const s = new MagicString(code);
-            const replacement = `(0, ${jsxFn})(`;
-            let match: RegExpExecArray | null;
-            VOID0_CALL_REGEX.lastIndex = 0;
-            while ((match = VOID0_CALL_REGEX.exec(code)) !== null) {
-              s.overwrite(match.index, match.index + match[0].length, replacement);
-            }
-            swcInput = s.toString();
-            voidFixMap = s.generateMap({ hires: true, source: CHUNK_SOURCE });
-          }
-
-          // Step 2: SWC ES5 transform with inputSourceMap for (void 0) fix chain
-          const result = await swc.transform(swcInput, {
+          // Step 1: SWC ES5 transform
+          const result = await swc.transform(code, {
             jsc: {
               parser: { syntax: 'ecmascript' },
               target: 'es5',
@@ -62,10 +41,9 @@ export function hermesCompatPlugin(): Plugin {
               },
             },
             sourceMaps: true,
-            inputSourceMap: voidFixMap ? JSON.stringify(voidFixMap) : undefined,
           });
 
-          // Step 3: Patch __defProp with MagicString (preserves source map)
+          // Step 2: Patch __defProp with MagicString (preserves source map)
           const swcCode = result.code;
           const defPropMatch = DEFPROP_REGEX.exec(swcCode);
 
@@ -77,16 +55,16 @@ export function hermesCompatPlugin(): Plugin {
             };
           }
 
-          const s2 = new MagicString(swcCode);
-          s2.overwrite(
+          const s = new MagicString(swcCode);
+          s.overwrite(
             defPropMatch.index,
             defPropMatch.index + defPropMatch[0].length,
             DEFPROP_REPLACEMENT,
           );
-          const finalCode = s2.toString();
-          const defPropMap = s2.generateMap({ hires: true, source: CHUNK_SOURCE });
+          const finalCode = s.toString();
+          const defPropMap = s.generateMap({ hires: true, source: CHUNK_SOURCE });
 
-          // Step 4: Compose defProp map with SWC map (which already includes void0 fix)
+          // Step 3: Compose defProp map with SWC map
           if (!result.map) {
             return { code: finalCode, map: JSON.stringify(defPropMap) };
           }
