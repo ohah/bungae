@@ -25,7 +25,7 @@ import {
 import type { ResolvedConfig } from '../../../config/types';
 import { postProcessSourceMap, createRolldownOptions } from '../bundler';
 import { hmrClientReplacePlugin, reactRefreshPlugin, generatePreludeCode } from '../plugins';
-import { applyHermesCompat, patchRolldownRuntime } from './hermes-compat-utils';
+import { applyHermesCompat } from './hermes-compat-utils';
 import type { HMRUpdateResult } from './types';
 
 export interface DevEngineEventMap {
@@ -212,23 +212,8 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
       this.emit('watchChange', file);
     }
 
-    // Post-process patch code for Hermes compatibility.
-    // HMR patches are small, so we apply __defProp patch synchronously.
-    // #private fields in patches are unlikely since HMR patches are module-level,
-    // but if needed, the server can apply async transform before sending.
-    const processedUpdates = result.updates.map((update) => {
-      if (update.update.type === 'Patch') {
-        const patched = patchRolldownRuntime(update.update.code);
-        return {
-          ...update,
-          update: { ...update.update, code: patched.code },
-        };
-      }
-      return update;
-    });
-
     this.emit('hmrUpdate', {
-      updates: processedUpdates,
+      updates: result.updates,
       changedFiles: result.changedFiles,
     });
   }
@@ -304,14 +289,10 @@ export class OxcDevEngine extends EventEmitter<DevEngineEventMap> {
     }
 
     // Lazy Hermes compat: Rolldown's dev() API doesn't run renderChunk hooks,
-    // so we transform #private fields and patch __defProp here on first request.
+    // so we transform #private fields via SWC ES5 here on first request.
+    // Note: __defProp patching is no longer needed (Rolldown fork sets configurable: true).
     if (this.cachedBundle.needsHermesCompat) {
-      try {
-        this.cachedBundle.code = await applyHermesCompat(this.cachedBundle.code);
-      } catch {
-        const patched = patchRolldownRuntime(this.cachedBundle.code);
-        this.cachedBundle.code = patched.code;
-      }
+      this.cachedBundle.code = await applyHermesCompat(this.cachedBundle.code);
       this.cachedBundle.needsHermesCompat = false;
     }
 
