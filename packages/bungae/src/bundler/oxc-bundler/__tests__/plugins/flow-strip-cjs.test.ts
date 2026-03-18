@@ -12,44 +12,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { rolldown } from 'rolldown';
 
 import { flowStripPlugin, containsFlowSyntax } from '../../plugins/flow-strip';
-import type { ResolvedConfig } from '../../../../config/types';
+import { getDefaultConfig } from '../../../../config/defaults';
 
 const TMP_DIR = join(import.meta.dir, '__tmp_flow_cjs__');
 
-function makeConfig(root: string): ResolvedConfig {
-  return {
-    root,
-    entry: 'entry.js',
-    platform: 'ios',
-    dev: true,
-    minify: false,
-    outDir: join(root, 'dist'),
-    bundler: 'oxc',
-    resolver: {
-      sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.json'],
-      assetExts: ['.png'],
-      platforms: ['ios', 'android'],
-      preferNativePlatform: true,
-      nodeModulesPaths: [],
-      blockList: [],
-      extraNodeModules: {},
-    },
-    transformer: {
-      minifier: 'terser',
-      inlineRequires: false,
-    },
-    serializer: {
-      polyfills: [],
-      prelude: [],
-      bundleType: 'plain',
-    },
-    server: {
-      port: 8081,
-      useGlobalHotkey: true,
-      forwardClientLogs: true,
-      verifyConnections: false,
-    },
-  } as ResolvedConfig;
+function createTestConfig(root: string) {
+  const config = getDefaultConfig(root);
+  config.outDir = join(root, 'dist');
+  return config;
 }
 
 beforeAll(() => {
@@ -104,7 +74,7 @@ describe('flow-strip CJS preservation', () => {
   });
 
   it('should NOT produce (void 0) for CJS Flow modules', async () => {
-    const config = makeConfig(TMP_DIR);
+    const config = createTestConfig(TMP_DIR);
     const plugin = flowStripPlugin(config);
 
     const bundle = await rolldown({

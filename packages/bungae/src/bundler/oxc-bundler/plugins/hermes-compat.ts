@@ -9,13 +9,17 @@
 import type { Plugin } from 'rolldown';
 
 export function hermesCompatPlugin(): Plugin {
+  let swc: typeof import('@swc/core') | null = null;
+
   return {
     name: 'bungae:hermes-compat',
 
     renderChunk: {
       async handler(code, _chunk) {
         try {
-          const swc = await import('@swc/core');
+          if (!swc) {
+            swc = await import('@swc/core');
+          }
 
           const result = await swc.transform(code, {
             jsc: {
