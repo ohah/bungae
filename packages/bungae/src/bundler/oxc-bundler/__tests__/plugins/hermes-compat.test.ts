@@ -63,40 +63,8 @@ describe('hermesCompatPlugin', () => {
     });
   });
 
-  describe('Rolldown (void 0) bug fix', () => {
-    it('should replace (void 0)( with detected jsxDEV function', async () => {
-      const code = `
-        var x = (0, import_jsx.jsxDEV)(Text, {});
-        var y = true && (void 0)(Text, { children: "test" });
-      `;
-      const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('(void 0)(');
-    });
-
-    it('should replace (void 0)( with detected jsx function', async () => {
-      const code = `
-        var a = (0, rt.jsx)(View, {});
-        var b = cond && (void 0)(Text, {});
-      `;
-      const result = await callRenderChunk(code);
-      expect(result.code).not.toContain('(void 0)(');
-    });
-
-    it('should preserve regular && without (void 0)', async () => {
-      const code = `var x = a && b && c;`;
-      const result = await callRenderChunk(code);
-      expect(result.code).toContain('&&');
-    });
-  });
-
-  describe('__defProp patch', () => {
-    it('should patch __defProp to set configurable: true', async () => {
-      const code = `var __defProp = Object.defineProperty; __defProp({}, "x", { value: 1 });`;
-      const result = await callRenderChunk(code);
-      expect(result.code).toContain('desc.configurable = true');
-      expect(result.code).not.toContain('var __defProp = Object.defineProperty');
-    });
-  });
+  // (void 0) workaround removed — root cause fixed in flow-strip (CJS moduleType detection).
+  // __defProp patch removed — fixed in Rolldown fork (configurable: true in runtime helpers).
 
   describe('source map accuracy', () => {
     function findLineCol(code: string, search: string): { line: number; column: number } {
@@ -113,59 +81,19 @@ describe('hermesCompatPlugin', () => {
       const result = await callRenderChunk(code);
       const map = new TraceMap(result.map);
 
-      // "var b" should exist in output (arrow fn → function)
       const outputPos = findLineCol(result.code, 'var b');
       const original = originalPositionFor(map, outputPos);
-
-      // Should map back to line 2 in original (where "var b = () => 42;" was)
       expect(original.line).toBe(2);
     });
 
-    it('should map lines after __defProp patch correctly', async () => {
-      const code = 'var __defProp = Object.defineProperty;\nvar userCode = 1;\nvar more = 2;';
+    it('should map multiple vars correctly', async () => {
+      const code = 'var first = 1;\nvar second = () => 2;\nvar third = 3;';
       const result = await callRenderChunk(code);
       const map = new TraceMap(result.map);
 
-      // "var userCode" is on line 2 of the original
-      const outputPos = findLineCol(result.code, 'var userCode');
-      const original = originalPositionFor(map, outputPos);
-      expect(original.line).toBe(2);
-
-      // "var more" is on line 3 of the original
-      const outputPos2 = findLineCol(result.code, 'var more');
-      const original2 = originalPositionFor(map, outputPos2);
-      expect(original2.line).toBe(3);
-    });
-
-    it('should map lines after (void 0) fix correctly', async () => {
-      const code = [
-        'var jsx = (0, rt.jsx)(View, {});',
-        'var broken = cond && (void 0)(Text, {});',
-        'var after = "hello";',
-      ].join('\n');
-      const result = await callRenderChunk(code);
-      const map = new TraceMap(result.map);
-
-      // "var after" should map to line 3 in original
-      const outputPos = findLineCol(result.code, 'var after');
+      const outputPos = findLineCol(result.code, 'var third');
       const original = originalPositionFor(map, outputPos);
       expect(original.line).toBe(3);
-    });
-
-    it('should map correctly with both (void 0) fix and __defProp patch', async () => {
-      const code = [
-        'var __defProp = Object.defineProperty;',
-        'var jsx = (0, rt.jsx)(View, {});',
-        'var broken = cond && (void 0)(Text, {});',
-        'var userVar = 42;',
-      ].join('\n');
-      const result = await callRenderChunk(code);
-      const map = new TraceMap(result.map);
-
-      // "var userVar" is on line 4 of the original
-      const outputPos = findLineCol(result.code, 'var userVar');
-      const original = originalPositionFor(map, outputPos);
-      expect(original.line).toBe(4);
     });
   });
 });

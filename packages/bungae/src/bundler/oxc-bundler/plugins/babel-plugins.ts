@@ -13,27 +13,33 @@ import type { Plugin } from 'rolldown';
 
 import type { ResolvedConfig } from '../../../config/types';
 
-type BabelPluginEntry = string | [string, Record<string, unknown>];
+type BabelEntry = string | [string, Record<string, unknown>];
 
 const INCLUDE_REGEX = /\.[cm]?[jt]sx?$/;
 const EXCLUDE_REGEX = /\/node_modules\//;
 
-export function babelPluginsPlugin(config: ResolvedConfig): Plugin | null {
-  const babelPlugins = config.transformer.babelPlugins;
-  if (!babelPlugins || babelPlugins.length === 0) return null;
-
-  let babel: typeof import('@babel/core') | null = null;
-
-  // Resolve plugin entries to Babel format.
-  // Search both the project root and bungae's own node_modules.
-  const resolvePaths = [config.root, __dirname];
-  const resolvedPlugins = babelPlugins.map((entry: BabelPluginEntry) => {
+function resolveEntries(entries: BabelEntry[], resolvePaths: string[]) {
+  return entries.map((entry) => {
     if (typeof entry === 'string') {
       return require.resolve(entry, { paths: resolvePaths });
     }
     const [name, options] = entry;
     return [require.resolve(name, { paths: resolvePaths }), options];
   });
+}
+
+export function babelPluginsPlugin(config: ResolvedConfig): Plugin | null {
+  const babelConfig = config.transformer.babel;
+  const plugins = babelConfig?.plugins || [];
+  const presets = babelConfig?.presets || [];
+
+  if (plugins.length === 0 && presets.length === 0) return null;
+
+  let babel: typeof import('@babel/core') | null = null;
+
+  const resolvePaths = [config.root, __dirname];
+  const resolvedPlugins = plugins.length ? resolveEntries(plugins, resolvePaths) : [];
+  const resolvedPresets = presets.length ? resolveEntries(presets, resolvePaths) : [];
 
   return {
     name: 'bungae:babel-plugins',
@@ -42,7 +48,6 @@ export function babelPluginsPlugin(config: ResolvedConfig): Plugin | null {
       if (!INCLUDE_REGEX.test(id)) return null;
       if (EXCLUDE_REGEX.test(id)) return null;
 
-      // Lazy load Babel
       if (!babel) {
         babel = await import('@babel/core');
       }
@@ -52,7 +57,8 @@ export function babelPluginsPlugin(config: ResolvedConfig): Plugin | null {
         babelrc: false,
         configFile: false,
         sourceMaps: true,
-        plugins: resolvedPlugins,
+        plugins: resolvedPlugins.length > 0 ? resolvedPlugins : undefined,
+        presets: resolvedPresets.length > 0 ? resolvedPresets : undefined,
       });
 
       if (!result?.code) return null;
