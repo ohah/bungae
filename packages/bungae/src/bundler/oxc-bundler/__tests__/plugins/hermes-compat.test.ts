@@ -64,16 +64,7 @@ describe('hermesCompatPlugin', () => {
   });
 
   // (void 0) workaround removed — root cause fixed in flow-strip (CJS moduleType detection).
-  // See flow-strip-cjs.test.ts for the actual fix verification.
-
-  describe('__defProp patch', () => {
-    it('should patch __defProp to set configurable: true', async () => {
-      const code = `var __defProp = Object.defineProperty; __defProp({}, "x", { value: 1 });`;
-      const result = await callRenderChunk(code);
-      expect(result.code).toContain('desc.configurable = true');
-      expect(result.code).not.toContain('var __defProp = Object.defineProperty');
-    });
-  });
+  // __defProp patch removed — fixed in Rolldown fork (configurable: true in runtime helpers).
 
   describe('source map accuracy', () => {
     function findLineCol(code: string, search: string): { line: number; column: number } {
@@ -90,44 +81,19 @@ describe('hermesCompatPlugin', () => {
       const result = await callRenderChunk(code);
       const map = new TraceMap(result.map);
 
-      // "var b" should exist in output (arrow fn → function)
       const outputPos = findLineCol(result.code, 'var b');
       const original = originalPositionFor(map, outputPos);
-
-      // Should map back to line 2 in original (where "var b = () => 42;" was)
       expect(original.line).toBe(2);
     });
 
-    it('should map lines after __defProp patch correctly', async () => {
-      const code = 'var __defProp = Object.defineProperty;\nvar userCode = 1;\nvar more = 2;';
+    it('should map multiple vars correctly', async () => {
+      const code = 'var first = 1;\nvar second = () => 2;\nvar third = 3;';
       const result = await callRenderChunk(code);
       const map = new TraceMap(result.map);
 
-      // "var userCode" is on line 2 of the original
-      const outputPos = findLineCol(result.code, 'var userCode');
+      const outputPos = findLineCol(result.code, 'var third');
       const original = originalPositionFor(map, outputPos);
-      expect(original.line).toBe(2);
-
-      // "var more" is on line 3 of the original
-      const outputPos2 = findLineCol(result.code, 'var more');
-      const original2 = originalPositionFor(map, outputPos2);
-      expect(original2.line).toBe(3);
-    });
-
-    it('should map lines after __defProp patch with multiple vars', async () => {
-      const code = [
-        'var __defProp = Object.defineProperty;',
-        'var first = 1;',
-        'var second = 2;',
-        'var userVar = 42;',
-      ].join('\n');
-      const result = await callRenderChunk(code);
-      const map = new TraceMap(result.map);
-
-      // "var userVar" is on line 4 of the original
-      const outputPos = findLineCol(result.code, 'var userVar');
-      const original = originalPositionFor(map, outputPos);
-      expect(original.line).toBe(4);
+      expect(original.line).toBe(3);
     });
   });
 });
