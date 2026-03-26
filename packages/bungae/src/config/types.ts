@@ -5,7 +5,7 @@
 export type Platform = 'ios' | 'android' | 'web';
 export type Mode = 'development' | 'production';
 export type BundleType = 'plain' | 'ram-indexed' | 'ram-file';
-export type BundlerType = 'graph' | 'bun' | 'oxc';
+export type BundlerType = 'graph' | 'bun' | 'oxc' | 'zts';
 
 /**
  * Resolver configuration
@@ -153,6 +153,7 @@ export interface BungaeConfig {
    * - 'graph': Babel-based bundler (Metro-compatible, stable)
    * - 'bun': Bun.Transpiler-based bundler (faster, experimental)
    * - 'oxc': OXC/Rolldown-based bundler (ESM, strictExecutionOrder, v2)
+   * - 'zts': ZTS-based bundler (Zig native, ESM, NAPI)
    * @default 'graph'
    */
   bundler?: BundlerType;
