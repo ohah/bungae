@@ -16,6 +16,8 @@ import type { InputOptions, OutputOptions, Plugin } from 'rolldown';
 import { rolldown } from 'rolldown';
 
 import type { ResolvedConfig } from '../../config/types';
+import { formatSize } from '../shared/format';
+import { postProcessSourceMap } from '../shared/sourcemap';
 import { compileToHermesBytecode } from './hermes/compiler';
 import {
   platformResolverPlugin,
@@ -217,43 +219,8 @@ export async function buildWithOxc(
   };
 }
 
-/**
- * Post-process source map for Metro/DevTools compatibility:
- * - ignoreList / x_google_ignoreList: marks node_modules sources so DevTools
- *   skips them for console.log source links
- * - x_facebook_sources: Metro-compatible function map metadata (null entries
- *   since Rolldown doesn't generate function maps)
- */
-export function postProcessSourceMap(mapStr: string): string {
-  try {
-    const map = JSON.parse(mapStr);
-    if (!map.sources) return mapStr;
-
-    // Build ignore list for node_modules sources
-    const ignore: number[] = [];
-    for (let i = 0; i < map.sources.length; i++) {
-      const source = map.sources[i];
-      if (source && source.indexOf('node_modules') >= 0) {
-        ignore.push(i);
-      }
-    }
-
-    if (ignore.length > 0) {
-      map.ignoreList = ignore;
-      map.x_google_ignoreList = ignore;
-    }
-
-    // Add x_facebook_sources (Metro-compatible function map metadata).
-    // Rolldown doesn't generate function maps, so all entries are null.
-    // DevTools/Hermes uses this field for stack trace function name resolution.
-    map.x_facebook_sources = Array.from({ length: map.sources.length }, () => null);
-
-    return JSON.stringify(map);
-  } catch {
-    // If parsing fails, return original
-  }
-  return mapStr;
-}
+// Re-export from shared module for backwards compatibility
+export { postProcessSourceMap } from '../shared/sourcemap';
 
 /**
  * Resolve modules that must run before the main module
@@ -273,8 +240,3 @@ function resolvePreludeModules(config: ResolvedConfig): string[] {
   }
 }
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-}

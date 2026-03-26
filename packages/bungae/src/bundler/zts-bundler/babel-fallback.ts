@@ -1,9 +1,8 @@
 /**
  * Babel Fallback for ZTS Bundler
  *
- * Creates a callback that ZTS calls when a file needs Babel processing
- * (e.g., user-configured plugins like reanimated/plugin).
- * Returns null for files that don't need Babel, so ZTS handles them natively.
+ * Creates a callback for ZTS NAPI that runs user-configured Babel plugins
+ * (e.g., reanimated/plugin) on files that need them.
  */
 
 import type { ResolvedConfig } from '../../config/types';
@@ -17,7 +16,6 @@ export function createBabelTransformCallback(
 ): ((filePath: string, code: string) => string | null) | undefined {
   const babelConfig = config.transformer?.babel;
 
-  // No Babel plugins configured — skip Babel entirely
   if (
     !babelConfig ||
     (!babelConfig.plugins?.length && !babelConfig.presets?.length)
@@ -25,26 +23,26 @@ export function createBabelTransformCallback(
     return undefined;
   }
 
-  // Return a callback that runs Babel with user plugins
+  const { presets = [], plugins = [] } = babelConfig;
+  const { platform } = config;
+
   return (filePath: string, code: string): string | null => {
-    // Skip node_modules (user plugins are for app code)
     if (filePath.includes('node_modules')) return null;
 
     try {
-      // Lazy-load Babel to avoid import cost when not needed
       const babel = require('@babel/core');
 
       const result = babel.transformSync(code, {
         filename: filePath,
         babelrc: false,
         configFile: false,
-        presets: babelConfig.presets || [],
-        plugins: babelConfig.plugins || [],
+        presets,
+        plugins,
         sourceMaps: false,
         caller: {
           name: 'bungae-zts',
           bundler: 'bungae',
-          platform: config.platform,
+          platform,
         },
       });
 

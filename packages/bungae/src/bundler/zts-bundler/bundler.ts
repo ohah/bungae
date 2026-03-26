@@ -1,22 +1,21 @@
 /**
  * ZTS Bundler - Zig NAPI-based React Native Bundler
  *
- * Uses ZTS native addon for parsing, transformation, bundling, and source map
- * generation. All heavy work is done in Zig; this JS layer handles:
- * - Config → ZTS options mapping
- * - Babel fallback for user plugins
- * - Source map post-processing (x_google_ignoreList, x_facebook_sources)
- * - Hermes bytecode compilation
+ * All heavy lifting (parsing, transformation, bundling, source maps) is done
+ * in Zig via NAPI. This JS layer maps config to ZTS options, runs Babel
+ * fallback for user plugins, and handles Hermes bytecode compilation.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync, writeFileSync } from 'fs';
 import { dirname, resolve } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
+import { formatSize } from '../shared/format';
+import { postProcessSourceMap } from '../shared/sourcemap';
+import { RN_MAIN_FIELDS, RN_CONDITION_NAMES } from '../shared/resolve-config';
 import { loadZtsBinding } from './binding';
 import { resolvePolyfillPaths } from './polyfills';
 import { buildExtensions, generatePreludeCode } from './prelude';
-import { postProcessSourceMap } from './sourcemap';
 import { createBabelTransformCallback } from './babel-fallback';
 import type { ZtsBuildResult, ZtsBuildOptions } from './types';
 
@@ -36,33 +35,23 @@ export async function buildWithZts(
   } = options;
 
   const entryPath = resolve(config.root, config.entry);
-  if (!existsSync(entryPath)) {
-    throw new Error(`Entry file not found: ${entryPath}`);
-  }
-
   const startTime = Date.now();
   console.log('⚡ Bundling with ZTS...');
 
-  // Load ZTS NAPI addon
   const zts = loadZtsBinding();
-
-  // Build platform-specific extensions list
   const extensions = buildExtensions(config.platform, config.resolver.sourceExts);
   const polyfillPaths = resolvePolyfillPaths(config.root);
   const preludeCode = generatePreludeCode(config.dev, config.platform);
-
-  // Create Babel fallback callback for user plugins
   const babelTransform = createBabelTransformCallback(config);
 
-  // Call ZTS native bundler
   const nativeResult = zts.bundle({
     entry: entryPath,
     root: config.root,
     platform: config.platform,
     dev: config.dev,
     extensions,
-    mainFields: ['react-native', 'browser', 'main', 'module'],
-    conditionNames: ['react-native', 'import', 'require', 'default'],
+    mainFields: [...RN_MAIN_FIELDS],
+    conditionNames: [...RN_CONDITION_NAMES],
     treeshake: !config.dev,
     minify,
     sourcemap: sourcemap === true || sourcemap === 'inline' || sourcemap === 'hidden',
@@ -76,12 +65,10 @@ export async function buildWithZts(
   let code = nativeResult.code;
   let map = nativeResult.map;
 
-  // Post-process source map for DevTools compatibility
   if (map) {
     map = postProcessSourceMap(map);
   }
 
-  // Handle inline source map
   if (sourcemap === 'inline' && map) {
     const base64Map = Buffer.from(map).toString('base64');
     code += `\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,${base64Map}`;
@@ -90,7 +77,6 @@ export async function buildWithZts(
 
   console.log(`  Bundling done in ${bundleDuration}ms`);
 
-  // Write output files if outfile is specified
   let hermesBytecode: string | undefined;
   if (outfile) {
     const outDir = dirname(outfile);
@@ -105,7 +91,6 @@ export async function buildWithZts(
       console.log(`  Source map: ${mapFile}`);
     }
 
-    // Hermes bytecode compilation
     if (hermes) {
       console.log('  Compiling to Hermes bytecode...');
       try {
@@ -137,10 +122,4 @@ export async function buildWithZts(
     hermesBytecode,
     assets: [],
   };
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
