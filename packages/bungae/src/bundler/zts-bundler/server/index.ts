@@ -13,7 +13,7 @@ import type { ResolvedConfig } from '../../../config/types';
  * Start dev server with ZTS bundler
  */
 export async function serveWithZts(
-  config: ResolvedConfig,
+  _config: ResolvedConfig,
 ): Promise<{ stop: () => Promise<void> }> {
   throw new Error(
     'ZTS dev server is not yet implemented.\n' +
