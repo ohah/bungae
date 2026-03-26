@@ -1,12 +1,13 @@
 /**
  * Bundler module - Exports bundling functions
  *
- * Three bundler implementations:
+ * Four bundler implementations:
  * - oxc-bundler: Rolldown-based, ESM with strictExecutionOrder, v2 (default)
  * - graph-bundler: Babel-based, Metro-compatible, stable
  * - bun-bundler: Bun.Transpiler-based, faster, experimental
+ * - zts-bundler: ZTS (Zig) NAPI-based, ESM, native performance
  *
- * Select bundler via config.bundler: 'graph' | 'bun' | 'oxc'
+ * Select bundler via config.bundler: 'graph' | 'bun' | 'oxc' | 'zts'
  */
 
 import type { ResolvedConfig } from '../config/types';
@@ -24,17 +25,23 @@ export { buildWithBunTranspiler, serveWithBunTranspiler } from './bun-bundler';
 export { buildWithOxc, serveWithOxc } from './oxc-bundler';
 export type { OxcBuildResult, OxcBuildOptions } from './oxc-bundler';
 
+// ZTS bundler with Zig NAPI (ESM, native performance)
+export { buildWithZts, serveWithZts } from './zts-bundler';
+export type { ZtsBuildResult, ZtsBuildOptions } from './zts-bundler';
+
 // Track if bundler selection has been logged (prevent duplicate logs)
 let bundlerSelectionLogged = false;
 
 /**
  * Log bundler selection to terminal (only once per process)
  */
-function logBundlerSelection(bundlerType: 'graph' | 'bun' | 'oxc'): void {
+function logBundlerSelection(bundlerType: 'graph' | 'bun' | 'oxc' | 'zts'): void {
   if (bundlerSelectionLogged) return;
   bundlerSelectionLogged = true;
 
-  if (bundlerType === 'oxc') {
+  if (bundlerType === 'zts') {
+    console.log('⚡ Using zts-bundler (Zig NAPI, v3)');
+  } else if (bundlerType === 'oxc') {
     console.log('⚡ Using oxc-bundler (Rolldown, v2)');
   } else if (bundlerType === 'bun') {
     console.log('📦 Using bun-bundler (Bun.Transpiler, experimental)');
@@ -45,7 +52,7 @@ function logBundlerSelection(bundlerType: 'graph' | 'bun' | 'oxc'): void {
 
 /**
  * Build bundle using the bundler specified in config
- * Automatically selects graph-bundler, bun-bundler, or oxc-bundler based on config.bundler
+ * Automatically selects graph-bundler, bun-bundler, oxc-bundler, or zts-bundler based on config.bundler
  */
 export async function build(
   config: ResolvedConfig,
@@ -65,6 +72,16 @@ export async function build(
     return buildWithBunTranspiler(config, onProgress, options);
   }
 
+  if (bundlerType === 'zts') {
+    const { buildWithZts } = await import('./zts-bundler');
+    const result = await buildWithZts(config, onProgress);
+    return {
+      code: result.code,
+      map: result.map,
+      assets: [],
+    };
+  }
+
   // Default: oxc bundler (Rolldown, v2)
   const { buildWithOxc } = await import('./oxc-bundler');
   const result = await buildWithOxc(config, onProgress);
@@ -78,7 +95,7 @@ export async function build(
 
 /**
  * Start dev server using the bundler specified in config
- * Automatically selects graph-bundler, bun-bundler, or oxc-bundler based on config.bundler
+ * Automatically selects graph-bundler, bun-bundler, oxc-bundler, or zts-bundler based on config.bundler
  */
 export async function serve(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
   const bundlerType = config.bundler || 'oxc';
@@ -92,6 +109,11 @@ export async function serve(config: ResolvedConfig): Promise<{ stop: () => Promi
   if (bundlerType === 'bun') {
     const { serveWithBunTranspiler } = await import('./bun-bundler');
     return serveWithBunTranspiler(config);
+  }
+
+  if (bundlerType === 'zts') {
+    const { serveWithZts } = await import('./zts-bundler');
+    return serveWithZts(config);
   }
 
   // Default: oxc bundler dev server (Rolldown DevEngine)
