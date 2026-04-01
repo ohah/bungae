@@ -161,12 +161,18 @@ export function validateConfig(config: BungaeConfig): void {
           `Invalid config: \`transformer.babel\` must be an object with \`presets\` and/or \`plugins\` arrays`,
         );
       }
-      if (config.transformer.babel.plugins !== undefined && !Array.isArray(config.transformer.babel.plugins)) {
+      if (
+        config.transformer.babel.plugins !== undefined &&
+        !Array.isArray(config.transformer.babel.plugins)
+      ) {
         throw new ConfigValidationError(
           `Invalid config: \`transformer.babel.plugins\` must be an array`,
         );
       }
-      if (config.transformer.babel.presets !== undefined && !Array.isArray(config.transformer.babel.presets)) {
+      if (
+        config.transformer.babel.presets !== undefined &&
+        !Array.isArray(config.transformer.babel.presets)
+      ) {
         throw new ConfigValidationError(
           `Invalid config: \`transformer.babel.presets\` must be an array`,
         );
