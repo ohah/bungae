@@ -48,7 +48,9 @@ jobs:
           bun-version: latest
 
       - name: Install dependencies
-        run: bun install
+        run: |
+          bun install
+          cd packages/bungae && bun install
 
       - name: Build Bungae
         run: bun packages/bungae/cli/build.ts

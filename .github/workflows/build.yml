@@ -52,7 +52,9 @@ jobs:
 
       - name: Install dependencies
         if: needs.check.outputs.should-run == 'true'
-        run: bun install
+        run: |
+          bun install
+          cd packages/bungae && bun install
 
       - name: Build packages
         if: needs.check.outputs.should-run == 'true'
