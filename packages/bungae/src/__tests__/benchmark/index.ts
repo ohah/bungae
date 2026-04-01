@@ -3,5 +3,5 @@
  */
 
 export * from './types';
-export * from './oxc-benchmark';
+export * from './bungae-benchmark';
 export * from './metro-benchmark';

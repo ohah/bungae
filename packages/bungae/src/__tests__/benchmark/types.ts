@@ -31,7 +31,7 @@ export interface ComparisonResult {
 
 export interface BenchmarkSummary {
   comparisons: ComparisonResult[];
-  oxcPhases: {
+  phases: {
     name: string;
     avgDuration: number;
     minDuration: number;
