@@ -62,24 +62,26 @@ jobs:
 
       - name: Run Bungae benchmark
         id: bungae-benchmark
+        working-directory: packages/bungae
         run: |
-          bun packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          bun src/__tests__/benchmark/run-benchmark.ts \
             --bungae-only \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \
-            --output-file benchmark-results.md
+            --output-file ../../benchmark-results.md
 
       - name: Run Metro comparison benchmark
         if: github.event.inputs.compare_with_metro == 'true' || github.event_name == 'pull_request'
         id: metro-benchmark
         continue-on-error: true
+        working-directory: packages/bungae
         run: |
-          bun packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          bun src/__tests__/benchmark/run-benchmark.ts \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \
-            --output-file benchmark-results.md
+            --output-file ../../benchmark-results.md
 
       - name: Find existing comment
         if: github.event_name == 'pull_request'
