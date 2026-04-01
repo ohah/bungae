@@ -104,7 +104,6 @@ describe('parseCliArgs', () => {
     });
 
     test('should parse --bundler', () => {
-      expect(parseCliArgs(['build', '--bundler', 'oxc']).bundler).toBe('oxc');
       expect(parseCliArgs(['build', '--bundler', 'graph']).bundler).toBe('graph');
     });
 
@@ -361,7 +360,7 @@ describe('parseCliArgs', () => {
         '--platform',
         'ios',
         '--bundler',
-        'oxc',
+        'graph',
         '--port',
         '9000',
         '--host',
@@ -371,7 +370,7 @@ describe('parseCliArgs', () => {
 
       expect(result.command).toBe('serve');
       expect(result.platform).toBe('ios');
-      expect(result.bundler).toBe('oxc');
+      expect(result.bundler).toBe('graph');
       expect(result.port).toBe(9000);
       expect(result.host).toBe('0.0.0.0');
       expect(result.interactive).toBe(false);

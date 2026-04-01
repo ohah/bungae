@@ -200,8 +200,8 @@ describe('buildConfigFromArgs', () => {
     });
 
     test('maps bundler', () => {
-      const config = buildConfigFromArgs(makeArgs({ bundler: 'oxc' }));
-      expect(config.bundler).toBe('oxc');
+      const config = buildConfigFromArgs(makeArgs({ bundler: 'graph' }));
+      expect(config.bundler).toBe('graph');
     });
 
     test('maps platform', () => {
