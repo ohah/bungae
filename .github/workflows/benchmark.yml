@@ -61,7 +61,7 @@ jobs:
       - name: Run Bungae benchmark
         id: bungae-benchmark
         run: |
-          npx tsx packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          bun packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --bungae-only \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
@@ -73,7 +73,7 @@ jobs:
         id: metro-benchmark
         continue-on-error: true
         run: |
-          npx tsx packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
+          bun packages/bungae/src/__tests__/benchmark/run-benchmark.ts \
             --runs ${{ inputs.runs || '1' }} \
             --warmup ${{ inputs.warmup || '0' }} \
             --output markdown \

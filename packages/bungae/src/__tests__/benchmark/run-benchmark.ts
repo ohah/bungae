@@ -174,7 +174,8 @@ async function runBenchmarks(options: BenchmarkOptions): Promise<BenchmarkSummar
           });
 
           // Calculate comparison
-          const speedup = bungaeResult.totalTime > 0 ? metroResult.totalTime / bungaeResult.totalTime : 0;
+          const speedup =
+            bungaeResult.totalTime > 0 ? metroResult.totalTime / bungaeResult.totalTime : 0;
           const sizeDiff = metroResult.bundleSize - bungaeResult.bundleSize;
           const sizeDiffPercent =
             metroResult.bundleSize > 0 ? (sizeDiff / metroResult.bundleSize) * 100 : 0;
