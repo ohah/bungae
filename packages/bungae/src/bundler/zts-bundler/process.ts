@@ -222,6 +222,9 @@ export async function runZtsBuild(
   const binaryPath = findZtsBinary(config.root);
   const args = buildZtsArgs(config, outputPath, false);
 
+  console.log(`[zts] Binary: ${binaryPath}`);
+  console.log(`[zts] Args: ${args.join(' ')}`);
+
   return new Promise((resolve) => {
     const child = spawn(binaryPath, args, {
       cwd: config.root,
