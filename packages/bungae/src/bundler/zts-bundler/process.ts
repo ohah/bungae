@@ -34,17 +34,19 @@ export type ZtsEvent = ZtsReadyEvent | ZtsRebuildEvent;
  * Looks for pre-built binary in the zts submodule.
  */
 function findZtsBinary(projectRoot: string): string {
-  // Check zts submodule in the bungae workspace root
+  // Check zts in workspace — bungae와 zts가 같은 워크스페이스에 있다고 가정
   const candidates = [
     join(projectRoot, 'zts/zig-out/bin/zts'),
     join(projectRoot, '../zts/zig-out/bin/zts'),
-    // Walk up to find workspace root with zts submodule
     resolve(projectRoot, '../../zts/zig-out/bin/zts'),
+    // bungae와 zts가 sibling 디렉토리일 때 (workspace/bungae, workspace/zts)
+    resolve(projectRoot, '../../../zts/zig-out/bin/zts'),
   ];
 
   // Also check relative to this file's location (bungae repo)
   const bungaeRoot = resolve(__dirname, '../../../../..');
   candidates.push(join(bungaeRoot, 'zts/zig-out/bin/zts'));
+  candidates.push(join(bungaeRoot, '../zts/zig-out/bin/zts'));
 
   for (const candidate of candidates) {
     if (existsSync(candidate)) {
