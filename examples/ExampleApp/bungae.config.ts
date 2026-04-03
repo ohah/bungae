@@ -18,7 +18,7 @@ export default defineConfig({
   dev: true,
   minify: false,
   outDir: join(__dirname, '.bungae'),
-  bundler: 'graph',
+  bundler: 'zts',
   resolver: {
     sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
     assetExts: [

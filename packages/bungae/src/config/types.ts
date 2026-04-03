@@ -5,7 +5,7 @@
 export type Platform = 'ios' | 'android' | 'web';
 export type Mode = 'development' | 'production';
 export type BundleType = 'plain' | 'ram-indexed' | 'ram-file';
-export type BundlerType = 'graph';
+export type BundlerType = 'graph' | 'zts';
 
 /**
  * Resolver configuration
@@ -151,6 +151,7 @@ export interface BungaeConfig {
   /**
    * Bundler type to use
    * - 'graph': Babel-based bundler (Metro-compatible, stable)
+   * - 'zts': Zig-based transpiler/bundler (fast, subprocess)
    * @default 'graph'
    */
   bundler?: BundlerType;
