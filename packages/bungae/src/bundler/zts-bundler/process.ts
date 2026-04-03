@@ -93,12 +93,12 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
     const prelude = [
-      `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now()`,
-      `var __DEV__=${config.dev}`,
-      `var global=typeof globalThis!=='undefined'?globalThis:this`,
-      `var process=global.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}"`,
-    ].join(',');
-    args.push(`--banner:js=${prelude};`);
+      `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now();`,
+      `var __DEV__=${config.dev};`,
+      `var global=typeof globalThis!=='undefined'?globalThis:this;`,
+      `var process=global.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
+    ].join('');
+    args.push(`--banner:js=${prelude}`);
 
     // define으로 모듈 코드의 __DEV__ 컴파일 타임 치환 (banner는 런타임, define은 컴파일 타임)
     args.push(`--define:__DEV__=${config.dev}`);
