@@ -6,11 +6,11 @@
  * and terminal shortcuts.
  */
 
-import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http';
 import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
 import { mkdtempSync } from 'fs';
+import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from 'http';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import type { Duplex } from 'stream';
 
 import { createDevServerMiddleware } from '@react-native-community/cli-server-api';
@@ -19,21 +19,19 @@ import { WebSocketServer, type WebSocket } from 'ws';
 import type { ResolvedConfig } from '../../../config/types';
 import { VERSION } from '../../../index';
 import { createFileWatcher, type FileWatcher } from '../../file-watcher';
-import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { printBanner } from '../../graph-bundler/utils';
 import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/server/dev-middleware';
 import { handleAssetRequest } from '../../graph-bundler/server/handlers/asset-handler';
 import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler';
 import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
 import { parseRequestUrl, sendText } from '../../graph-bundler/server/utils';
+import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
+import { printBanner } from '../../graph-bundler/utils';
 import { runZtsBuild } from '../process';
 
 /**
  * Start dev server with zts bundler backend
  */
-export async function serveWithZts(
-  config: ResolvedConfig,
-): Promise<{ stop: () => Promise<void> }> {
+export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
   const { server } = config;
   const port = server?.port ?? 8081;
   const hostname = server?.host || '0.0.0.0';
@@ -90,13 +88,16 @@ export async function serveWithZts(
     console.log('   DevTools endpoints:', Object.keys(devMiddleware.websocketEndpoints).join(', '));
   }
 
-  const devMiddlewarePathPrefixes = ['/json', '/open-debugger', '/debugger-frontend', '/launch-js-devtools'];
+  const devMiddlewarePathPrefixes = [
+    '/json',
+    '/open-debugger',
+    '/debugger-frontend',
+    '/launch-js-devtools',
+  ];
 
   // Create RN CLI server middleware
-  const {
-    websocketEndpoints: cliWebsocketEndpoints,
-    messageSocketEndpoint,
-  } = createDevServerMiddleware({ port, host: hostname, watchFolders: [config.root] });
+  const { websocketEndpoints: cliWebsocketEndpoints, messageSocketEndpoint } =
+    createDevServerMiddleware({ port, host: hostname, watchFolders: [config.root] });
   const broadcast = messageSocketEndpoint.broadcast;
   console.log('   CLI endpoints:', Object.keys(cliWebsocketEndpoints).join(', '));
 
@@ -108,7 +109,11 @@ export async function serveWithZts(
     console.log('[HMR] Client connected');
     const client = {
       send: (msg: string) => {
-        try { ws.send(msg); } catch { /* disconnected */ }
+        try {
+          ws.send(msg);
+        } catch {
+          /* disconnected */
+        }
       },
     };
     hmrClients.add(client);
@@ -119,7 +124,9 @@ export async function serveWithZts(
         if (msg.type === 'register-entrypoints') {
           ws.send(JSON.stringify({ type: 'bundle-registered' }));
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     });
 
     ws.on('close', () => {
@@ -152,7 +159,11 @@ export async function serveWithZts(
     await handleRoutes(req, res, url);
   };
 
-  const handleRoutes = async (req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> => {
+  const handleRoutes = async (
+    req: IncomingMessage,
+    res: ServerResponse,
+    url: URL,
+  ): Promise<void> => {
     // Bundle request
     if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
       if (lastBuildError) {
@@ -173,7 +184,10 @@ export async function serveWithZts(
               }
             }, 100);
             // Timeout after 120s
-            setTimeout(() => { clearInterval(check); resolve(); }, 120000);
+            setTimeout(() => {
+              clearInterval(check);
+              resolve();
+            }, 120000);
           });
         }
         // Check again after waiting
@@ -382,13 +396,20 @@ function sendHmrReload(clients: Set<{ send: (msg: string) => void }>): void {
   const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const messages = [
     { type: 'update-start', body: { isInitialUpdate: false } },
-    { type: 'update', body: { revisionId, isInitialUpdate: false, added: [], modified: [], deleted: [] } },
+    {
+      type: 'update',
+      body: { revisionId, isInitialUpdate: false, added: [], modified: [], deleted: [] },
+    },
     { type: 'update-done' },
   ];
   for (const msg of messages) {
     const msgStr = JSON.stringify(msg);
     for (const client of clients) {
-      try { client.send(msgStr); } catch { /* disconnected */ }
+      try {
+        client.send(msgStr);
+      } catch {
+        /* disconnected */
+      }
     }
   }
 }
@@ -397,8 +418,15 @@ function sendHmrReload(clients: Set<{ send: (msg: string) => void }>): void {
  * Send HMR error to all clients (Metro protocol)
  */
 function sendHmrError(clients: Set<{ send: (msg: string) => void }>, error: string): void {
-  const errorMessage = JSON.stringify({ type: 'error', body: { type: 'BuildError', message: error } });
+  const errorMessage = JSON.stringify({
+    type: 'error',
+    body: { type: 'BuildError', message: error },
+  });
   for (const client of clients) {
-    try { client.send(errorMessage); } catch { /* disconnected */ }
+    try {
+      client.send(errorMessage);
+    } catch {
+      /* disconnected */
+    }
   }
 }

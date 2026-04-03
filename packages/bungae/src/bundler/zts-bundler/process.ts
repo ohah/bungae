@@ -87,7 +87,8 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     // RN uses `global` instead of `globalThis`
     args.push('--define:global=globalThis');
     // RN platform-specific extensions (.ios.js, .android.js)
-    const rnPlatform = config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
+    const rnPlatform =
+      config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
     args.push(`--rn-platform=${rnPlatform}`);
 
     // RN global variables (Metro prelude equivalent)
@@ -225,7 +226,10 @@ export async function runZtsBuild(
         // code === null means killed by signal, but bundle may have been written
         resolve({ success: true });
       } else {
-        resolve({ success: false, error: stderr.trim() || `zts exited with code ${code} (signal: ${signal})` });
+        resolve({
+          success: false,
+          error: stderr.trim() || `zts exited with code ${code} (signal: ${signal})`,
+        });
       }
     });
 
