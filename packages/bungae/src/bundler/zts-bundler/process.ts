@@ -89,6 +89,21 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     // RN platform-specific extensions (.ios.js, .android.js)
     const rnPlatform = config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
     args.push(`--rn-platform=${rnPlatform}`);
+
+    // RN global variables (Metro prelude equivalent)
+    args.push(`--define:__DEV__=${config.dev}`);
+    args.push('--define:__BUNDLE_START_TIME__=Date.now()');
+
+    // Polyfills: console.js, error-guard.js — IIFE로 감싸서 번들 시작 시 즉시 실행
+    for (const polyfillPath of resolveRnPolyfills(config.root)) {
+      args.push(`--polyfill=${polyfillPath}`);
+    }
+
+    // InitializeCore: 엔트리 모듈 직전에 실행 (Metro runBeforeMainModule 호환)
+    const initCorePath = tryResolve('react-native/Libraries/Core/InitializeCore', config.root);
+    if (initCorePath) {
+      args.push(`--run-before-main=${initCorePath}`);
+    }
   }
 
   // Watch mode with NDJSON output
@@ -218,4 +233,35 @@ export async function runZtsBuild(
       resolve({ success: false, error: error.message });
     });
   });
+}
+
+/**
+ * require.resolve with fallback — returns null if not found.
+ */
+function tryResolve(specifier: string, fromDir: string): string | null {
+  try {
+    return require.resolve(specifier, { paths: [fromDir] });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Resolve RN polyfill paths (console.js, error-guard.js).
+ * Tries rn-get-polyfills first (RN 0.73+), falls back to @react-native/js-polyfills.
+ */
+function resolveRnPolyfills(projectRoot: string): string[] {
+  const candidates = ['react-native/rn-get-polyfills', '@react-native/js-polyfills'];
+  for (const candidate of candidates) {
+    const resolved = tryResolve(candidate, projectRoot);
+    if (resolved) {
+      try {
+        return (require(resolved) as () => string[])();
+      } catch {
+        continue;
+      }
+    }
+  }
+  console.warn('[zts] Could not resolve RN polyfills, skipping');
+  return [];
 }
