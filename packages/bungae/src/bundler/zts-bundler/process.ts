@@ -115,6 +115,12 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     if (initCorePath) {
       args.push(`--run-before-main=${initCorePath}`);
     }
+
+    // RN 예약 전역 식별자 — polyfillGlobal()로 등록되는 이름과 모듈 변수 충돌 방지
+    // 롤리팝의 globalIdentifiers와 동일한 목록 (RN 0.83 기준)
+    for (const name of RN_GLOBAL_IDENTIFIERS) {
+      args.push(`--global-identifier=${name}`);
+    }
   }
 
   // Watch mode with NDJSON output
@@ -279,3 +285,70 @@ function resolveRnPolyfills(projectRoot: string): string[] {
   console.warn('[zts] Could not resolve RN polyfills, skipping');
   return [];
 }
+
+/**
+ * RN 예약 전역 식별자 목록 (RN 0.83 기준).
+ * polyfillGlobal()로 globalThis에 등록되는 이름. scope hoisting 시 모듈 변수와 충돌 방지.
+ */
+const RN_GLOBAL_IDENTIFIERS = [
+  // polyfillPromise
+  'Promise',
+  // setUpRegeneratorRuntime
+  'regeneratorRuntime',
+  // setUpXHR
+  'XMLHttpRequest',
+  'FormData',
+  'fetch',
+  'Headers',
+  'Request',
+  'Response',
+  'WebSocket',
+  'Blob',
+  'File',
+  'FileReader',
+  'URL',
+  'URLSearchParams',
+  'AbortController',
+  'AbortSignal',
+  // setUpTimers
+  'queueMicrotask',
+  'setImmediate',
+  'clearImmediate',
+  'requestIdleCallback',
+  'cancelIdleCallback',
+  'setTimeout',
+  'clearTimeout',
+  'setInterval',
+  'clearInterval',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  // setUpDOM
+  'DOMRect',
+  'DOMRectReadOnly',
+  'DOMRectList',
+  'HTMLCollection',
+  'NodeList',
+  'Node',
+  'Document',
+  'CharacterData',
+  'Text',
+  'Element',
+  'HTMLElement',
+  // setUpIntersectionObserver
+  'IntersectionObserver',
+  // setUpMutationObserver
+  'MutationObserver',
+  'MutationRecord',
+  // setUpPerformanceModern
+  'EventCounts',
+  'Performance',
+  'PerformanceEntry',
+  'PerformanceEventTiming',
+  'PerformanceLongTaskTiming',
+  'PerformanceMark',
+  'PerformanceMeasure',
+  'PerformanceObserver',
+  'PerformanceObserverEntryList',
+  'PerformanceResourceTiming',
+  'TaskAttributionTiming',
+];
