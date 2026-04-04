@@ -29,6 +29,10 @@ const ASSET_EXTS: string[] = process.env.ZTS_ASSET_EXTS
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT ?? process.cwd();
 
+// AssetRegistry 가상 모듈 ID
+const VIRTUAL_ASSET_REGISTRY = '\0bungae:asset-registry';
+const ASSET_REGISTRY_SPECIFIER = 'react-native/Libraries/Image/AssetRegistry';
+
 // ===== 이미지 치수 추출 =====
 // TODO: graph-bundler/utils.ts의 getImageSize와 중복 — 공용 유틸로 추출 필요
 
@@ -57,14 +61,12 @@ function getImageSizeFromBuffer(buffer: Buffer, ext: string): { width: number; h
 
 function readImageDimensions(filePath: string, ext: string): { width: number; height: number } {
   try {
-    // PNG/GIF은 헤더만 읽으면 됨 (24~10바이트), JPEG은 SOF 마커 탐색 필요
     if (ext === '.png' || ext === '.gif') {
       const buf = Buffer.alloc(24);
       const fd = openSync(filePath, 'r');
       try { readSync(fd, buf, 0, 24, 0); } finally { closeSync(fd); }
       return getImageSizeFromBuffer(buf, ext);
     }
-    // JPEG/기타: 전체 읽기 (SOF 마커 위치가 가변)
     return getImageSizeFromBuffer(readFileSync(filePath), ext);
   } catch {
     return { width: 0, height: 0 };
@@ -127,12 +129,29 @@ function generateAssetCode(filePath: string): string {
   const { width, height } = readImageDimensions(filePath, ext);
   const hash = createHash('md5').update(readFileSync(filePath)).digest('hex').slice(0, 16);
 
-  return `module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset(${JSON.stringify(
-    { __packager_asset: true, httpServerLocation, width, height, scales, hash, name, type },
-  )});`;
+  const assetData = JSON.stringify({ __packager_asset: true, httpServerLocation, width, height, scales, hash, name, type });
+
+  return [
+    `var _registry = require("${ASSET_REGISTRY_SPECIFIER}");`,
+    `module.exports = _registry.registerAsset(${assetData});`,
+  ].join('\n');
 }
 
-// ===== ZTS IPC 프로토콜 (인라인 — @zts/core 의존 없이) =====
+// AssetRegistry 인라인 구현 — @react-native/assets-registry 패키지가
+// 설치되지 않은 환경에서도 동작. RN AssetRegistry.js가 ESM re-export로
+// 깨지는 문제를 우회한다.
+const ASSET_REGISTRY_CODE = `
+var assets = [];
+function registerAsset(asset) {
+  return assets.push(asset);
+}
+function getAssetByID(assetId) {
+  return assets[assetId - 1];
+}
+module.exports = { registerAsset: registerAsset, getAssetByID: getAssetByID };
+`;
+
+// ===== ZTS IPC 프로토콜 =====
 
 interface IpcMessage {
   id: number;
@@ -154,13 +173,26 @@ function handleMessage(msg: IpcMessage): string {
       return JSON.stringify({
         id: msg.id,
         name: 'bungae:react-native-asset',
-        filters: { load: ASSET_EXTS },
-        hooks: { resolveId: false, load: true, transform: false, renderChunk: false, generateBundle: false },
+        filters: { resolveId: [ASSET_REGISTRY_SPECIFIER], load: [...ASSET_EXTS, VIRTUAL_ASSET_REGISTRY] },
+        hooks: { resolveId: true, load: true, transform: false, renderChunk: false, generateBundle: false },
         config: {},
         error: null,
       });
 
+    case 'resolveId': {
+      // react-native/Libraries/Image/AssetRegistry → 가상 모듈로 리다이렉트
+      if (msg.specifier === ASSET_REGISTRY_SPECIFIER) {
+        return JSON.stringify({ id: msg.id, result: { path: VIRTUAL_ASSET_REGISTRY }, error: null });
+      }
+      return JSON.stringify({ id: msg.id, result: null, error: null });
+    }
+
     case 'load': {
+      // 가상 AssetRegistry 모듈
+      if (msg.path === VIRTUAL_ASSET_REGISTRY) {
+        return JSON.stringify({ id: msg.id, result: { contents: ASSET_REGISTRY_CODE }, error: null });
+      }
+      // 에셋 파일
       const filePath = msg.path;
       if (!filePath || !isAssetFile(filePath)) {
         return JSON.stringify({ id: msg.id, result: null, error: null });
