@@ -16,7 +16,19 @@ import type {
  */
 export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
   sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
-  assetExts: ['.bmp', '.gif', '.jpg', '.jpeg', '.png', '.webp', '.avif', '.ico', '.icns', '.icxl'],
+  assetExts: [
+    // 이미지 (Metro defaults + 추가)
+    '.bmp', '.gif', '.jpg', '.jpeg', '.png', '.psd', '.svg', '.webp',
+    '.tiff', '.tif', '.xml', '.avif', '.ico',
+    // 비디오
+    '.m4v', '.mov', '.mp4', '.mpeg', '.mpg', '.webm',
+    // 오디오
+    '.aac', '.aiff', '.caf', '.m4a', '.mp3', '.wav',
+    // 문서
+    '.html', '.pdf', '.yaml', '.yml',
+    // 폰트
+    '.otf', '.ttf', '.woff', '.woff2',
+  ],
   platforms: ['ios', 'android', 'native'],
   preferNativePlatform: true,
   nodeModulesPaths: [],

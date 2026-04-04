@@ -123,6 +123,14 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     for (const name of RN_GLOBAL_IDENTIFIERS) {
       args.push(`--global-identifier=${name}`);
     }
+
+    // 에셋 플러그인: require('./image.png') → AssetRegistry.registerAsset({...})
+    // ZTS의 file 로더 대신 Metro 호환 에셋 메타데이터를 생성한다.
+    // __dirname은 src/ (dev) 또는 dist/ (prod) — 양쪽에 asset-plugin.ts가 존재해야 함
+    const assetPluginPath = resolve(__dirname, 'asset-plugin.ts');
+    if (existsSync(assetPluginPath)) {
+      args.push('--plugin', assetPluginPath);
+    }
   }
 
   // Watch mode with NDJSON output
@@ -164,8 +172,9 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
       ...process.env,
-      // Pass NODE_ENV for define substitution
       NODE_ENV: config.dev ? 'development' : 'production',
+      ZTS_PROJECT_ROOT: config.root,
+      ZTS_ASSET_EXTS: config.resolver.assetExts.join(','),
     },
   });
 
@@ -234,6 +243,8 @@ export async function runZtsBuild(
       env: {
         ...process.env,
         NODE_ENV: config.dev ? 'development' : 'production',
+        ZTS_PROJECT_ROOT: config.root,
+        ZTS_ASSET_EXTS: config.resolver.assetExts.join(','),
       },
     });
 

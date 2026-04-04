@@ -168,6 +168,13 @@ async function build() {
     console.log('  ✓ Runtime (bungae-hmr-client.js) copied');
   }
 
+  // Copy ZTS asset plugin (standalone subprocess — must not be bundled)
+  const assetPluginSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'asset-plugin.ts');
+  if (existsSync(assetPluginSrc)) {
+    copyFileSync(assetPluginSrc, join(DIST, 'asset-plugin.ts'));
+    console.log('  ✓ ZTS asset plugin copied');
+  }
+
   // Copy type declarations from tsc output structure to dist root
   const typeMappings = [
     { from: 'src/index.d.ts', to: 'index.d.ts' },
@@ -224,6 +231,7 @@ async function build() {
     'main.cjs.map',
     'main.d.ts',
     'main.d.cts',
+    'asset-plugin.ts',
   ]);
   for (const file of readdir(DIST)) {
     if (!filesToKeep.has(file) && statSync(join(DIST, file)).isFile()) {
