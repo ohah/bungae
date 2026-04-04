@@ -102,8 +102,10 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     ].join('');
     args.push(`--banner:js=${prelude}`);
 
-    // define으로 모듈 코드의 __DEV__ 컴파일 타임 치환 (banner는 런타임, define은 컴파일 타임)
+    // define으로 모듈 코드의 __DEV__, process.env.NODE_ENV 컴파일 타임 치환
+    // (banner는 런타임, define은 컴파일 타임 — ZTS 자동 define "production" 오버라이드)
     args.push(`--define:__DEV__=${config.dev}`);
+    args.push(`--define:process.env.NODE_ENV="${config.dev ? 'development' : 'production'}"`);
 
     // Polyfills: console.js, error-guard.js — IIFE로 감싸서 번들 시작 시 즉시 실행
     for (const polyfillPath of resolveRnPolyfills(config.root)) {
