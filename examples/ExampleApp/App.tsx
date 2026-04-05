@@ -262,17 +262,22 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      {/* 색상 디버깅 */}
+      {/* 색상 디버깅 — NativeText에 전달되는 style 확인 */}
       <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: '#333', padding: 8, borderRadius: 16}}>
         <Text
           style={{color: '#ff0000', fontSize: 14}}
-          onLayout={() => {
-            // @ts-ignore
-            console.log('Text style test - checking if color prop reaches native');
+          ref={(ref: any) => {
+            if (ref) {
+              console.log('=== TEXT REF DEBUG ===');
+              console.log('ref type:', typeof ref);
+              console.log('ref props:', JSON.stringify(ref.props?.style));
+              console.log('ref _nativeTag:', ref._nativeTag);
+            }
           }}
         >
           RED TEXT TEST
         </Text>
+        <Text style={[{color: '#00ff00'}, {fontSize: 14}]}>GREEN ARRAY STYLE</Text>
       </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
