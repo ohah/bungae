@@ -262,19 +262,13 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      {/* 테스트 A: 보이는 배지와 동일 스타일, top만 다름 */}
-      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: 'red', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16}}>
-        <Text style={{color: '#000', fontSize: 12, fontWeight: '600'}}>TEST-A right:16</Text>
-      </View>
-
-      {/* 테스트 B: left 사용 */}
-      <View style={{position: 'absolute', top: 155, left: 16, backgroundColor: 'blue', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16}}>
-        <Text style={{color: '#000', fontSize: 12, fontWeight: '600'}}>TEST-B left:16</Text>
-      </View>
-
-      {/* 테스트 C: StyleSheet 사용 */}
-      <View style={styles.bundlerBadge}>
-        <Text style={styles.bundlerText}>TEST-C styles</Text>
+      {/* 색상 테스트 */}
+      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: '#333', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', gap: 8}}>
+        <Text style={{color: '#fff', fontSize: 12}}>fff</Text>
+        <Text style={{color: 'white', fontSize: 12}}>white</Text>
+        <Text style={{color: '#ffffff', fontSize: 12}}>ffffff</Text>
+        <Text style={{color: 'rgb(255,255,255)', fontSize: 12}}>rgb</Text>
+        <Text style={{color: '#000', fontSize: 12}}>000</Text>
       </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
