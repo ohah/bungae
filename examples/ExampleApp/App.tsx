@@ -6,7 +6,7 @@
  */
 
 import { NewAppScreen } from '@react-native/new-app-screen';
-import { useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
@@ -258,17 +258,8 @@ function AppContent() {
     }
   };
 
-  console.log('=== BUILD MARKER v7 ===');
-
   return (
     <View style={styles.container}>
-      {/* 스타일 디버깅: createElement 직접 호출 vs JSX */}
-      <View style={{position: 'absolute', top: 155, right: 16, padding: 8, borderRadius: 16, backgroundColor: '#333'}}>
-        <Text style={{color: '#ff0000', fontSize: 18}}>JSX: red text</Text>
-        {React.createElement(Text, {style: {color: '#00ff00', fontSize: 18}}, 'createElement: green text')}
-        {React.createElement('RCTText', {style: {color: '#0000ff', fontSize: 18}}, 'RCTText: blue text')}
-      </View>
-
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
 
       {/* Bundler Info Badge */}
