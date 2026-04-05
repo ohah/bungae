@@ -258,7 +258,14 @@ function AppContent() {
     }
   };
 
-  console.log('=== BUILD MARKER v3 ===');
+  console.log('=== BUILD MARKER v4 ===');
+  // @ts-ignore — ReactNativeStyleAttributes 디버깅
+  try {
+    const { getNativeComponentAttributes } = require('react-native/Libraries/ReactNative/getNativeComponentAttributes');
+    const config = getNativeComponentAttributes('RCTText');
+    console.log('[DEBUG] RCTText validAttributes.style:', config?.validAttributes?.style ? 'EXISTS (keys: ' + Object.keys(config.validAttributes.style).slice(0, 5).join(',') + '...)' : 'UNDEFINED');
+    console.log('[DEBUG] RCTText validAttributes.style.color:', JSON.stringify(config?.validAttributes?.style?.color));
+  } catch (e: any) { console.log('[DEBUG] Error:', e.message); }
 
   return (
     <View style={styles.container}>
