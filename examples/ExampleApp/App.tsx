@@ -258,14 +258,23 @@ function AppContent() {
     }
   };
 
-  console.log('=== BUILD MARKER v4 ===');
-  // @ts-ignore — ReactNativeStyleAttributes 디버깅
+  console.log('=== BUILD MARKER v6 ===');
+  // @ts-ignore — Fabric viewConfig 확인
   try {
-    const { getNativeComponentAttributes } = require('react-native/Libraries/ReactNative/getNativeComponentAttributes');
-    const config = getNativeComponentAttributes('RCTText');
-    console.log('[DEBUG] RCTText validAttributes.style:', config?.validAttributes?.style ? 'EXISTS (keys: ' + Object.keys(config.validAttributes.style).slice(0, 5).join(',') + '...)' : 'UNDEFINED');
-    console.log('[DEBUG] RCTText validAttributes.style.color:', JSON.stringify(config?.validAttributes?.style?.color));
-  } catch (e: any) { console.log('[DEBUG] Error:', e.message); }
+    // @ts-ignore
+    const registry = require('react-native/Libraries/Renderer/shims/ReactNativeViewConfigRegistry');
+    const textConfig = registry.get('RCTText');
+    console.log('[DEBUG] RCTText config:', textConfig ? 'EXISTS' : 'NULL');
+    if (textConfig) {
+      const hasStyle = textConfig.validAttributes?.style != null;
+      console.log('[DEBUG] validAttributes.style:', hasStyle ? 'EXISTS' : 'UNDEFINED/NULL');
+      if (hasStyle) {
+        const styleKeys = Object.keys(textConfig.validAttributes.style);
+        console.log('[DEBUG] style keys count:', styleKeys.length, 'first 5:', styleKeys.slice(0, 5).join(','));
+        console.log('[DEBUG] style.color:', JSON.stringify(textConfig.validAttributes.style.color));
+      }
+    }
+  } catch (e: any) { console.log('[DEBUG] Registry error:', e.message?.slice(0, 100)); }
 
   return (
     <View style={styles.container}>
