@@ -258,8 +258,15 @@ function AppContent() {
     }
   };
 
+  console.log('=== BUILD MARKER 2026-04-05-v2 ===');
+
   return (
     <View style={styles.container}>
+      {/* 최소 렌더링 테스트 */}
+      <Text style={{color: 'red', fontSize: 24, position: 'absolute', top: 200, left: 20, zIndex: 999}}>
+        RENDER TEST v2
+      </Text>
+
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
 
       {/* Bundler Info Badge */}
