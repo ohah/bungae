@@ -258,14 +258,24 @@ function AppContent() {
     }
   };
 
-  console.log('=== BUILD MARKER 2026-04-05-v2 ===');
+  console.log('=== BUILD MARKER v3 ===');
 
   return (
     <View style={styles.container}>
-      {/* 최소 렌더링 테스트 */}
-      <Text style={{color: 'red', fontSize: 24, position: 'absolute', top: 200, left: 20, zIndex: 999}}>
-        RENDER TEST v2
-      </Text>
+      {/* 테스트 A: 보이는 배지와 동일 스타일, top만 다름 */}
+      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: 'red', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16}}>
+        <Text style={{color: '#000', fontSize: 12, fontWeight: '600'}}>TEST-A right:16</Text>
+      </View>
+
+      {/* 테스트 B: left 사용 */}
+      <View style={{position: 'absolute', top: 155, left: 16, backgroundColor: 'blue', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16}}>
+        <Text style={{color: '#000', fontSize: 12, fontWeight: '600'}}>TEST-B left:16</Text>
+      </View>
+
+      {/* 테스트 C: StyleSheet 사용 */}
+      <View style={styles.bundlerBadge}>
+        <Text style={styles.bundlerText}>TEST-C styles</Text>
+      </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
 
