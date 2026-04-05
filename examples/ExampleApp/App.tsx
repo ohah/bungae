@@ -258,34 +258,15 @@ function AppContent() {
     }
   };
 
-  console.log('=== BUILD MARKER v6 ===');
-  // @ts-ignore — Fabric viewConfig 확인
-  try {
-    // @ts-ignore
-    const registry = require('react-native/Libraries/Renderer/shims/ReactNativeViewConfigRegistry');
-    const textConfig = registry.get('RCTText');
-    console.log('[DEBUG] RCTText config:', textConfig ? 'EXISTS' : 'NULL');
-    if (textConfig) {
-      const hasStyle = textConfig.validAttributes?.style != null;
-      console.log('[DEBUG] validAttributes.style:', hasStyle ? 'EXISTS' : 'UNDEFINED/NULL');
-      if (hasStyle) {
-        const styleKeys = Object.keys(textConfig.validAttributes.style);
-        console.log('[DEBUG] style keys count:', styleKeys.length, 'first 5:', styleKeys.slice(0, 5).join(','));
-        console.log('[DEBUG] style.color:', JSON.stringify(textConfig.validAttributes.style.color));
-      }
-    }
-  } catch (e: any) { console.log('[DEBUG] Registry error:', e.message?.slice(0, 100)); }
+  console.log('=== BUILD MARKER v7 ===');
 
   return (
     <View style={styles.container}>
-      {/* 스타일 속성별 테스트 */}
+      {/* 스타일 디버깅: createElement 직접 호출 vs JSX */}
       <View style={{position: 'absolute', top: 155, right: 16, padding: 8, borderRadius: 16, backgroundColor: '#333'}}>
-        <Text style={{color: '#ff0000', fontSize: 14}}>1. color only</Text>
-        <Text style={{backgroundColor: '#ff0000', fontSize: 14}}>2. bgColor on Text</Text>
-        <Text style={{color: '#ff0000', backgroundColor: '#00ff00', fontSize: 14}}>3. both</Text>
-        <Text style={{fontSize: 20}}>4. fontSize only</Text>
-        <Text style={{fontWeight: 'bold', fontSize: 14}}>5. bold</Text>
-        <Text style={{textDecorationLine: 'underline', fontSize: 14}}>6. underline</Text>
+        <Text style={{color: '#ff0000', fontSize: 18}}>JSX: red text</Text>
+        {React.createElement(Text, {style: {color: '#00ff00', fontSize: 18}}, 'createElement: green text')}
+        {React.createElement('RCTText', {style: {color: '#0000ff', fontSize: 18}}, 'RCTText: blue text')}
       </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
