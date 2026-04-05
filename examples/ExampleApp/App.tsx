@@ -262,13 +262,17 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      {/* 색상 테스트 */}
-      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: '#333', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, flexDirection: 'row', gap: 8}}>
-        <Text style={{color: '#fff', fontSize: 12}}>fff</Text>
-        <Text style={{color: 'white', fontSize: 12}}>white</Text>
-        <Text style={{color: '#ffffff', fontSize: 12}}>ffffff</Text>
-        <Text style={{color: 'rgb(255,255,255)', fontSize: 12}}>rgb</Text>
-        <Text style={{color: '#000', fontSize: 12}}>000</Text>
+      {/* 색상 디버깅 */}
+      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: '#333', padding: 8, borderRadius: 16}}>
+        <Text
+          style={{color: '#ff0000', fontSize: 14}}
+          onLayout={() => {
+            // @ts-ignore
+            console.log('Text style test - checking if color prop reaches native');
+          }}
+        >
+          RED TEXT TEST
+        </Text>
       </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
