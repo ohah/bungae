@@ -93,6 +93,11 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
     args.push(`--rn-platform=${rnPlatform}`);
 
+    // JSX 런타임: dev → jsxDEV (소스 위치 포함), prod → jsx/jsxs
+    if (config.dev) {
+      args.push('--jsx-dev');
+    }
+
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
     const prelude = [
       `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now();`,
