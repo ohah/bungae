@@ -262,22 +262,14 @@ function AppContent() {
 
   return (
     <View style={styles.container}>
-      {/* 색상 디버깅 — NativeText에 전달되는 style 확인 */}
-      <View style={{position: 'absolute', top: 155, right: 16, backgroundColor: '#333', padding: 8, borderRadius: 16}}>
-        <Text
-          style={{color: '#ff0000', fontSize: 14}}
-          ref={(ref: any) => {
-            if (ref) {
-              console.log('=== TEXT REF DEBUG ===');
-              console.log('ref type:', typeof ref);
-              console.log('ref props:', JSON.stringify(ref.props?.style));
-              console.log('ref _nativeTag:', ref._nativeTag);
-            }
-          }}
-        >
-          RED TEXT TEST
-        </Text>
-        <Text style={[{color: '#00ff00'}, {fontSize: 14}]}>GREEN ARRAY STYLE</Text>
+      {/* 스타일 속성별 테스트 */}
+      <View style={{position: 'absolute', top: 155, right: 16, padding: 8, borderRadius: 16, backgroundColor: '#333'}}>
+        <Text style={{color: '#ff0000', fontSize: 14}}>1. color only</Text>
+        <Text style={{backgroundColor: '#ff0000', fontSize: 14}}>2. bgColor on Text</Text>
+        <Text style={{color: '#ff0000', backgroundColor: '#00ff00', fontSize: 14}}>3. both</Text>
+        <Text style={{fontSize: 20}}>4. fontSize only</Text>
+        <Text style={{fontWeight: 'bold', fontSize: 14}}>5. bold</Text>
+        <Text style={{textDecorationLine: 'underline', fontSize: 14}}>6. underline</Text>
       </View>
 
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
