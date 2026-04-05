@@ -258,8 +258,22 @@ function AppContent() {
     }
   };
 
+  // === DEBUG: ZTS vs Metro 렌더링 디버깅 ===
+  console.log('=== ZTS Render Debug ===');
+  console.log('NewAppScreen type:', typeof NewAppScreen);
+  console.log('safeAreaInsets:', JSON.stringify(safeAreaInsets));
+
   return (
     <View style={styles.container}>
+      {/* DEBUG: normal flow 확인용 빨간 박스 */}
+      <View style={{backgroundColor: 'red', padding: 20, marginTop: 50}}>
+        <Text style={{color: 'white', fontSize: 18}}>DEBUG: Normal flow test</Text>
+        <Text style={{color: 'yellow', fontSize: 14}}>
+          NewAppScreen type: {typeof NewAppScreen}{'\n'}
+          safeAreaInsets: {JSON.stringify(safeAreaInsets)}
+        </Text>
+      </View>
+
       <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
 
       {/* Bundler Info Badge */}
