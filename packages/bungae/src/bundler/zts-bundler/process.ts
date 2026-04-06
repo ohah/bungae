@@ -150,8 +150,7 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     args.push('--watch-json');
   }
 
-  // Format: react-native defaults to IIFE in zts
-  // No need to set explicitly
+  // Format: RN은 자체 JS 컨텍스트에서 실행하므로 IIFE 불필요 (Metro도 미사용)
 
   return args;
 }
