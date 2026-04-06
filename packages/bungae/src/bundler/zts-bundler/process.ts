@@ -102,11 +102,13 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
     const prelude = [
-      `var __BUNDLE_START_TIME__=globalThis.nativePerformanceNow?nativePerformanceNow():Date.now();`,
+      `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now();`,
       `var __DEV__=${config.dev};`,
-      // 롤다운 호환: __BUNGAE_GLOBAL__로 글로벌 객체 참조 (native global 보존)
+      // __BUNGAE_GLOBAL__: 모듈 코드의 global 참조를 치환한 대상 (--define:global=__BUNGAE_GLOBAL__)
       `var __BUNGAE_GLOBAL__=typeof globalThis!=='undefined'?globalThis:typeof global!=='undefined'?global:typeof window!=='undefined'?window:this;`,
-      `var process=globalThis.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
+      // global: 폴리필/InitializeCore가 직접 참조하는 네이티브 글로벌 (Hermes가 미제공 시 폴백)
+      `if(typeof global==='undefined')var global=__BUNGAE_GLOBAL__;`,
+      `var process=__BUNGAE_GLOBAL__.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
     ].join('');
     args.push(`--banner:js=${prelude}`);
 
