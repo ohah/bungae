@@ -86,8 +86,9 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
   // Target: Hermes requires ES5 for React Native
   if (platform === 'react-native') {
     args.push('--target=es5');
-    // RN uses `global` instead of `globalThis` — define로 모듈 코드 치환 + banner로 폴리필용 변수 정의
-    args.push('--define:global=globalThis');
+    // 롤다운 호환: global → __BUNGAE_GLOBAL__로 치환 (global 자체는 보존).
+    // Metro/Hermes가 네이티브로 제공하는 global 객체를 덮어쓰지 않도록.
+    args.push('--define:global=__BUNGAE_GLOBAL__');
     // RN platform-specific extensions (.ios.js, .android.js)
     const rnPlatform =
       config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
@@ -101,10 +102,11 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
     const prelude = [
-      `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now();`,
+      `var __BUNDLE_START_TIME__=globalThis.nativePerformanceNow?nativePerformanceNow():Date.now();`,
       `var __DEV__=${config.dev};`,
-      `var global=typeof globalThis!=='undefined'?globalThis:this;`,
-      `var process=global.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
+      // 롤다운 호환: __BUNGAE_GLOBAL__로 글로벌 객체 참조 (native global 보존)
+      `var __BUNGAE_GLOBAL__=typeof globalThis!=='undefined'?globalThis:typeof global!=='undefined'?global:typeof window!=='undefined'?window:this;`,
+      `var process=globalThis.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
     ].join('');
     args.push(`--banner:js=${prelude}`);
 
