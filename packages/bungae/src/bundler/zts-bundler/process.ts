@@ -93,7 +93,8 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
     args.push(`--rn-platform=${rnPlatform}`);
 
-    // JSX 런타임: dev → jsxDEV (소스 위치 포함), prod → jsx/jsxs
+    // JSX 런타임: 롤리팝과 동일하게 automatic 사용.
+    // dev → jsxDEV (소스 위치 포함), prod → jsx/jsxs
     if (config.dev) {
       args.push('--jsx-dev');
     }
@@ -123,8 +124,14 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       args.push(`--run-before-main=${initCorePath}`);
     }
 
+    // codegen: codegenNativeComponent 사용 앱은 별도 Babel 플러그인 필요.
+    // bungae.config.ts의 transformer.babel.presets에 추가:
+    //   presets: ['@react-native/babel-plugin-codegen']
+    // ZTS는 Babel 직접 실행 불가이므로 --plugin으로 사전 변환된 코드를 전달.
+    // (대부분의 앱은 빌드 시 이미 codegen 완료 — runtime codegen 불필요)
+
     // RN 예약 전역 식별자 — polyfillGlobal()로 등록되는 이름과 모듈 변수 충돌 방지
-    // 롤리팝의 globalIdentifiers와 동일한 목록 (RN 0.83 기준)
+    // 롤다운의 globalIdentifiers와 동일한 목록 (RN 0.83 기준)
     for (const name of RN_GLOBAL_IDENTIFIERS) {
       args.push(`--global-identifier=${name}`);
     }
@@ -180,6 +187,7 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
       NODE_ENV: config.dev ? 'development' : 'production',
       ZTS_PROJECT_ROOT: config.root,
       ZTS_ASSET_EXTS: config.resolver.assetExts.join(','),
+      ZTS_RN_PLATFORM: config.platform === 'android' ? 'android' : 'ios',
     },
   });
 
@@ -250,6 +258,7 @@ export async function runZtsBuild(
         NODE_ENV: config.dev ? 'development' : 'production',
         ZTS_PROJECT_ROOT: config.root,
         ZTS_ASSET_EXTS: config.resolver.assetExts.join(','),
+        ZTS_RN_PLATFORM: config.platform === 'android' ? 'android' : 'ios',
       },
     });
 

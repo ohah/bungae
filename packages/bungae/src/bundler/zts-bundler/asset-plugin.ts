@@ -28,6 +28,10 @@ const ASSET_EXTS: string[] = process.env.ZTS_ASSET_EXTS
     ];
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT ?? process.cwd();
+const RN_PLATFORM = process.env.ZTS_RN_PLATFORM ?? 'ios';
+
+// iOS: 1x, 2x, 3x만 허용 (롤리팝 호환)
+const IOS_VALID_SCALES = new Set([1, 2, 3]);
 
 // AssetRegistry 가상 모듈 ID
 const VIRTUAL_ASSET_REGISTRY = '\0bungae:asset-registry';
@@ -54,6 +58,23 @@ function getImageSizeFromBuffer(buffer: Buffer, ext: string): { width: number; h
   } else if (ext === '.gif') {
     if (buffer.length >= 10 && buffer.toString('ascii', 0, 3) === 'GIF') {
       return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
+    }
+  } else if (ext === '.webp') {
+    // WebP: RIFF header + VP8 chunk
+    if (buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+      const chunk = buffer.toString('ascii', 12, 16);
+      if (chunk === 'VP8 ' && buffer.length >= 30) {
+        return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+      } else if (chunk === 'VP8L' && buffer.length >= 25) {
+        const bits = buffer.readUInt32LE(21);
+        return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
+      } else if (chunk === 'VP8X' && buffer.length >= 30) {
+        return { width: ((buffer[24]! | (buffer[25]! << 8) | (buffer[26]! << 16)) & 0xffffff) + 1, height: ((buffer[27]! | (buffer[28]! << 8) | (buffer[29]! << 16)) & 0xffffff) + 1 };
+      }
+    }
+  } else if (ext === '.bmp') {
+    if (buffer.length >= 26 && buffer[0] === 0x42 && buffer[1] === 0x4d) {
+      return { width: Math.abs(buffer.readInt32LE(18)), height: Math.abs(buffer.readInt32LE(22)) };
     }
   }
   return { width: 0, height: 0 };
@@ -105,7 +126,13 @@ function findScales(filePath: string): number[] {
       }
     }
 
-    return Array.from(scales).sort((a, b) => a - b);
+    // 플랫폼별 스케일 필터링: iOS는 1x, 2x, 3x만 유효
+    let result = Array.from(scales).sort((a, b) => a - b);
+    if (RN_PLATFORM === 'ios') {
+      result = result.filter((s) => IOS_VALID_SCALES.has(s));
+      if (result.length === 0) result = [1];
+    }
+    return result;
   } catch {
     return [1];
   }
