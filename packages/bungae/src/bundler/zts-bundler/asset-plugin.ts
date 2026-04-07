@@ -37,6 +37,19 @@ const IOS_VALID_SCALES = new Set([1, 2, 3]);
 const VIRTUAL_ASSET_REGISTRY = '\0bungae:asset-registry';
 const ASSET_REGISTRY_SPECIFIER = 'react-native/Libraries/Image/AssetRegistry';
 
+// HMRClient 교체 (롤리팝 방식: onLoad hook으로 Metro HMRClient를 ZTS HMR 클라이언트로 교체)
+const VIRTUAL_HMR_CLIENT = '\0bungae:hmr-client';
+const HMR_CLIENT_SUFFIX = '/Libraries/Utilities/HMRClient.js';
+// ZTS HMR 클라이언트 코드를 빌드 시 읽어서 인라인 (런타임에 파일 읽기 불필요)
+const ZTS_HMR_CLIENT_CODE = (() => {
+  try {
+    const { join } = require('node:path');
+    return readFileSync(join(__dirname, '../runtime/zts-hmr-client.js'), 'utf-8');
+  } catch {
+    return 'module.exports = { setup() {}, enable() {}, disable() {}, registerBundle() {}, log() {} }; module.exports.default = module.exports;';
+  }
+})();
+
 // ===== 이미지 치수 추출 =====
 // TODO: graph-bundler/utils.ts의 getImageSize와 중복 — 공용 유틸로 추출 필요
 
@@ -200,7 +213,10 @@ function handleMessage(msg: IpcMessage): string {
       return JSON.stringify({
         id: msg.id,
         name: 'bungae:react-native-asset',
-        filters: { resolveId: [ASSET_REGISTRY_SPECIFIER], load: [...ASSET_EXTS, VIRTUAL_ASSET_REGISTRY] },
+        filters: {
+          resolveId: [ASSET_REGISTRY_SPECIFIER],
+          load: [...ASSET_EXTS, VIRTUAL_ASSET_REGISTRY, VIRTUAL_HMR_CLIENT, HMR_CLIENT_SUFFIX],
+        },
         hooks: { resolveId: true, load: true, transform: false, renderChunk: false, generateBundle: false },
         config: {},
         error: null,
@@ -218,6 +234,10 @@ function handleMessage(msg: IpcMessage): string {
       // 가상 AssetRegistry 모듈
       if (msg.path === VIRTUAL_ASSET_REGISTRY) {
         return JSON.stringify({ id: msg.id, result: { contents: ASSET_REGISTRY_CODE }, error: null });
+      }
+      // HMRClient.js → ZTS HMR 클라이언트로 교체 (롤리팝 방식: onLoad intercept)
+      if (msg.path && msg.path.endsWith(HMR_CLIENT_SUFFIX)) {
+        return JSON.stringify({ id: msg.id, result: { contents: ZTS_HMR_CLIENT_CODE }, error: null });
       }
       // 에셋 파일
       const filePath = msg.path;

@@ -104,11 +104,7 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       // ZTS dev mode: __zts_register() 래핑 + HMR 런타임 주입 + React Refresh
       args.push('--dev');
 
-      // HMRClient.js를 ZTS HMR 클라이언트로 교체 (Metro HMRClient 대신)
-      const hmrClientPath = resolve(__dirname, '../runtime/zts-hmr-client.js');
-      if (existsSync(hmrClientPath)) {
-        args.push(`--alias:react-native/Libraries/Utilities/HMRClient=${hmrClientPath}`);
-      }
+      // HMRClient.js 교체는 asset-plugin의 onLoad hook으로 처리 (롤리팝 방식)
     }
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
