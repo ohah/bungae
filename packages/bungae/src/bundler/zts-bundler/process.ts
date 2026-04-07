@@ -22,6 +22,8 @@ export interface ZtsRebuildEvent {
   type: 'rebuild';
   success: boolean;
   changed?: string[];
+  updates?: Array<{ id: string; code: string }>; // --dev mode: per-module HMR codes
+  graph_changed?: boolean; // --dev mode: new imports added, full reload needed
   modules?: string[];
   bytes?: number;
   error?: string;
@@ -98,6 +100,15 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     // dev → jsxDEV (소스 위치 포함), prod → jsx/jsxs
     if (config.dev) {
       args.push('--jsx-dev');
+
+      // ZTS dev mode: __zts_register() 래핑 + HMR 런타임 주입 + React Refresh
+      args.push('--dev');
+
+      // HMRClient.js를 ZTS HMR 클라이언트로 교체 (Metro HMRClient 대신)
+      const hmrClientPath = resolve(__dirname, '../runtime/zts-hmr-client.js');
+      if (existsSync(hmrClientPath)) {
+        args.push(`--alias:react-native/Libraries/Utilities/HMRClient=${hmrClientPath}`);
+      }
     }
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의

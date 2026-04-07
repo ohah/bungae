@@ -1,8 +1,8 @@
 /**
  * Development server for ZTS Bundler
  *
- * Uses zts one-shot build for initial bundle, then file-watcher for rebuilds.
- * Bungae handles HTTP serving, RN dev middleware, Metro HMR protocol,
+ * Uses zts --watch-json --dev mode for incremental builds with HMR support.
+ * Bungae handles HTTP serving, RN dev middleware, custom ZTS HMR protocol,
  * and terminal shortcuts.
  */
 
@@ -18,7 +18,6 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { VERSION } from '../../../index';
-import { createFileWatcher, type FileWatcher } from '../../file-watcher';
 import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/server/dev-middleware';
 import { handleAssetRequest } from '../../graph-bundler/server/handlers/asset-handler';
 import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler';
@@ -26,7 +25,7 @@ import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-hand
 import { parseRequestUrl, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { printBanner } from '../../graph-bundler/utils';
-import { runZtsBuild } from '../process';
+import { spawnZtsWatch, type ZtsProcess } from '../process';
 
 /**
  * Start dev server with zts bundler backend
@@ -37,7 +36,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   const hostname = server?.host || '0.0.0.0';
 
   printBanner(VERSION);
-  console.log('📦 Using zts-bundler (Zig, fast)');
+  console.log('📦 Using zts-bundler (Zig, fast, HMR)');
   console.log(`Starting dev server on http://${hostname}:${port}`);
 
   // Temp directory for zts output
@@ -49,38 +48,6 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   let currentBundle: string | null = null;
   let currentSourceMap: string | null = null;
   let lastBuildError: string | null = null;
-  let isBuilding = false;
-
-  // Build function
-  const doBuild = async () => {
-    if (isBuilding) return;
-    isBuilding = true;
-    const startTime = Date.now();
-    console.log('[zts] Building...');
-
-    try {
-      const result = await runZtsBuild(config, outputPath);
-      // Check output file even if result reports failure (signal kill etc.)
-      if (existsSync(outputPath)) {
-        lastBuildError = null;
-        currentBundle = readFileSync(outputPath, 'utf-8');
-        if (existsSync(sourceMapPath)) {
-          currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
-        }
-        const elapsed = Date.now() - startTime;
-        const size = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
-        console.log(`[zts] Build success: ${size}KB in ${elapsed}ms`);
-      } else if (!result.success) {
-        lastBuildError = result.error ?? 'Unknown build error';
-        console.error(`[zts] Build failed: ${lastBuildError}`);
-      }
-    } catch (err) {
-      lastBuildError = err instanceof Error ? err.message : String(err);
-      console.error(`[zts] Build error: ${lastBuildError}`);
-    } finally {
-      isBuilding = false;
-    }
-  };
 
   // Load RN dev middleware
   const devMiddleware: DevMiddleware | null = await loadDevMiddleware(port, config.root);
@@ -135,8 +102,91 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     });
   });
 
-  // Initial build
-  await doBuild();
+  /**
+   * Send message to all connected HMR clients
+   */
+  const sendToClients = (msg: object) => {
+    if (hmrClients.size === 0) return;
+    const msgStr = JSON.stringify(msg);
+    for (const client of hmrClients) {
+      try {
+        client.send(msgStr);
+      } catch {
+        /* disconnected */
+      }
+    }
+  };
+
+  // Spawn ZTS in watch mode — handles file watching + incremental rebuilds
+  const ztsProcess: ZtsProcess = spawnZtsWatch(config, outputPath);
+
+  // Wait for initial build
+  await new Promise<void>((resolve) => {
+    const onReady = () => {
+      ztsProcess.removeListener('ready', onReady);
+      ztsProcess.removeListener('error', onError);
+      // Read the initial bundle from output file
+      if (existsSync(outputPath)) {
+        currentBundle = readFileSync(outputPath, 'utf-8');
+        if (existsSync(sourceMapPath)) {
+          currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
+        }
+        const size = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
+        console.log(`[zts] Initial build: ${size}KB`);
+      } else {
+        lastBuildError = 'Initial build produced no output';
+        console.error(`[zts] ${lastBuildError}`);
+      }
+      resolve();
+    };
+    const onError = (error: Error) => {
+      ztsProcess.removeListener('ready', onReady);
+      ztsProcess.removeListener('error', onError);
+      lastBuildError = error.message;
+      console.error(`[zts] Initial build error: ${lastBuildError}`);
+      resolve();
+    };
+    ztsProcess.on('ready', onReady);
+    ztsProcess.on('error', onError);
+  });
+
+  // Handle rebuild events from ZTS watch mode
+  ztsProcess.on('rebuild', (event) => {
+    if (!event.success) {
+      lastBuildError = event.error ?? 'Unknown build error';
+      console.error(`[zts] Build failed: ${lastBuildError}`);
+      sendToClients({ type: 'hmr:error', message: lastBuildError });
+      return;
+    }
+
+    // Build succeeded — update cached bundle
+    lastBuildError = null;
+    if (existsSync(outputPath)) {
+      currentBundle = readFileSync(outputPath, 'utf-8');
+      if (existsSync(sourceMapPath)) {
+        currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
+      }
+    }
+
+    const changedCount = event.changed?.length ?? 0;
+    const updatesCount = event.updates?.length ?? 0;
+
+    if (event.graph_changed) {
+      // Module graph changed (new imports added) — full reload required
+      console.log(`[zts] Graph changed (${changedCount} files), sending full reload`);
+      sendToClients({ type: 'hmr:reload' });
+    } else if (event.updates && event.updates.length > 0) {
+      // Incremental HMR update — send changed module codes
+      console.log(`[zts] HMR update: ${updatesCount} module(s) changed`);
+      sendToClients({ type: 'hmr:update-start' });
+      sendToClients({ type: 'hmr:update', modules: event.updates });
+      sendToClients({ type: 'hmr:update-done' });
+    } else {
+      // No module-level changes (non-dev mode fallback)
+      console.log(`[zts] Rebuilt (${changedCount} files), no HMR data — sending reload`);
+      sendToClients({ type: 'hmr:reload' });
+    }
+  });
 
   // HTTP request handler
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -173,33 +223,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       }
 
       if (!currentBundle) {
-        // If build is in progress, wait for it
-        if (isBuilding) {
-          console.log('[zts] Bundle requested while building, waiting...');
-          await new Promise<void>((resolve) => {
-            const check = setInterval(() => {
-              if (!isBuilding) {
-                clearInterval(check);
-                resolve();
-              }
-            }, 100);
-            // Timeout after 120s
-            setTimeout(() => {
-              clearInterval(check);
-              resolve();
-            }, 120000);
-          });
-        }
-        // Check again after waiting
-        if (lastBuildError) {
-          const errorJs = `throw new Error(${JSON.stringify(lastBuildError)});`;
-          sendText(res, 200, errorJs, 'application/javascript');
-          return;
-        }
-        if (!currentBundle) {
-          sendText(res, 503, 'Bundle not ready yet. Build may have failed - check server logs.');
-          return;
-        }
+        sendText(res, 503, 'Bundle not ready yet. Build may have failed - check server logs.');
+        return;
       }
 
       res.writeHead(200, {
@@ -310,7 +335,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   console.log(`\n✅ Dev server running at http://${hostname}:${port}`);
   console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
-  console.log(`   Bundler: zts (Zig-based, one-shot build)`);
+  console.log(`   Bundler: zts (Zig-based, dev mode + HMR)`);
 
   // Terminal shortcuts
   const useGlobalHotkey = server?.useGlobalHotkey ?? true;
@@ -333,45 +358,35 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     console.log('   i - iOS Sim       a - Android     c - Clear cache');
   }
 
-  // File watcher for rebuilds
-  let fileWatcher: FileWatcher | null = null;
-  if (config.dev) {
-    fileWatcher = createFileWatcher({
-      root: config.root,
-      onFileChange: async () => {
-        await doBuild();
-        // Notify HMR clients to reload
-        if (hmrClients.size > 0 && !lastBuildError) {
-          sendHmrReload(hmrClients);
-        } else if (hmrClients.size > 0 && lastBuildError) {
-          sendHmrError(hmrClients, lastBuildError);
-        }
-      },
-      debounceMs: 300,
-    });
-  }
-
   // Shutdown
   let isShuttingDown = false;
 
   const shutdown = async (signal: string) => {
     if (isShuttingDown) return;
     isShuttingDown = true;
-    console.log(`\n${signal} received, shutting down...`);
+
+    const isTestMode = process.env.NODE_ENV === 'test' || (globalThis as any).__BUNGAE_TEST_MODE__;
+    if (!isTestMode) {
+      console.log(`\n${signal} received, shutting down...`);
+    }
 
     try {
-      fileWatcher?.close();
+      ztsProcess.kill();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();
       await new Promise<void>((resolve, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });
-      console.log('Server stopped');
-      process.exit(0);
+      if (!isTestMode) {
+        console.log('Server stopped');
+        process.exit(0);
+      }
     } catch (error) {
       console.error('Error during shutdown:', error);
-      process.exit(1);
+      if (!isTestMode) {
+        process.exit(1);
+      }
     }
   };
 
@@ -380,53 +395,11 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   return {
     stop: async () => {
-      fileWatcher?.close();
+      ztsProcess.kill();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     },
   };
-}
-
-/**
- * Send HMR full-reload to all clients (Metro protocol)
- */
-function sendHmrReload(clients: Set<{ send: (msg: string) => void }>): void {
-  const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
-  const messages = [
-    { type: 'update-start', body: { isInitialUpdate: false } },
-    {
-      type: 'update',
-      body: { revisionId, isInitialUpdate: false, added: [], modified: [], deleted: [] },
-    },
-    { type: 'update-done' },
-  ];
-  for (const msg of messages) {
-    const msgStr = JSON.stringify(msg);
-    for (const client of clients) {
-      try {
-        client.send(msgStr);
-      } catch {
-        /* disconnected */
-      }
-    }
-  }
-}
-
-/**
- * Send HMR error to all clients (Metro protocol)
- */
-function sendHmrError(clients: Set<{ send: (msg: string) => void }>, error: string): void {
-  const errorMessage = JSON.stringify({
-    type: 'error',
-    body: { type: 'BuildError', message: error },
-  });
-  for (const client of clients) {
-    try {
-      client.send(errorMessage);
-    } catch {
-      /* disconnected */
-    }
-  }
 }
