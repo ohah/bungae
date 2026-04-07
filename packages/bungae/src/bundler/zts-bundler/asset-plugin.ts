@@ -44,7 +44,7 @@ const HMR_CLIENT_SUFFIX = '/Libraries/Utilities/HMRClient.js';
 const ZTS_HMR_CLIENT_CODE = (() => {
   try {
     const { join } = require('node:path');
-    return readFileSync(join(__dirname, '../runtime/zts-hmr-client.js'), 'utf-8');
+    return readFileSync(join(__dirname, 'runtime/zts-hmr-client.js'), 'utf-8');
   } catch {
     return 'module.exports = { setup() {}, enable() {}, disable() {}, registerBundle() {}, log() {} }; module.exports.default = module.exports;';
   }
