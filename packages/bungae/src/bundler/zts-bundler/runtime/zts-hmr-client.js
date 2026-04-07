@@ -95,4 +95,6 @@ var HMRClient = {
   },
 };
 
+// RN의 setUpBatchedBridge가 require('HMRClient').default로 접근하므로 default export 필요
 module.exports = HMRClient;
+module.exports.default = HMRClient;
