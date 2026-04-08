@@ -22,7 +22,7 @@ import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/serve
 import { handleAssetRequest } from '../../graph-bundler/server/handlers/asset-handler';
 import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler';
 import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
-import { parseRequestUrl, sendText } from '../../graph-bundler/server/utils';
+import { parseRequestUrl, readJsonBody, sendJson, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { printBanner } from '../../graph-bundler/utils';
 import { spawnZtsWatch, type ZtsProcess } from '../process';
@@ -245,8 +245,15 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       res.writeHead(200, {
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(currentSourceMap),
+        'Access-Control-Allow-Origin': 'devtools://devtools',
       });
       res.end(currentSourceMap);
+      return;
+    }
+
+    // Symbolicate (스택트레이스 심볼리케이션)
+    if (url.pathname === '/symbolicate' && req.method === 'POST') {
+      await handleSymbolicateRequest(req, res, config, currentSourceMap);
       return;
     }
 
@@ -402,4 +409,95 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
     },
   };
+}
+
+/**
+ * Symbolicate stack traces using source map (스택트레이스 심볼리케이션)
+ */
+async function handleSymbolicateRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  config: ResolvedConfig,
+  sourceMap: string | null,
+): Promise<void> {
+  try {
+    const body = await readJsonBody<{
+      stack?: Array<{
+        file?: string;
+        lineNumber?: number;
+        column?: number;
+        methodName?: string;
+      }>;
+    }>(req);
+
+    const stack = body.stack || [];
+
+    if (!sourceMap) {
+      sendJson(res, 200, { stack, codeFrame: null });
+      return;
+    }
+
+    const { SourceMapConsumer } = await import('source-map');
+    const consumer = await new SourceMapConsumer(JSON.parse(sourceMap));
+
+    try {
+      const symbolicatedStack = stack.map((frame) => {
+        if (!frame.file || frame.lineNumber == null) return { ...frame };
+        try {
+          const pos = consumer.originalPositionFor({
+            line: frame.lineNumber,
+            column: frame.column ?? 0,
+          });
+          if (pos.source == null || pos.line == null) return { ...frame };
+
+          const { resolve } = require('path');
+          let sourcePath = pos.source;
+          if (sourcePath.startsWith('/')) {
+            // absolute path — keep as is
+          } else {
+            sourcePath = resolve(config.root, sourcePath);
+          }
+
+          return {
+            ...frame,
+            file: sourcePath,
+            lineNumber: pos.line,
+            column: pos.column ?? 0,
+            methodName: pos.name ?? frame.methodName,
+          };
+        } catch {
+          return { ...frame };
+        }
+      });
+
+      // Code frame for first non-internal frame
+      let codeFrame: { content: string; location: { row: number; column: number }; fileName: string } | null = null;
+      for (const frame of symbolicatedStack) {
+        if (frame.file && frame.lineNumber != null && !frame.file.includes('.bundle')) {
+          try {
+            const source = readFileSync(frame.file, 'utf-8');
+            const lines = source.split('\n');
+            const targetLine = (frame.lineNumber ?? 1) - 1;
+            if (targetLine >= 0 && targetLine < lines.length) {
+              const startLine = Math.max(0, targetLine - 2);
+              const endLine = Math.min(lines.length - 1, targetLine + 2);
+              codeFrame = {
+                content: lines.slice(startLine, endLine + 1).join('\n'),
+                location: { row: frame.lineNumber ?? 1, column: frame.column ?? 0 },
+                fileName: frame.file,
+              };
+              break;
+            }
+          } catch { /* file read failed */ }
+        }
+      }
+
+      sendJson(res, 200, { stack: symbolicatedStack, codeFrame });
+    } finally {
+      consumer.destroy();
+    }
+  } catch (error) {
+    console.error('Symbolication failed:', error);
+    sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+  }
 }
