@@ -46,6 +46,7 @@ export async function loadDevMiddleware(
         };
         unstable_experiments?: {
           enableNetworkInspector?: boolean;
+          enableStandaloneFuseboxShell?: boolean;
         };
       }) => DevMiddleware;
     };
@@ -69,6 +70,7 @@ export async function loadDevMiddleware(
       },
       unstable_experiments: {
         enableNetworkInspector: true,
+        enableStandaloneFuseboxShell: true,
       },
     });
 
