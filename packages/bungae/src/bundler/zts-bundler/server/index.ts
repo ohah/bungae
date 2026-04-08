@@ -437,8 +437,17 @@ async function handleSymbolicateRequest(
       return;
     }
 
+    let parsedMap: any;
+    try {
+      parsedMap = JSON.parse(sourceMap);
+    } catch {
+      // 소스맵이 아직 쓰이는 중이거나 손상된 경우
+      sendJson(res, 200, { stack, codeFrame: null });
+      return;
+    }
+
     const { SourceMapConsumer } = await import('source-map');
-    const consumer = await new SourceMapConsumer(JSON.parse(sourceMap));
+    const consumer = await new SourceMapConsumer(parsedMap);
 
     try {
       const symbolicatedStack = stack.map((frame) => {
