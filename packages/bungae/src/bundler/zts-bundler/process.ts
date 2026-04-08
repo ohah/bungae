@@ -129,12 +129,10 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       args.push(`--polyfill=${polyfillPath}`);
     }
 
-    // InitializeCore: 번들 맨 앞에서 실행 (polyfill).
-    // React보다 먼저 실행되어야 injectIntoGlobalHook이 React reconciler를 가로챔.
-    // --run-before-main은 entry 직전이라 React 이후 → DevTools/FastRefresh 미작동.
+    // InitializeCore: 엔트리 모듈 직전에 실행 (Metro runBeforeMainModule 호환)
     const initCorePath = tryResolve('react-native/Libraries/Core/InitializeCore', config.root);
     if (initCorePath) {
-      args.push(`--polyfill=${initCorePath}`);
+      args.push(`--run-before-main=${initCorePath}`);
     }
 
     // codegen: codegenNativeComponent 사용 앱은 별도 Babel 플러그인 필요.
