@@ -129,13 +129,10 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       args.push(`--polyfill=${polyfillPath}`);
     }
 
-    // InitializeCore: --inject로 entry 의존성에 추가.
-    // DFS 후위 순서: react-refresh/runtime → setUpReactRefresh(injectIntoGlobalHook)
-    // → React → InitializeCore → entry.
-    // --run-before-main은 모든 모듈 정의 후 실행되어 React 이후 → React Refresh 미작동.
+    // InitializeCore: 엔트리 모듈 직전에 실행 (Metro runBeforeMainModule 호환)
     const initCorePath = tryResolve('react-native/Libraries/Core/InitializeCore', config.root);
     if (initCorePath) {
-      args.push(`--inject:${initCorePath}`);
+      args.push(`--run-before-main=${initCorePath}`);
     }
 
     // codegen: codegenNativeComponent 사용 앱은 별도 Babel 플러그인 필요.
