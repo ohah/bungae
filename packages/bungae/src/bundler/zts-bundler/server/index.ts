@@ -64,7 +64,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // Create RN CLI server middleware
   const { websocketEndpoints: cliWebsocketEndpoints, messageSocketEndpoint } =
-    createDevServerMiddleware({ port, host: hostname, watchFolders: [config.root] });
+    createDevServerMiddleware({ port, host: hostname, watchFolders: [] }); // HMR이 파일 변경 처리 — CLI 자체 watch 비활성화 (rollipop 동일)
   const broadcast = messageSocketEndpoint.broadcast;
   console.log('   CLI endpoints:', Object.keys(cliWebsocketEndpoints).join(', '));
 
