@@ -168,6 +168,13 @@ async function build() {
     console.log('  ✓ Runtime (bungae-hmr-client.js) copied');
   }
 
+  // Copy ZTS HMR client to dist (asset-plugin.ts가 readFileSync로 읽음)
+  const ztsHmrClientSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'runtime', 'zts-hmr-client.js');
+  if (existsSync(ztsHmrClientSrc)) {
+    copyFileSync(ztsHmrClientSrc, join(runtimeDir, 'zts-hmr-client.js'));
+    console.log('  ✓ Runtime (zts-hmr-client.js) copied');
+  }
+
   // Copy ZTS asset plugin (standalone subprocess — must not be bundled)
   const assetPluginSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'asset-plugin.ts');
   if (existsSync(assetPluginSrc)) {
