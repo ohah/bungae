@@ -11,36 +11,34 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 ## 번들러 선택
 
-Bungae는 세 가지 번들러 구현을 제공합니다:
+Bungae는 두 가지 번들러 구현을 제공합니다:
 
-| 번들러  | 설명                      | 상태                   | 사용 시기                     |
-| ------- | ------------------------- | ---------------------- | ----------------------------- |
-| `zts`   | Zig 기반, 고성능          | **메인 개발 대상**     | 개발 서버, HMR, 빠른 빌드    |
-| `graph` | Babel 기반, Metro 호환    | **안정**               | Metro 호환 필요 시            |
-| `oxc`   | Rolldown 기반, ESM 번들링 | 개발 환경 완료         | ESM 번들링, HMR, Fast Refresh |
-| `bun`   | Bun.Transpiler 기반       | 보류                   | 구현 예정 없음                |
+| 번들러  | 설명                   | 상태               | 사용 시기                  |
+| ------- | ---------------------- | ------------------ | -------------------------- |
+| `zts`   | Zig 기반, 고성능       | **메인 (권장)**    | 개발 서버, HMR, 빠른 빌드 |
+| `graph` | Babel 기반, Metro 호환 | **안정**           | Metro 완전 호환 필요 시    |
 
 ### 설정 방법
 
 ```typescript
 // bungae.config.ts
 export default {
-  bundler: 'zts', // 'zts' (권장) 또는 'graph' 또는 'oxc'
+  bundler: 'zts', // 'zts' (권장) 또는 'graph'
   // ...
 };
 ```
 
 ### 번들러 비교
 
-| 기능              | zts-bundler (Zig)  | graph-bundler (Babel) | oxc-bundler (Rolldown)   |
-| ----------------- | ------------------ | --------------------- | ------------------------ |
-| 빌드 속도         | 매우 빠름          | 느림                  | 빠름                     |
-| HMR               | 지원 (모듈 단위)   | 지원 (Metro 호환)     | 지원 (Patch HMR)         |
-| Fast Refresh      | 지원               | 지원                  | 지원                     |
-| 멀티 플랫폼       | 동시 서빙          | 동시 서빙             | 단일 플랫폼              |
-| 콘솔 포워딩       | 지원               | 부분                  | 미지원                   |
-| Metro 호환성      | 부분 호환          | 완전 호환             | ESM 방식                 |
-| 에러 오버레이     | Metro 포맷         | Metro 포맷            | 기본                     |
+| 기능              | zts-bundler (Zig)  | graph-bundler (Babel) |
+| ----------------- | ------------------ | --------------------- |
+| 빌드 속도         | 매우 빠름          | 느림                  |
+| HMR               | 지원 (모듈 단위)   | 지원 (Metro 호환)     |
+| Fast Refresh      | 지원               | 지원                  |
+| 멀티 플랫폼       | 동시 서빙          | 동시 서빙             |
+| 콘솔 포워딩       | 지원               | 부분                  |
+| Metro 호환성      | 부분 호환          | 완전 호환             |
+| 에러 오버레이     | Metro 포맷         | Metro 포맷            |
 
 ### 구현 위치
 
@@ -55,21 +53,15 @@ bundler/
 │   │   └── zts-hmr-client.js  # HMR 클라이언트 (콘솔 포워딩 포함)
 │   └── server/
 │       └── index.ts      # 개발 서버 (멀티플랫폼, HMR, 에러 오버레이)
-├── graph-bundler/        # Babel 기반 (Metro 호환, 안정)
-│   ├── graph.ts          # 의존성 그래프 빌드
-│   ├── transformer.ts    # Babel 변환
-│   ├── utils.ts          # 배너, 로그 유틸리티 (Metro 스타일 뱃지)
-│   ├── terminal-actions.ts  # 터미널 단축키 (r/d/j/i/a/c)
-│   ├── server/
-│   │   ├── index.ts      # 개발 서버
-│   │   └── dev-middleware.ts  # @react-native/dev-middleware 통합
-│   └── ...
-└── oxc-bundler/          # Rolldown 기반 (ESM, HMR 지원)
-    ├── bundler.ts        # Rolldown 빌드 + 공유 옵션
-    ├── plugins/          # Rolldown 플러그인
-    ├── hmr/              # HMR 시스템 (DevEngine)
-    └── server/
-        └── index.ts      # HTTP + WebSocket HMR 서버
+└── graph-bundler/        # Babel 기반 (Metro 호환, 안정)
+    ├── graph.ts          # 의존성 그래프 빌드
+    ├── transformer.ts    # Babel 변환
+    ├── utils.ts          # 배너, 로그 유틸리티 (Metro 스타일 뱃지)
+    ├── terminal-actions.ts  # 터미널 단축키 (r/d/j/i/a/c)
+    ├── server/
+    │   ├── index.ts      # 개발 서버
+    │   └── dev-middleware.ts  # @react-native/dev-middleware 통합
+    └── ...
 ```
 
 ### CLI 명령어
@@ -394,11 +386,6 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
    - `extractExports()`, `extractImports()` - import/export 분석
    - `hasSideEffects()` - side effects 체크
 
-### Phase 4: Bun.Transpiler 최적화 ⏸️ 보류
-
-`config.bundler: 'bun'` — graph-bundler의 Bun.Transpiler 최적화 버전.
-OXC 번들러(Rolldown)에 집중하기 위해 추가 개발 보류.
-
 ### ZTS 번들러 (Zig 기반) — 메인 개발 대상 ✅
 
 `config.bundler: 'zts'` 옵션으로 선택.
@@ -452,90 +439,6 @@ Zig 기반 트랜스파일러(ZTS)를 사용한 고성능 React Native 번들링
    - 에셋 복사 (Android drawable/iOS 폴더)
 
 #### 구현 위치: `bundler/zts-bundler/`
-
-### OXC 번들러 (Rolldown 기반)
-
-`config.bundler: 'oxc'` 옵션으로 선택 가능.
-
-Rolldown을 사용한 ESM 기반 React Native 번들링.
-ZTS 번들러로 메인 개발이 이동하여 현재는 대체 옵션.
-
-#### Phase 1: 핵심 번들링 ✅
-
-- Rolldown `strictExecutionOrder`로 ESM 모듈 실행 순서 보장
-- 플러그인: flow-strip, asset, json, platform-resolver, prelude, hermes-compat
-- Hermes 바이트코드 컴파일 지원
-- 구현 위치: `bundler/oxc-bundler/`
-
-#### Phase 2: 개발 환경 ✅
-
-- **개발 서버**: HTTP + WebSocket HMR
-- **HMR**: Rolldown DevEngine Patch HMR (변경 모듈만 패치 전송, 상태 보존)
-- **React Refresh**: `import.meta.hot.accept()` 경계 래핑, Fast Refresh 지원
-- **HMR 클라이언트**: metro-runtime HMRClient API 호환 (`new HMRClient(url)` + 이벤트 기반)
-- **모듈 등록**: DevEngine에 클라이언트 모듈 등록 → 정확한 패치 생성
-- **터미널 단축키**: graph-bundler 재사용
-
-#### Hermes 호환성: hermes-compat 플러그인 ✅ 해결됨
-
-`hermes-compat` 플러그인은 Rolldown 출력을 Hermes/React Native에서 실행 가능하도록 후처리합니다.
-구현 위치: `oxc-bundler/plugins/hermes-compat.ts`
-
-**1. ES5 다운레벨 (SWC renderChunk)**
-
-Hermes는 class expressions, private class fields를 지원하지 않음.
-SWC `renderChunk`로 `target: 'es5'` 변환하여 class → function, `#private` → 일반 속성으로 변환.
-
-**2. IIFE 래핑 (intro/outro)**
-
-Rolldown `format: 'esm'` 출력에서 top-level `var` 선언이 `globalThis`에 `configurable: false` 속성 생성.
-`intro`/`outro`로 IIFE 래핑하여 `var` 선언이 function scope에 머물도록 함.
-
-**3. RN 폴리필 ES5 변환**
-
-RN 폴리필 파일(console.js, error-guard.js)에 ES6+ 구문 포함.
-Babel로 Flow 타입 제거 후 SWC `target: 'es5'`로 변환.
-
-#### 해결된 Rolldown 이슈
-
-**1. `(void 0)` 치환** ✅ 근본 해결
-
-- **원인**: flow-strip 플러그인이 CJS Flow 파일을 `moduleType: 'jsx'`(ESM)로 반환 → Rolldown이 named export를 못 찾아 `(void 0)` 치환
-- **해결**: flow-strip에서 hermes AST 기반 CJS 감지 (`isCommonJSFromAST`) → CJS 파일은 `moduleType: 'js'`로 반환 → Rolldown이 `__commonJSMin` 래퍼로 올바르게 처리
-
-**2. `__defProp` configurable** ✅ Rolldown 포크에서 해결
-
-- **원인**: Rolldown 런타임의 `__exportAll`, `__copyProps` 등이 `configurable: false`로 export 생성 → RN dev mode 충돌
-- **해결**: Rolldown 포크(`ohah/rolldown`)에서 런타임 헬퍼에 `configurable: true` 직접 추가
-
-#### Rolldown upstream 기여 계획
-
-**1. `format: 'iife'`에서 `strictExecutionOrder` 지원** (우선순위: 낮음)
-
-- **문제**: `format: 'iife'`를 사용하면 top-level var 문제가 자연스럽게 해결되지만,
-  `strictExecutionOrder`와의 호환성 확인 필요
-- **현재**: `format: 'esm'` + `intro`/`outro`로 수동 IIFE 래핑
-- **이상적**: `format: 'iife'` + `strictExecutionOrder` 조합이 정상 동작하면
-  `intro`/`outro` 해킹 불필요
-
-**2. `__defProp` configurable upstream 기여** (우선순위: 중간)
-
-- Rolldown 포크에서 해결한 `configurable: true` 변경을 upstream PR로 제출 예정
-- 포크 의존성을 제거하고 vanilla Rolldown 사용 가능하게 됨
-
-#### Rolldown DevEngine ✅ 전환 완료
-
-Rolldown의 실험적 `dev()` API (DevEngine)로 전환 완료:
-
-- **Patch HMR**: 변경 모듈만 패치 코드 전송 (전체 리빌드 아님)
-- **`renderChunk` 지원 확인**: DevEngine이 `renderChunk` 훅을 실행하여 hermes-compat (SWC es5) 적용
-- **`devMode.implement`**: runtime.ts를 `transformSync`로 사전 컴파일하여 전달
-- **React Refresh**: `import.meta.hot.accept()` 경계로 컴포넌트 상태 보존
-
-**해결된 Rolldown 이슈**:
-
-- `(void 0)` 치환: flow-strip CJS 감지로 근본 해결 (정규식 워크어라운드 제거)
-- `__defProp` configurable: Rolldown 포크에서 런타임 헬퍼 수정 (정규식 워크어라운드 제거)
 
 ### Phase 5: 향후 고려사항
 
