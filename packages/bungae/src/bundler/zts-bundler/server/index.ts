@@ -65,6 +65,43 @@ function postProcessSourceMap(rawJson: string, projectRoot: string): string {
 }
 
 /**
+ * CDP 디버거 WebSocket에 Debugger.setBlackboxPatterns 명령을 주입.
+ * Chrome DevTools에서 수동으로 index.bundle을 이그노어 리스트에 추가하는 것과 동일.
+ * Debugger.enable 응답 후 blackbox 패턴을 자동 설정한다.
+ */
+function injectBlackboxPattern(ws: WebSocket): void {
+  const originalSend = ws.send.bind(ws);
+  let injected = false;
+
+  // 서버→클라이언트 메시지 가로채기: Debugger.enable 응답을 감지
+  ws.on('message', (data: Buffer | ArrayBuffer | Buffer[]) => {
+    if (injected) return;
+    try {
+      const msg = JSON.parse(data.toString());
+      // Debugger.enable 요청이 오면 응답 후 blackbox 패턴 주입
+      if (msg.method === 'Debugger.enable') {
+        injected = true;
+        // 약간의 지연 후 주입 (Debugger.enable 응답이 먼저 전달되도록)
+        setTimeout(() => {
+          try {
+            const cmd = JSON.stringify({
+              id: 99999,
+              method: 'Debugger.setBlackboxPatterns',
+              params: { patterns: ['\\.bundle(\\?|$)'] },
+            });
+            originalSend(cmd);
+          } catch {
+            /* connection closed */
+          }
+        }, 100);
+      }
+    } catch {
+      /* non-JSON message */
+    }
+  });
+}
+
+/**
  * Start dev server with zts bundler backend
  */
 export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
@@ -515,7 +552,12 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (devMiddleware) {
       for (const [path, handler] of Object.entries(devMiddleware.websocketEndpoints)) {
         if (url.pathname === path || url.pathname.startsWith(path + '/')) {
-          handler.handleUpgrade(req, socket, head, (ws) => handler.emit('connection', ws, req));
+          handler.handleUpgrade(req, socket, head, (ws) => {
+            handler.emit('connection', ws, req);
+            // CDP 디버거 연결 시 번들 스크립트를 자동 blackbox.
+            // Chrome DevTools 이그노어 리스트에 수동으로 index.bundle 추가하는 것과 동일 효과.
+            injectBlackboxPattern(ws as unknown as WebSocket);
+          });
           return;
         }
       }
