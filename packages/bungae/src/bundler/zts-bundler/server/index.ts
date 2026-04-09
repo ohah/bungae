@@ -214,7 +214,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         if (msg.type === 'register-entrypoints') {
           ws.send(JSON.stringify({ type: 'bundle-registered' }));
         } else if (msg.type === 'log') {
-          // Console forwarding: client → terminal (box style)
+          // Console forwarding: client → terminal (Metro-style)
           const level: string = msg.level || 'log';
           const data: unknown[] = Array.isArray(msg.data) ? msg.data : [msg.data];
 
@@ -225,7 +225,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             : level === 'info' ? colors.cyan
             : colors.white;
 
-          // Format each argument
+          const badge = `${levelColor}${colors.inverse}${colors.bold} ${level.toUpperCase()} ${colors.reset}`;
+
           const formatted = data.map((arg) => {
             if (typeof arg === 'object' && arg !== null) {
               try { return JSON.stringify(arg, null, 2); } catch { return String(arg); }
@@ -233,17 +234,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             return String(arg);
           }).join(' ');
 
-          const lines = formatted.split('\n');
-          const label = ` ${level.toUpperCase()} `;
-          const width = Math.max(50, ...lines.map((l) => l.length + 4));
-          const bar = '─'.repeat(width - label.length - 2);
-
-          console.log(`${levelColor}┌─${colors.bold}${label}${colors.reset}${levelColor}${bar}┐${colors.reset}`);
-          for (const line of lines) {
-            const pad = width - line.length - 2;
-            console.log(`${levelColor}│${colors.reset} ${line}${' '.repeat(Math.max(0, pad - 1))}${levelColor}│${colors.reset}`);
-          }
-          console.log(`${levelColor}└${'─'.repeat(width)}┘${colors.reset}`);
+          console.log(`${badge} ${formatted}`);
         }
       } catch {
         /* ignore */
