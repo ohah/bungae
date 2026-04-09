@@ -34,6 +34,112 @@ import { colors, logInfo, logError, printBanner } from '../../graph-bundler/util
 import { spawnZtsWatch, type ZtsProcess } from '../process';
 
 /**
+ * VLQ Base64 인코딩 (소스맵 매핑 후처리용)
+ */
+const VLQ_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+function encodeVlq(value: number): string {
+  let v = value < 0 ? ((-value) << 1) | 1 : value << 1;
+  let result = '';
+  do {
+    let digit = v & 0x1f;
+    v >>>= 5;
+    if (v > 0) digit |= 0x20;
+    result += VLQ_CHARS[digit];
+  } while (v > 0);
+  return result;
+}
+
+/**
+ * zts 소스맵 후처리: prologue 영역에 identity mapping + x_google_ignoreList 추가.
+ *
+ * 문제: zts 번들의 prologue(banner/polyfill/runtime)에는 소스맵 매핑이 없어서
+ * console.log가 폴리필 래퍼 라인을 표시함.
+ *
+ * 해결: prologue 영역에 가상 소스 "__prologue__"를 매핑하고 x_google_ignoreList에 추가.
+ * DevTools가 폴리필 프레임을 자동으로 무시하고 유저 코드 프레임을 표시.
+ */
+function postProcessSourceMap(rawJson: string): string {
+  try {
+    const map = JSON.parse(rawJson);
+    if (map.version !== 3 || !map.mappings || !map.sources) return rawJson;
+
+    // 매핑 문자열에서 첫 번째 실제 매핑이 시작되는 줄 번호 찾기 (= prologue 줄 수)
+    // 세미콜론만 있는 앞부분 = 매핑 없는 prologue 줄
+    let prologueLines = 0;
+    for (let i = 0; i < map.mappings.length; i++) {
+      if (map.mappings[i] === ';') {
+        prologueLines++;
+      } else {
+        break;
+      }
+    }
+
+    if (prologueLines === 0) return rawJson; // prologue 없으면 그대로
+
+    // 가상 소스 "__prologue__" 추가 (sources 배열 끝에)
+    const prologueSourceIdx = map.sources.length;
+    map.sources.push('__prologue__');
+    if (map.sourcesContent) {
+      map.sourcesContent.push('// bundle prologue (polyfills, runtime helpers)\n');
+    }
+
+    // prologue 영역에 identity mapping 생성
+    // 첫 줄: genCol=0, srcIdx=prologueSourceIdx, origLine=0, origCol=0
+    // 이후 줄: genCol=0, srcIdx=0(delta), origLine=+1(delta), origCol=0
+    const firstSegment = encodeVlq(0) + encodeVlq(prologueSourceIdx) + encodeVlq(0) + encodeVlq(0);
+    const nextSegment = encodeVlq(0) + encodeVlq(0) + encodeVlq(1) + encodeVlq(0);
+
+    // prologue 매핑 문자열 생성: "FIRST;NEXT;NEXT;...;"
+    const parts: string[] = [firstSegment];
+    for (let i = 1; i < prologueLines; i++) {
+      parts.push(nextSegment);
+    }
+    const prologueMappings = parts.join(';') + ';';
+
+    // 기존 매핑의 첫 실제 세그먼트에서 srcIdx delta를 보정
+    // (이전 세그먼트의 srcIdx가 prologueSourceIdx이므로, 기존 첫 세그먼트의 srcIdx delta를 조정)
+    const existingMappings = map.mappings.slice(prologueLines); // 세미콜론 제거
+    // 기존 첫 세그먼트의 srcIdx는 0-based 절대값으로 인코딩됨 (이전 세그먼트가 없었으니까)
+    // 이제 이전 세그먼트의 srcIdx가 prologueSourceIdx이므로, delta = originalSrcIdx - prologueSourceIdx
+    // 기존 VLQ를 재인코딩하는 대신, 보정 세그먼트를 삽입
+    // 방법: 첫 실제 매핑 줄 시작에 srcIdx를 리셋하는 더미 세그먼트 추가
+    // 더미: genCol=0, srcIdx=(-prologueSourceIdx), origLine=(-prologueLines+1), origCol=0
+    const resetSegment =
+      encodeVlq(0) +
+      encodeVlq(-prologueSourceIdx) +
+      encodeVlq(-(prologueLines - 1)) +
+      encodeVlq(0);
+
+    // 기존 매핑의 첫 줄에 리셋 세그먼트를 prepend
+    let adjustedExisting: string;
+    if (existingMappings.length > 0 && existingMappings[0] !== ';') {
+      adjustedExisting = resetSegment + ',' + existingMappings;
+    } else {
+      adjustedExisting = resetSegment + existingMappings;
+    }
+
+    map.mappings = prologueMappings + adjustedExisting;
+
+    // x_google_ignoreList: __prologue__ + node_modules 소스들
+    const ignoreList: number[] = [prologueSourceIdx];
+    for (let i = 0; i < map.sources.length - 1; i++) {
+      if (typeof map.sources[i] === 'string' && map.sources[i].includes('/node_modules/')) {
+        ignoreList.push(i);
+      }
+    }
+    map.x_google_ignoreList = ignoreList;
+
+    // file 필드 제거 (Metro 호환: DevTools 매칭 혼란 방지)
+    delete map.file;
+    delete map.sourceRoot;
+
+    return JSON.stringify(map);
+  } catch {
+    return rawJson;
+  }
+}
+
+/**
  * Start dev server with zts bundler backend
  */
 export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
@@ -95,7 +201,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = readFileSync(sourceMapPath, 'utf-8');
+          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'));
         }
         const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
         const buildTime = Date.now() - buildStart;
@@ -127,7 +233,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = readFileSync(sourceMapPath, 'utf-8');
+          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'));
         }
       }
 
@@ -412,83 +518,6 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
       await handleSymbolicateRequest(req, res, config, state.sourceMap);
-      return;
-    }
-
-    // Debug: 소스맵 진단 — /debug-sourcemap?line=493&platform=ios
-    if (url.pathname === '/debug-sourcemap') {
-      const platform = url.searchParams.get('platform') || defaultPlatform;
-      const state = platforms.get(platform) || defaultState;
-      const line = parseInt(url.searchParams.get('line') || '1', 10);
-      const col = parseInt(url.searchParams.get('col') || '0', 10);
-
-      if (!state.sourceMap) {
-        sendJson(res, 200, { error: 'no sourceMap' });
-        return;
-      }
-
-      try {
-        const parsed = JSON.parse(state.sourceMap);
-        const info: any = {
-          version: parsed.version,
-          file: parsed.file,
-          sourceRoot: parsed.sourceRoot,
-          sourcesCount: parsed.sources?.length,
-          sources: parsed.sources?.slice(0, 10),
-          hasSourcesContent: !!parsed.sourcesContent,
-          mappingsLength: parsed.mappings?.length,
-          namesCount: parsed.names?.length,
-          hasIgnoreList: !!parsed.x_google_ignoreList,
-          hasXFacebookSources: !!parsed.x_facebook_sources,
-        };
-
-        // lookup specific line
-        const { SourceMapConsumer } = await import('source-map');
-        const consumer = await new SourceMapConsumer(parsed);
-        try {
-          const pos = consumer.originalPositionFor({ line, column: col });
-          info.lookup = { line, col, result: pos };
-
-          // find first and last mapped lines by scanning
-          let firstMappedLine: number | null = null;
-          let lastMappedLine: number | null = null;
-          let totalMappings = 0;
-          consumer.eachMapping((m: any) => {
-            totalMappings++;
-            if (firstMappedLine === null || m.generatedLine < firstMappedLine) firstMappedLine = m.generatedLine;
-            if (lastMappedLine === null || m.generatedLine > lastMappedLine) lastMappedLine = m.generatedLine;
-          });
-          info.firstMappedLine = firstMappedLine;
-          info.lastMappedLine = lastMappedLine;
-          info.totalMappings = totalMappings;
-
-          // bundle line count
-          if (state.bundle) {
-            info.bundleLineCount = state.bundle.split('\n').length;
-          }
-
-          // check nearby lines around the first mapped line
-          info.nearbyMappings = [];
-          const checkLine = firstMappedLine ?? line;
-          for (let l = Math.max(1, checkLine - 2); l <= checkLine + 5; l++) {
-            const p = consumer.originalPositionFor({ line: l, column: 0 });
-            info.nearbyMappings.push({ genLine: l, source: p.source?.split('/').pop(), origLine: p.line, origCol: p.column });
-          }
-
-          // also check the requested line area
-          info.requestedLineMappings = [];
-          for (let l = Math.max(1, line - 2); l <= line + 2; l++) {
-            const p = consumer.originalPositionFor({ line: l, column: 0 });
-            info.requestedLineMappings.push({ genLine: l, source: p.source?.split('/').pop(), origLine: p.line, origCol: p.column });
-          }
-        } finally {
-          consumer.destroy();
-        }
-
-        sendJson(res, 200, info);
-      } catch (e: any) {
-        sendJson(res, 200, { error: e.message });
-      }
       return;
     }
 
