@@ -48,6 +48,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   let currentBundle: string | null = null;
   let currentSourceMap: string | null = null;
   let lastBuildError: string | null = null;
+  let lastFileCount = 1;
 
   // Load RN dev middleware
   const devMiddleware: DevMiddleware | null = await loadDevMiddleware(port, config.root);
@@ -122,9 +123,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // Wait for initial build
   await new Promise<void>((resolve) => {
-    const onReady = () => {
+    const onReady = (event: { files?: number }) => {
       ztsProcess.removeListener('ready', onReady);
       ztsProcess.removeListener('error', onError);
+      if (event.files) lastFileCount = event.files;
       // Read the initial bundle from output file
       if (existsSync(outputPath)) {
         // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
@@ -257,15 +259,16 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         res.write(
           `${CRLF}--${BOUNDARY}${CRLF}` +
             `Content-Type: application/json${CRLF}${CRLF}` +
-            JSON.stringify({ done: 1, total: 1 }),
+            JSON.stringify({ done: lastFileCount, total: lastFileCount }),
         );
 
         // Bundle chunk
         const bundleBytes = Buffer.byteLength(bundle);
         const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        // X-Metro-Files-Changed-Count > 0이어야 네이티브가 번들 로드 완료로 인식
         res.end(
           `${CRLF}--${BOUNDARY}${CRLF}` +
-            `X-Metro-Files-Changed-Count: 0${CRLF}` +
+            `X-Metro-Files-Changed-Count: ${lastFileCount}${CRLF}` +
             `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
             `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
             `Content-Length: ${bundleBytes}${CRLF}` +
