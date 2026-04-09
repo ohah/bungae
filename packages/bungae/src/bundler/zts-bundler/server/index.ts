@@ -630,7 +630,13 @@ async function handleSymbolicateRequest(
 
     const stack = body.stack || [];
 
+    console.log('[symbolicate] request:', stack.length, 'frames, sourceMap:', sourceMap ? `${sourceMap.length} bytes` : 'null');
+    if (stack.length > 0) {
+      console.log('[symbolicate] first frame:', JSON.stringify(stack[0]));
+    }
+
     if (!sourceMap) {
+      console.log('[symbolicate] no sourceMap — returning raw stack');
       sendJson(res, 200, { stack, codeFrame: null });
       return;
     }
@@ -655,7 +661,11 @@ async function handleSymbolicateRequest(
             line: frame.lineNumber,
             column: frame.column ?? 0,
           });
-          if (pos.source == null || pos.line == null) return { ...frame };
+          if (pos.source == null || pos.line == null) {
+            console.log('[symbolicate] no mapping for', frame.lineNumber, frame.column ?? 0);
+            return { ...frame };
+          }
+          console.log('[symbolicate]', frame.lineNumber, ':', frame.column ?? 0, '→', pos.source, pos.line, ':', pos.column);
 
           const { resolve } = require('path');
           let sourcePath = pos.source;
