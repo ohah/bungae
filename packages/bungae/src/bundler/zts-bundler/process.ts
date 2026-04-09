@@ -104,7 +104,12 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       // ZTS dev mode: __zts_register() 래핑 + HMR 런타임 주입 + React Refresh
       args.push('--dev');
 
-      // HMRClient.js 교체는 asset-plugin의 onLoad hook으로 처리 (롤리팝 방식)
+      // HMRClient.js 교체는 asset-plugin의 onLoad hook으로 처리
+
+      // Bridgeless(New Arch)에서 RCTJavaScriptDidLoadNotification이 발생하지 않아
+      // DevLoadingView가 자동으로 사라지지 않는 문제 해결.
+      // 번들 끝에서 직접 hide() 호출.
+      args.push('--footer:js=try{require("react-native/Libraries/Utilities/DevLoadingView").hide()}catch(e){}');
     }
 
     // RN prelude (Metro prelude equivalent) — 폴리필보다 먼저 실행되는 글로벌 변수 정의
