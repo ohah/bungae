@@ -181,7 +181,7 @@ describe('ZTS Server Network', () => {
       });
       // symbolicate 엔드포인트가 응답하는지 확인
       if (res.status === 200) {
-        const body = await res.json();
+        const body = (await res.json()) as { stack: unknown[] };
         expect(body).toHaveProperty('stack');
         expect(Array.isArray(body.stack)).toBe(true);
       } else {

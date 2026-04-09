@@ -74,7 +74,7 @@ function copyAssetFile(filePath: string, projectRoot: string, assetsDir: string,
     if (fName !== baseName && !fName.startsWith(`${baseName}@`)) continue;
 
     const scaleMatch = fName.match(SCALE_REGEX);
-    const scale = scaleMatch ? parseFloat(scaleMatch[1]) : 1;
+    const scale = scaleMatch?.[1] ? parseFloat(scaleMatch[1]) : 1;
 
     // 플랫폼별 스케일 필터링
     if (platform === 'ios' && !IOS_SCALES.has(scale)) continue;
