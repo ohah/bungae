@@ -119,6 +119,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // Spawn ZTS in watch mode — handles file watching + incremental rebuilds
   const ztsProcess: ZtsProcess = spawnZtsWatch(config, outputPath);
+  const buildStartTime = Date.now();
 
   // Wait for initial build
   await new Promise<void>((resolve) => {
@@ -137,7 +138,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
         }
         const sizeKB = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
-        logInfo(`Initial build complete ${colors.dim}(${sizeKB} KB)${colors.reset}`);
+        const buildTime = Date.now() - buildStartTime;
+        logInfo(`Initial build complete ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`);
       } else {
         lastBuildError = 'Initial build produced no output';
         logError(lastBuildError);
@@ -156,7 +158,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   });
 
   // Handle rebuild events from ZTS watch mode
+  let lastRebuildTime = Date.now();
   ztsProcess.on('rebuild', (event) => {
+    const rebuildDuration = Date.now() - lastRebuildTime;
+    lastRebuildTime = Date.now();
     if (!event.success) {
       lastBuildError = event.error ?? 'Unknown build error';
       logError(`Build failed: ${lastBuildError}`);
@@ -182,17 +187,17 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
     if (event.graph_changed) {
       // Module graph changed (new imports added) — full reload required
-      logInfo(`Graph changed ${colors.dim}(${changedCount} files)${colors.reset}, full reload`);
+      logInfo(`Graph changed ${colors.dim}(${changedCount} files, ${rebuildDuration}ms)${colors.reset}, full reload`);
       sendToClients({ type: 'hmr:reload' });
     } else if (event.updates && event.updates.length > 0) {
       // Incremental HMR update — send changed module codes
-      logInfo(`HMR update: ${updatesCount} module(s) changed`);
+      logInfo(`HMR update: ${updatesCount} module(s) changed ${colors.dim}(${rebuildDuration}ms)${colors.reset}`);
       sendToClients({ type: 'hmr:update-start' });
       sendToClients({ type: 'hmr:update', modules: event.updates });
       sendToClients({ type: 'hmr:update-done' });
     } else if (changedCount > 0) {
       // 파일은 변경됐지만 코드 diff 없음 (타입만 변경, 주석만 변경 등) — 무시
-      logInfo(`Rebuilt ${colors.dim}(${changedCount} files, no code change)${colors.reset}`);
+      logInfo(`Rebuilt ${colors.dim}(${changedCount} files, ${rebuildDuration}ms, no code change)${colors.reset}`);
     }
   });
 
