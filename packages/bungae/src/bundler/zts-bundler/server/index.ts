@@ -34,25 +34,28 @@ import { colors, logInfo, logError, printBanner } from '../../graph-bundler/util
 import { spawnZtsWatch, type ZtsProcess } from '../process';
 
 /**
- * zts 소스맵 후처리: x_google_ignoreList 추가.
+ * zts 소스맵 후처리: x_google_ignoreList 확장.
  *
- * node_modules 소스를 ignore list에 등록하여 DevTools가
- * 프레임워크/라이브러리 프레임을 자동으로 무시하고 유저 코드를 표시.
+ * zts가 생성한 기존 x_google_ignoreList(폴리필)를 보존하고,
+ * node_modules 소스를 추가로 등록하여 DevTools가 프레임워크 프레임을 자동 스킵.
  */
-function postProcessSourceMap(rawJson: string): string {
+function postProcessSourceMap(rawJson: string, projectRoot: string): string {
   try {
     const map = JSON.parse(rawJson);
     if (map.version !== 3 || !map.sources) return rawJson;
 
-    // x_google_ignoreList: node_modules 소스들
-    const ignoreList: number[] = [];
+    // 기존 x_google_ignoreList 보존 (zts가 생성한 폴리필 인덱스)
+    const existing = new Set<number>(Array.isArray(map.x_google_ignoreList) ? map.x_google_ignoreList : []);
+
+    // node_modules 소스 추가
     for (let i = 0; i < map.sources.length; i++) {
       if (typeof map.sources[i] === 'string' && map.sources[i].includes('/node_modules/')) {
-        ignoreList.push(i);
+        existing.add(i);
       }
     }
-    if (ignoreList.length > 0) {
-      map.x_google_ignoreList = ignoreList;
+
+    if (existing.size > 0) {
+      map.x_google_ignoreList = [...existing].sort((a, b) => a - b);
     }
 
     return JSON.stringify(map);
@@ -123,7 +126,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'));
+          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'), config.root);
         }
         const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
         const buildTime = Date.now() - buildStart;
@@ -155,7 +158,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'));
+          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'), config.root);
         }
       }
 
