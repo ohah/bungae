@@ -13,59 +13,70 @@ Bun 기반 React Native 번들러로, Metro와 호환되면서 더 나은 성능
 
 Bungae는 세 가지 번들러 구현을 제공합니다:
 
-| 번들러  | 설명                      | 상태               | 사용 시기                     |
-| ------- | ------------------------- | ------------------ | ----------------------------- |
-| `graph` | Babel 기반, Metro 호환    | **기본값 (안정)**  | 프로덕션, 모든 RN 프로젝트    |
-| `bun`   | Bun.Transpiler 기반       | 보류               | 구현 예정 없음                |
-| `oxc`   | Rolldown 기반, ESM 번들링 | **개발 환경 완료** | ESM 번들링, HMR, Fast Refresh |
+| 번들러  | 설명                      | 상태                   | 사용 시기                     |
+| ------- | ------------------------- | ---------------------- | ----------------------------- |
+| `zts`   | Zig 기반, 고성능          | **메인 개발 대상**     | 개발 서버, HMR, 빠른 빌드    |
+| `graph` | Babel 기반, Metro 호환    | **안정**               | Metro 호환 필요 시            |
+| `oxc`   | Rolldown 기반, ESM 번들링 | 개발 환경 완료         | ESM 번들링, HMR, Fast Refresh |
+| `bun`   | Bun.Transpiler 기반       | 보류                   | 구현 예정 없음                |
 
 ### 설정 방법
 
 ```typescript
 // bungae.config.ts
 export default {
-  bundler: 'oxc', // 'graph' (기본값) 또는 'bun' 또는 'oxc'
+  bundler: 'zts', // 'zts' (권장) 또는 'graph' 또는 'oxc'
   // ...
 };
 ```
 
 ### 번들러 비교
 
-| 기능            | graph-bundler (Babel) | bun-bundler (Bun.Transpiler)        |
-| --------------- | --------------------- | ----------------------------------- |
-| TypeScript 변환 | Babel (느림)          | Bun.Transpiler (10-100x 빠름)       |
-| Flow 변환       | hermes-parser + Babel | hermes-parser + Babel (동일)        |
-| 의존성 추출     | @babel/traverse       | Bun.Transpiler.scanImports() (빠름) |
-| JSX 변환        | Babel                 | Bun.Transpiler (빠름)               |
-| Metro 호환성    | 완전 호환             | 완전 호환                           |
-| 안정성          | 검증됨                | 실험적                              |
+| 기능              | zts-bundler (Zig)  | graph-bundler (Babel) | oxc-bundler (Rolldown)   |
+| ----------------- | ------------------ | --------------------- | ------------------------ |
+| 빌드 속도         | 매우 빠름          | 느림                  | 빠름                     |
+| HMR               | 지원 (모듈 단위)   | 지원 (Metro 호환)     | 지원 (Patch HMR)         |
+| Fast Refresh      | 지원               | 지원                  | 지원                     |
+| 멀티 플랫폼       | 동시 서빙          | 동시 서빙             | 단일 플랫폼              |
+| 콘솔 포워딩       | 지원               | 부분                  | 미지원                   |
+| Metro 호환성      | 부분 호환          | 완전 호환             | ESM 방식                 |
+| 에러 오버레이     | Metro 포맷         | Metro 포맷            | 기본                     |
 
 ### 구현 위치
 
 ```
 bundler/
 ├── index.ts              # 분기 로직 (config.bundler에 따라 선택)
-├── graph-bundler/        # Babel 기반 (기본, 안정)
+├── zts-bundler/          # Zig 기반 (메인, 고성능)
+│   ├── process.ts        # ZTS 바이너리 프로세스 관리, CLI 인자 빌드
+│   ├── build.ts          # 원샷 프로덕션 빌드
+│   ├── asset-plugin.ts   # 에셋 처리 (IPC 기반)
+│   ├── runtime/
+│   │   └── zts-hmr-client.js  # HMR 클라이언트 (콘솔 포워딩 포함)
+│   └── server/
+│       └── index.ts      # 개발 서버 (멀티플랫폼, HMR, 에러 오버레이)
+├── graph-bundler/        # Babel 기반 (Metro 호환, 안정)
 │   ├── graph.ts          # 의존성 그래프 빌드
 │   ├── transformer.ts    # Babel 변환
-│   └── ...
-├── bun-bundler/          # Bun.Transpiler 기반 (빠름, 실험적)
-│   ├── graph.ts          # Bun.Transpiler로 의존성 그래프 빌드
-│   ├── transformer.ts    # Bun.Transpiler 변환
+│   ├── utils.ts          # 배너, 로그 유틸리티 (Metro 스타일 뱃지)
+│   ├── terminal-actions.ts  # 터미널 단축키 (r/d/j/i/a/c)
+│   ├── server/
+│   │   ├── index.ts      # 개발 서버
+│   │   └── dev-middleware.ts  # @react-native/dev-middleware 통합
 │   └── ...
 └── oxc-bundler/          # Rolldown 기반 (ESM, HMR 지원)
     ├── bundler.ts        # Rolldown 빌드 + 공유 옵션
     ├── plugins/          # Rolldown 플러그인
-    │   ├── hermes-compat.ts  # SWC es5 다운레벨 (Hermes 호환)
-    │   ├── flow-strip.ts     # Flow 타입 제거 (Babel)
-    │   ├── hmr-client-replace.ts  # metro-runtime HMRClient 교체
-    │   └── react-refresh.ts  # React Refresh 경계 래핑
-    ├── hmr/              # HMR 시스템
-    │   ├── dev-engine.ts     # Rolldown DevEngine 래퍼
-    │   ├── hmr-client.ts     # metro-runtime API 호환 HMR 클라이언트
-    │   └── runtime.ts        # DevEngine 런타임 (모듈 등록, 패치 실행)
-    └── server/           # 개발 서버
+    ├── hmr/              # HMR 시스템 (DevEngine)
+    └── server/
         └── index.ts      # HTTP + WebSocket HMR 서버
+```
+
+### CLI 명령어
+
+```bash
+bungae bundle   # 프로덕션 번들 빌드 (= build)
+bungae start    # 개발 서버 시작 (= serve)
 ```
 
 ## 번들링 프로세스
@@ -388,12 +399,66 @@ React Native의 기본 HMRClient.js를 그대로 사용하고, Bungae 서버가 
 `config.bundler: 'bun'` — graph-bundler의 Bun.Transpiler 최적화 버전.
 OXC 번들러(Rolldown)에 집중하기 위해 추가 개발 보류.
 
-### OXC 번들러 (Rolldown 기반) — 메인 개발 대상
+### ZTS 번들러 (Zig 기반) — 메인 개발 대상 ✅
+
+`config.bundler: 'zts'` 옵션으로 선택.
+
+Zig 기반 트랜스파일러(ZTS)를 사용한 고성능 React Native 번들링.
+개발 서버 + HMR + 멀티플랫폼 + 콘솔 포워딩 + 에러 오버레이 완료.
+
+#### 완료된 기능
+
+1. **개발 서버** ✅
+   - HTTP + WebSocket HMR 서버
+   - 멀티플랫폼 동시 서빙 (iOS/Android 별도 ZTS 프로세스)
+   - 번들 요청의 `?platform=` 파라미터로 자동 플랫폼 감지
+   - On-demand 프로세스 스폰 (첫 요청 시)
+   - Metro 호환 multipart/mixed 응답
+
+2. **HMR / Fast Refresh** ✅
+   - ZTS `--watch-json --dev` 모드로 증분 빌드
+   - 모듈 단위 HMR 업데이트 (`hmr:update`)
+   - 그래프 변경 시 전체 리로드 (`hmr:reload`)
+   - 커스텀 HMR 클라이언트 (`zts-hmr-client.js`)
+
+3. **콘솔 포워딩** ✅
+   - 앱의 `console.log/info/warn/error/debug` → 터미널 출력
+   - HMR 클라이언트에서 console 인터셉트 → WebSocket 전송
+   - Metro 스타일 레벨별 뱃지 (LOG/WARN/ERROR 등)
+   - 오브젝트/배열 pretty-print
+
+4. **에러 오버레이** ✅
+   - Metro 호환 에러 포맷: `{ type: 'error', body: { type, message, errors } }`
+   - ZTS 에러에서 파일:라인:컬럼 자동 추출
+   - Symbolication (`/symbolicate`) + 코드 프레임
+
+5. **에셋 처리** ✅
+   - IPC 기반 에셋 플러그인 (`asset-plugin.ts`)
+   - Metro 호환 `AssetRegistry.registerAsset()` 생성
+   - 이미지 크기 추출, 스케일 처리 (iOS 1x/2x/3x)
+
+6. **터미널 UI** ✅
+   - Metro 스타일 배너 (ASCII 아트 박스)
+   - `info`/`warn`/`error` 뱃지 로그
+   - 빌드 시간 표시 (초기 빌드 + 리빌드)
+   - 터미널 단축키 (r/d/j/i/a/c)
+   - 순환 참조 경고 집계
+
+7. **프로덕션 빌드** ✅
+   - `bungae bundle` 명령어
+   - Minification (`--minify`)
+   - Source map 생성
+   - ES5 타겟 (Hermes 호환)
+   - 에셋 복사 (Android drawable/iOS 폴더)
+
+#### 구현 위치: `bundler/zts-bundler/`
+
+### OXC 번들러 (Rolldown 기반)
 
 `config.bundler: 'oxc'` 옵션으로 선택 가능.
 
-Rolldown을 사용한 ESM 기반 React Native 번들링. graph-bundler와 달리 CJS 래핑 없이 ESM 모듈 그대로 번들링합니다.
-핵심 번들링 + 개발 환경(HMR, React Refresh) 완료.
+Rolldown을 사용한 ESM 기반 React Native 번들링.
+ZTS 번들러로 메인 개발이 이동하여 현재는 대체 옵션.
 
 #### Phase 1: 핵심 번들링 ✅
 
@@ -472,23 +537,14 @@ Rolldown의 실험적 `dev()` API (DevEngine)로 전환 완료:
 - `(void 0)` 치환: flow-strip CJS 감지로 근본 해결 (정규식 워크어라운드 제거)
 - `__defProp` configurable: Rolldown 포크에서 런타임 헬퍼 수정 (정규식 워크어라운드 제거)
 
-### Phase 5: 고급 기능 (미구현)
+### Phase 5: 향후 고려사항
 
-#### Metro에 있는 기능
-
-| 기능                | 설명                                                          | 우선순위 | 비고                                               |
-| ------------------- | ------------------------------------------------------------- | -------- | -------------------------------------------------- |
-| **require.context** | 동적 require 패턴 (`sync`, `eager`, `lazy`, `lazy-once` 모드) | 중간     | Metro 실험적 기능 (`unstable_allowRequireContext`) |
-| **RAM Bundle**      | iOS/Android 최적화 번들 형식 (Indexed/File)                   | **낮음** | Hermes가 대체함. 레거시 호환용으로만 필요          |
-
-#### Metro에 없거나 부분적인 기능
-
-| 기능                | 설명                               | Metro 상태                             | Bungae 구현 여부 |
-| ------------------- | ---------------------------------- | -------------------------------------- | ---------------- |
-| **플러그인 시스템** | 사용자 확장 (커스텀 트랜스포머 등) | Babel 플러그인만 지원                  | 검토 필요        |
-| **Code Splitting**  | `import()` 별도 chunk 분리         | 단일 번들만 지원 (lazy loading은 있음) | 검토 필요        |
-| **순환 참조 GC**    | Bacon-Rajan 알고리즘               | 없음 (감지만 함)                       | 구현 안 함       |
-| **롤백 시스템**     | 빌드 에러 시 이전 상태 복원        | 부분적 (그래프 빌드 중 롤백만)         | 검토 필요        |
+| 기능                | 설명                                 | 우선순위 | 비고                                      |
+| ------------------- | ------------------------------------ | -------- | ----------------------------------------- |
+| **Code Splitting**  | `import()` 별도 chunk 분리           | 낮음     | Metro/Rollipop도 미지원. Re.Pack만 지원   |
+| **Module Federation** | 마이크로 프론트엔드                | 낮음     | Re.Pack만 지원. 슈퍼앱에서만 필요         |
+| **require.context** | 동적 require 패턴                    | 낮음     | Metro 실험적 기능                         |
+| **RAM Bundle**      | 레거시 최적화 형식                   | 불필요   | Hermes가 완전 대체                        |
 
 #### RAM Bundle 참고사항
 
