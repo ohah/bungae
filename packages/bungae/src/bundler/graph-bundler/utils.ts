@@ -6,74 +6,83 @@ import { readFileSync } from 'fs';
 import { dirname, relative, basename, extname } from 'path';
 
 /**
- * ANSI color codes for terminal output
+ * ANSI color codes for terminal output (Metro-compatible)
  */
-const colors = {
+export const colors = {
   reset: '\x1b[0m',
-  bright: '\x1b[1m',
-  yellow: '\x1b[33m',
-  brightYellow: '\x1b[93m',
-  cyan: '\x1b[36m',
-  brightCyan: '\x1b[96m',
+  bold: '\x1b[1m',
+  dim: '\x1b[2m',
+  inverse: '\x1b[7m',
   white: '\x1b[37m',
-  brightWhite: '\x1b[97m',
   gray: '\x1b[90m',
-  brightGray: '\x1b[37m', // Light gray for light terminals
-  magenta: '\x1b[35m',
-  brightMagenta: '\x1b[95m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
   blue: '\x1b[34m',
-  brightBlue: '\x1b[94m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
 };
 
 /**
- * Helper to create a banner line with exact width (59 chars inside box)
+ * Metro-style log badges
  */
-function bannerLine(content: string): string {
-  // eslint-disable-next-line no-control-regex
-  const contentLength = content.replace(/\x1b\[[0-9;]*m/g, '').length;
-  const padding = 59 - contentLength;
-  const leftPad = Math.floor(padding / 2);
-  const rightPad = padding - leftPad;
-  return `${colors.brightCyan}    ║${colors.reset}${' '.repeat(leftPad)}${content}${' '.repeat(rightPad)}${colors.brightCyan}║${colors.reset}`;
+export function logInfo(...args: unknown[]): void {
+  console.log(`${colors.inverse}${colors.bold}${colors.cyan} info ${colors.reset}`, ...args);
+}
+
+export function logWarn(...args: unknown[]): void {
+  console.warn(`${colors.inverse}${colors.bold}${colors.yellow} warn ${colors.reset}`, ...args);
+}
+
+export function logError(...args: unknown[]): void {
+  console.error(`${colors.inverse}${colors.bold}${colors.red} error ${colors.reset}`, ...args);
 }
 
 /**
- * Print Bungae ASCII art banner with version
+ * Center text for banner display
+ */
+function centerText(text: string, width: number): string {
+  // eslint-disable-next-line no-control-regex
+  const visibleLength = text.replace(/\x1b\[[0-9;]*m/g, '').length;
+  const padding = Math.max(0, Math.floor((width - visibleLength) / 2));
+  return ' '.repeat(padding) + text;
+}
+
+/**
+ * Print Bungae banner (Metro-style)
  */
 export function printBanner(version: string): void {
-  const versionText = `v${version}`;
-
-  // "BUNGAE" ASCII art (6 lines) with gradient colors
-  const bungaeLines = [
-    '██████╗ ██╗   ██╗███╗   ██╗ ██████╗  █████╗ ███████╗',
-    '██╔══██╗██║   ██║████╗  ██║██╔════╝ ██╔══██╗██╔════╝',
-    '██████╔╝██║   ██║██╔██╗ ██║██║  ███╗███████║█████╗  ',
-    '██╔══██╗██║   ██║██║╚██╗██║██║   ██║██╔══██║██╔══╝  ',
-    '██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝██║  ██║███████╗',
-    '╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝',
+  const logo = [
+    '',
+    '                        ▒▒▓▓▓▓▒▒',
+    '                     ▒▓▓▓▒▒░░▒▒▓▓▓▒',
+    '                  ▒▓▓▓▓░░░▒▒▒▒░░░▓▓▓▓▒',
+    '                 ▓▓▒▒▒▓▓▓▓▓▓▓▓▓▓▓▒▒▒▓▓',
+    '                 ▓▓░░░░░▒▓▓▓▓▓▓▒░░░░░▓▓',
+    '                 ▓▓░░▓▓▒░░░▒▒░░░▒▓▒░░▓▓',
+    '                 ▓▓░░▓▓▓▓▓▒▒▒▒▓▓▓▓▒░░▓▓',
+    '                 ▓▓░░▓▓▓▓▓▓▓▓▓▓▓▓▓▒░░▓▓',
+    '                 ▓▓▒░░▒▒▓▓▓▓▓▓▓▓▒░░░▒▓▓',
+    '                  ▒▓▓▓▒░░░▒▓▓▒░░░▒▓▓▓▒',
+    '                     ▒▓▓▓▒░░░░▒▓▓▓▒',
+    '                        ▒▒▓▓▓▓▒▒',
+    '',
   ];
 
-  // Color gradient for each line
-  const gradientColors = [
-    colors.brightYellow,
-    colors.brightYellow,
-    colors.brightBlue, // Blue for transition
-    colors.brightBlue,
-    colors.brightMagenta,
-    colors.brightMagenta,
-  ];
+  const versionStr = `v${version}`;
+  const welcomeLine = centerText(
+    `${colors.bold}${colors.yellow}Welcome to Bungae ${colors.white}${versionStr}${colors.reset}`,
+    50,
+  );
+  const tagline = centerText(
+    `${colors.dim}Lightning Fast React Native Bundler${colors.reset}`,
+    50,
+  );
 
-  const banner = `
-${colors.brightCyan}    ╔═══════════════════════════════════════════════════════════╗${colors.reset}
-${bannerLine('')}
-${bungaeLines.map((line, i) => bannerLine(`${colors.bright}${gradientColors[i]}${line}${colors.reset}`)).join('\n')}
-${bannerLine('')}
-${bannerLine(`${colors.cyan}Lightning Fast React Native Bundler${colors.reset}`)}
-${bannerLine(`${colors.gray}${versionText}${colors.reset}`)}
-${bannerLine('')}
-${colors.brightCyan}    ╚═══════════════════════════════════════════════════════════╝${colors.reset}
-`;
-  console.log(banner);
+  console.log(`${colors.yellow}${logo.join('\n')}${colors.reset}`);
+  console.log(welcomeLine);
+  console.log(tagline);
+  console.log('');
 }
 
 /**

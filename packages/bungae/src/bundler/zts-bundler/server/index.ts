@@ -24,7 +24,7 @@ import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler
 import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
 import { parseRequestUrl, readJsonBody, sendJson, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { printBanner } from '../../graph-bundler/utils';
+import { colors, logInfo, logWarn, logError, printBanner } from '../../graph-bundler/utils';
 import { spawnZtsWatch, type ZtsProcess } from '../process';
 
 /**
@@ -36,8 +36,6 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   const hostname = server?.host || '0.0.0.0';
 
   printBanner(VERSION);
-  console.log('📦 Using zts-bundler (Zig, fast, HMR)');
-  console.log(`Starting dev server on http://${hostname}:${port}`);
 
   // Temp directory for zts output
   const outputDir = mkdtempSync(join(tmpdir(), 'bungae-zts-'));
@@ -52,9 +50,6 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // Load RN dev middleware
   const devMiddleware: DevMiddleware | null = await loadDevMiddleware(port, config.root);
-  if (devMiddleware) {
-    console.log('   DevTools endpoints:', Object.keys(devMiddleware.websocketEndpoints).join(', '));
-  }
 
   const devMiddlewarePathPrefixes = [
     '/json',
@@ -67,14 +62,13 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   const { websocketEndpoints: cliWebsocketEndpoints, messageSocketEndpoint } =
     createDevServerMiddleware({ port, host: hostname, watchFolders: [] }); // HMR이 파일 변경 처리 — CLI 자체 watch 비활성화 (rollipop 동일)
   const broadcast = messageSocketEndpoint.broadcast;
-  console.log('   CLI endpoints:', Object.keys(cliWebsocketEndpoints).join(', '));
 
   // HMR clients
   const hmrClients = new Set<{ send: (msg: string) => void }>();
   const hmrWss = new WebSocketServer({ noServer: true });
 
   hmrWss.on('connection', (ws: WebSocket) => {
-    console.log('[HMR] Client connected');
+    logInfo('HMR client connected');
     const client = {
       send: (msg: string) => {
         try {
@@ -98,7 +92,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     });
 
     ws.on('close', () => {
-      console.log('[HMR] Client disconnected');
+      logInfo('HMR client disconnected');
       hmrClients.delete(client);
     });
   });
@@ -134,11 +128,11 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         if (existsSync(sourceMapPath)) {
           currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
         }
-        const size = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
-        console.log(`[zts] Initial build: ${size}KB`);
+        const sizeKB = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
+        logInfo(`Initial build complete ${colors.dim}(${sizeKB} KB)${colors.reset}`);
       } else {
         lastBuildError = 'Initial build produced no output';
-        console.error(`[zts] ${lastBuildError}`);
+        logError(lastBuildError);
       }
       resolve();
     };
@@ -146,7 +140,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       ztsProcess.removeListener('ready', onReady);
       ztsProcess.removeListener('error', onError);
       lastBuildError = error.message;
-      console.error(`[zts] Initial build error: ${lastBuildError}`);
+      logError(`Initial build failed: ${lastBuildError}`);
       resolve();
     };
     ztsProcess.on('ready', onReady);
@@ -157,7 +151,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   ztsProcess.on('rebuild', (event) => {
     if (!event.success) {
       lastBuildError = event.error ?? 'Unknown build error';
-      console.error(`[zts] Build failed: ${lastBuildError}`);
+      logError(`Build failed: ${lastBuildError}`);
       sendToClients({ type: 'hmr:error', message: lastBuildError });
       return;
     }
@@ -177,17 +171,17 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
     if (event.graph_changed) {
       // Module graph changed (new imports added) — full reload required
-      console.log(`[zts] Graph changed (${changedCount} files), sending full reload`);
+      logInfo(`Graph changed ${colors.dim}(${changedCount} files)${colors.reset}, full reload`);
       sendToClients({ type: 'hmr:reload' });
     } else if (event.updates && event.updates.length > 0) {
       // Incremental HMR update — send changed module codes
-      console.log(`[zts] HMR update: ${updatesCount} module(s) changed`);
+      logInfo(`HMR update: ${updatesCount} module(s) changed`);
       sendToClients({ type: 'hmr:update-start' });
       sendToClients({ type: 'hmr:update', modules: event.updates });
       sendToClients({ type: 'hmr:update-done' });
     } else if (changedCount > 0) {
       // 파일은 변경됐지만 코드 diff 없음 (타입만 변경, 주석만 변경 등) — 무시
-      console.log(`[zts] Rebuilt (${changedCount} files), no code change — skipping`);
+      logInfo(`Rebuilt ${colors.dim}(${changedCount} files, no code change)${colors.reset}`);
     }
   });
 
@@ -399,9 +393,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     httpServer.listen(port, hostname, () => resolve());
   });
 
-  console.log(`\n✅ Dev server running at http://${hostname}:${port}`);
-  console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
-  console.log(`   Bundler: zts (Zig-based, dev mode + HMR)`);
+  logInfo(`Dev server running on ${colors.bold}http://localhost:${port}${colors.reset}`);
+  logInfo(`Bundler: ${colors.bold}zts${colors.reset} ${colors.dim}(Zig-based, dev mode + HMR)${colors.reset}`);
 
   // Terminal shortcuts
   const useGlobalHotkey = server?.useGlobalHotkey ?? true;
@@ -419,9 +412,11 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       port,
       broadcast: (method: string, params?: Record<string, any>) => broadcast(method, params ?? {}),
     });
-    console.log('\n📱 Terminal shortcuts enabled:');
-    console.log('   r - Reload app    d - Dev Menu    j - DevTools');
-    console.log('   i - iOS Sim       a - Android     c - Clear cache');
+    console.log('');
+    logInfo('Keyboard shortcuts:');
+    console.log(`     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`);
+    console.log(`     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`);
+    console.log('');
   }
 
   // Shutdown
@@ -433,7 +428,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
     const isTestMode = process.env.NODE_ENV === 'test' || (globalThis as any).__BUNGAE_TEST_MODE__;
     if (!isTestMode) {
-      console.log(`\n${signal} received, shutting down...`);
+      logInfo(`${signal} received, shutting down...`);
     }
 
     try {
@@ -445,7 +440,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });
       if (!isTestMode) {
-        console.log('Server stopped');
+        logInfo('Server stopped');
         process.exit(0);
       }
     } catch (error) {

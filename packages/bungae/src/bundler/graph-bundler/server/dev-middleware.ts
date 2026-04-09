@@ -7,6 +7,8 @@ import type { Duplex } from 'stream';
 
 import type { WebSocket } from 'ws';
 
+import { logInfo, logWarn } from '../utils';
+
 /**
  * Type for dev middleware (dynamically loaded)
  */
@@ -63,9 +65,8 @@ export async function loadDevMiddleware(
           // Filter out noisy messages
           const msg = args.join(' ');
           if (msg.includes('JavaScript logs have moved')) return;
-          console.log('[DevTools]', ...args);
         },
-        warn: (...args: unknown[]) => console.warn('[DevTools]', ...args),
+        warn: () => {},
         error: (...args: unknown[]) => console.error('[DevTools]', ...args),
       },
       unstable_experiments: {
@@ -74,12 +75,12 @@ export async function loadDevMiddleware(
       },
     });
 
-    console.log('✅ @react-native/dev-middleware loaded - DevTools support enabled');
+    logInfo('DevTools support enabled');
 
     return devMiddleware;
   } catch (error) {
-    console.warn(
-      '⚠️ @react-native/dev-middleware not available - DevTools support disabled',
+    logWarn(
+      '@react-native/dev-middleware not available',
       error instanceof Error ? error.message : error,
     );
     return null;

@@ -1,12 +1,9 @@
 /**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
+ * Bungae Example App
+ * Network test + bundler diagnostics
  */
 
-import { NewAppScreen } from '@react-native/new-app-screen';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   StatusBar,
   StyleSheet,
@@ -15,422 +12,461 @@ import {
   Text,
   Image,
   TouchableOpacity,
-  Alert,
+  ScrollView,
+  ActivityIndicator,
 } from 'react-native';
-
-// Test asset import - verifies asset plugin resolves images correctly
-const testIcon = require('./src/assets/test-icon.png');
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+
+const testIcon = require('./src/assets/test-icon.png');
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+type TestStatus = 'idle' | 'running' | 'success' | 'error';
+
+interface TestResult {
+  status: TestStatus;
+  message: string;
+  duration?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Network test helpers
+// ---------------------------------------------------------------------------
+
+async function runWithTiming<T>(fn: () => Promise<T>): Promise<{ result: T; duration: number }> {
+  const start = Date.now();
+  const result = await fn();
+  return { result, duration: Date.now() - start };
+}
+
+// ---------------------------------------------------------------------------
+// App
+// ---------------------------------------------------------------------------
 
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
-
   return (
     <SafeAreaProvider>
       <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent />
+      <AppContent isDarkMode={isDarkMode} />
     </SafeAreaProvider>
   );
 }
 
-function AppContent() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const [bundlerInfo, setBundlerInfo] = useState<{
-    name: string;
-    version?: string;
-    isBungae: boolean;
-  } | null>(null);
-  const [hermesEnabled, setHermesEnabled] = useState<boolean | null>(null);
+function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
+  const insets = useSafeAreaInsets();
+  const bg = isDarkMode ? '#1a1a2e' : '#f5f5f7';
+  const cardBg = isDarkMode ? '#16213e' : '#fff';
+  const textColor = isDarkMode ? '#e0e0e0' : '#1c1c1e';
+  const dimColor = isDarkMode ? '#8e8e93' : '#8e8e93';
 
-  // Double-check: Verify which bundler was used
+  // Bundler info
+  const [bundlerName, setBundlerName] = useState('');
+  const [hermesEnabled, setHermesEnabled] = useState(false);
+
   useEffect(() => {
-    // Check if Bungae bundler was used
-    const isBungae =
-      typeof (globalThis as any).__BUNGAE_BUNDLER__ !== 'undefined' &&
-      (globalThis as any).__BUNGAE_BUNDLER__ === true;
-    const bungaeVersion = (globalThis as any).__BUNGAE_VERSION__;
-
-    const info = {
-      name: isBungae ? 'Bungae' : 'Metro',
-      version: isBungae ? bungaeVersion : undefined,
-      isBungae,
-    };
-
-    setBundlerInfo(info);
-
-    // Check if Hermes is enabled
-    const isHermes = !!(globalThis as any).HermesInternal;
-    setHermesEnabled(isHermes);
-    console.log('🔧 Hermes enabled:', isHermes);
-
-    if (isBungae) {
-      console.log('✅ Bungae Bundler detected!');
-      console.log(`📦 Version: ${bungaeVersion || 'unknown'}`);
-      console.log('⚡ This bundle was built with Bungae (powered by Bun)');
-    } else {
-      console.log('📦 Metro Bundler detected');
-      console.log('ℹ️  This bundle was built with Metro');
-    }
-
-    // Also log in development for easy debugging
-    if (__DEV__) {
-      console.log('🔍 Bundler check:', {
-        isBungae,
-        bungaeVersion,
-        bundler: isBungae ? 'Bungae' : 'Metro',
-      });
-    }
-
-    // === Bungae Bundle Debug Info ===
-    // React Native 런타임 이벤트 핸들러 연결 문제 확인
-    console.log('\n=== Bungae Bundle Debug Info ===');
-
-    // 1. Bundle loaded
-    console.log('1. Bundle loaded:', {
-      hasBungaeBundler: typeof (globalThis as any).__BUNGAE_BUNDLER__ !== 'undefined',
-      bundlerValue: (globalThis as any).__BUNGAE_BUNDLER__,
-      hasBungaeVersion: typeof (globalThis as any).__BUNGAE_VERSION__ !== 'undefined',
-      bungaeVersion: (globalThis as any).__BUNGAE_VERSION__,
-      isDev: __DEV__,
-    });
-
-    // 2. Module system
-    console.log('2. Module system:', {
-      hasDefine: typeof (globalThis as any).__d !== 'undefined',
-      hasRequire: typeof (globalThis as any).__r !== 'undefined',
-      hasClear: typeof (globalThis as any).__c !== 'undefined',
-      metroRequire: typeof (globalThis as any).metroRequire !== 'undefined',
-    });
-
-    // 3. React Native components
-    try {
-      const RN = require('react-native');
-      console.log('3. React Native components:');
-      console.log('   - TouchableOpacity:', {
-        exists: typeof RN.TouchableOpacity !== 'undefined',
-        type: typeof RN.TouchableOpacity,
-        isFunction: typeof RN.TouchableOpacity === 'function',
-      });
-      console.log('   - Button:', {
-        exists: typeof RN.Button !== 'undefined',
-        type: typeof RN.Button,
-        isFunction: typeof RN.Button === 'function',
-      });
-      console.log('   - View:', {
-        exists: typeof RN.View !== 'undefined',
-        type: typeof RN.View,
-      });
-      console.log('   - Text:', {
-        exists: typeof RN.Text !== 'undefined',
-        type: typeof RN.Text,
-      });
-    } catch (e) {
-      console.error('   - Failed to load React Native:', e);
-    }
-
-    // 4. NewAppScreen
-    console.log('4. NewAppScreen:');
-    try {
-      const NewAppScreenModule = require('@react-native/new-app-screen');
-      console.log('   - Module loaded:', !!NewAppScreenModule);
-      console.log('   - Default export:', {
-        exists: typeof NewAppScreenModule.default !== 'undefined',
-        type: typeof NewAppScreenModule.default,
-        isFunction: typeof NewAppScreenModule.default === 'function',
-      });
-      console.log('   - Named export:', {
-        exists: typeof NewAppScreenModule.NewAppScreen !== 'undefined',
-        type: typeof NewAppScreenModule.NewAppScreen,
-      });
-    } catch (e) {
-      console.error('   - Failed to load NewAppScreen:', e);
-    }
-
-    // 5. Event system
-    try {
-      const RN = require('react-native');
-      const { UIManager } = RN;
-      console.log('5. Event system:');
-      console.log('   - UIManager:', {
-        exists: typeof UIManager !== 'undefined',
-        type: typeof UIManager,
-      });
-      console.log('   - NativeModules:', {
-        exists: typeof RN.NativeModules !== 'undefined',
-        type: typeof RN.NativeModules,
-        keys:
-          typeof RN.NativeModules !== 'undefined' ? Object.keys(RN.NativeModules).slice(0, 5) : [],
-      });
-    } catch (e) {
-      console.error('   - Failed to check event system:', e);
-    }
-
-    // 6. Module count (if available)
-    try {
-      const metroRequire = (globalThis as any).__r || (globalThis as any).metroRequire;
-      if (metroRequire && typeof metroRequire.getModules === 'function') {
-        const modules = metroRequire.getModules();
-        console.log('6. Module count:', {
-          total: modules ? Object.keys(modules).length : 'unknown',
-          hasModules: !!modules,
-        });
-      } else {
-        console.log('6. Module count: getModules() not available');
-      }
-    } catch (e) {
-      console.error('   - Failed to get module count:', e);
-    }
-
-    // 7. Test event handler
-    console.log('7. Test event handler:');
-    const testHandler = () => {
-      console.log('✅ Test event handler called!');
-    };
-    console.log('   - Handler function:', {
-      type: typeof testHandler,
-      isFunction: typeof testHandler === 'function',
-    });
-
-    console.log('=== End Debug Info ===\n');
+    const isBungae = (globalThis as any).__BUNGAE_BUNDLER__ === true;
+    const ver = (globalThis as any).__BUNGAE_VERSION__;
+    setBundlerName(isBungae ? `Bungae${ver ? ' v' + ver : ''}` : 'Metro');
+    setHermesEnabled(!!(globalThis as any).HermesInternal);
   }, []);
 
-  // 테스트 이벤트 핸들러
-  const handleTestPress = () => {
-    console.log('✅ Test button pressed!');
-    Alert.alert('Success', 'Button press event is working!', [
-      { text: 'OK', onPress: () => console.log('Alert dismissed') },
-    ]);
-  };
+  // Network test states
+  const [fetchGet, setFetchGet] = useState<TestResult>({ status: 'idle', message: '' });
+  const [fetchPost, setFetchPost] = useState<TestResult>({ status: 'idle', message: '' });
+  const [fetchError, setFetchError] = useState<TestResult>({ status: 'idle', message: '' });
+  const [wsTest, setWsTest] = useState<TestResult>({ status: 'idle', message: '' });
+  const [timeoutTest, setTimeoutTest] = useState<TestResult>({ status: 'idle', message: '' });
+  const [multiTest, setMultiTest] = useState<TestResult>({ status: 'idle', message: '' });
 
-  // 소스맵 테스트용 에러 발생 핸들러
-  const handleSourceMapTest = () => {
-    console.log('🔍 Source Map Test: About to throw an error...');
-    console.log('📝 Check the stack trace - it should show App.tsx:XXX (original source)');
-    console.log(
-      '📝 If source map is working, you should see the correct file path and line number',
-    );
-
-    // 의도적으로 에러를 발생시켜서 소스맵이 제대로 작동하는지 확인
-    // 이 에러는 App.tsx의 특정 라인에서 발생하므로 소스맵이 작동하면
-    // 원본 파일 경로와 라인 번호가 스택 트레이스에 표시됩니다
+  // --- Test: GET ---
+  const runFetchGet = useCallback(async () => {
+    setFetchGet({ status: 'running', message: 'Fetching...' });
     try {
-      // 중첩된 함수에서 에러 발생 (소스맵 테스트용)
-      const throwError = () => {
-        const causeError = () => {
-          // 이 라인에서 에러 발생 - 소스맵이 작동하면 App.tsx의 라인 번호가 표시됨
-          throw new Error(
-            '🧪 Source Map Test Error: This error is intentional for testing source maps!\n' +
-              'If source maps are working correctly, you should see:\n' +
-              '- Original file path: App.tsx\n' +
-              '- Correct line number in the stack trace\n' +
-              '- Readable source code in debugger',
-          );
-        };
-        causeError();
-      };
-      throwError();
-    } catch (error) {
-      console.error('❌ Error caught (this is expected for source map testing):', error);
-      console.error('Stack trace:', error instanceof Error ? error.stack : String(error));
-
-      // Alert로도 에러 정보 표시
-      Alert.alert(
-        'Source Map Test Error',
-        `Error thrown for source map testing.\n\n` +
-          `Check the console for stack trace.\n` +
-          `If source maps work, you should see:\n` +
-          `- App.tsx with correct line number\n` +
-          `- Original source code in debugger`,
-        [
-          {
-            text: 'View Stack Trace',
-            onPress: () => {
-              console.log('\n=== Full Stack Trace ===');
-              if (error instanceof Error) {
-                console.log(error.stack);
-              }
-              console.log('=== End Stack Trace ===\n');
-            },
-          },
-          { text: 'OK' },
-        ],
+      const { result: res, duration } = await runWithTiming(() =>
+        fetch('https://jsonplaceholder.typicode.com/posts/1'),
       );
+      const json = await res.json();
+      setFetchGet({
+        status: 'success',
+        message: `${res.status} OK  |  title: "${(json.title as string).slice(0, 40)}..."`,
+        duration,
+      });
+    } catch (e: any) {
+      setFetchGet({ status: 'error', message: e.message });
     }
-  };
+  }, []);
+
+  // --- Test: POST ---
+  const runFetchPost = useCallback(async () => {
+    setFetchPost({ status: 'running', message: 'Posting...' });
+    try {
+      const { result: res, duration } = await runWithTiming(() =>
+        fetch('https://jsonplaceholder.typicode.com/posts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: 'bungae-test', body: 'hello', userId: 1 }),
+        }),
+      );
+      const json = await res.json();
+      setFetchPost({
+        status: 'success',
+        message: `${res.status} Created  |  id: ${json.id}`,
+        duration,
+      });
+    } catch (e: any) {
+      setFetchPost({ status: 'error', message: e.message });
+    }
+  }, []);
+
+  // --- Test: Error handling (404) ---
+  const runFetchError = useCallback(async () => {
+    setFetchError({ status: 'running', message: 'Requesting 404...' });
+    try {
+      const { result: res, duration } = await runWithTiming(() =>
+        fetch('https://httpstat.us/404'),
+      );
+      setFetchError({
+        status: res.ok ? 'success' : 'error',
+        message: `${res.status} ${res.statusText || 'Not Found'}`,
+        duration,
+      });
+    } catch (e: any) {
+      setFetchError({ status: 'error', message: e.message });
+    }
+  }, []);
+
+  // --- Test: WebSocket ---
+  const runWsTest = useCallback(async () => {
+    setWsTest({ status: 'running', message: 'Connecting...' });
+    const start = Date.now();
+    try {
+      const ws = new WebSocket('wss://echo.websocket.org');
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ws.close();
+          reject(new Error('Connection timeout (5s)'));
+        }, 5000);
+
+        ws.onopen = () => {
+          ws.send('bungae-ping');
+        };
+        ws.onmessage = (ev) => {
+          clearTimeout(timer);
+          const duration = Date.now() - start;
+          setWsTest({
+            status: 'success',
+            message: `Echo: "${ev.data}"`,
+            duration,
+          });
+          ws.close();
+          resolve();
+        };
+        ws.onerror = () => {
+          clearTimeout(timer);
+          reject(new Error('WebSocket error'));
+        };
+      });
+    } catch (e: any) {
+      setWsTest({ status: 'error', message: e.message, duration: Date.now() - start });
+    }
+  }, []);
+
+  // --- Test: Timeout ---
+  const runTimeoutTest = useCallback(async () => {
+    setTimeoutTest({ status: 'running', message: 'Testing timeout (3s limit)...' });
+    const start = Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+
+    try {
+      await fetch('https://httpstat.us/200?sleep=10000', { signal: controller.signal });
+      clearTimeout(timer);
+      setTimeoutTest({
+        status: 'success',
+        message: 'Completed (unexpected)',
+        duration: Date.now() - start,
+      });
+    } catch (e: any) {
+      clearTimeout(timer);
+      const duration = Date.now() - start;
+      const aborted = e.name === 'AbortError';
+      setTimeoutTest({
+        status: aborted ? 'success' : 'error',
+        message: aborted ? `Aborted after ${duration}ms (correct)` : e.message,
+        duration,
+      });
+    }
+  }, []);
+
+  // --- Test: Parallel requests ---
+  const runMultiTest = useCallback(async () => {
+    setMultiTest({ status: 'running', message: 'Sending 5 parallel requests...' });
+    const start = Date.now();
+    try {
+      const urls = Array.from(
+        { length: 5 },
+        (_, i) => `https://jsonplaceholder.typicode.com/posts/${i + 1}`,
+      );
+      const responses = await Promise.all(urls.map((u) => fetch(u)));
+      const allOk = responses.every((r) => r.ok);
+      const duration = Date.now() - start;
+      setMultiTest({
+        status: allOk ? 'success' : 'error',
+        message: `${responses.length} requests  |  all ${allOk ? 'OK' : 'FAILED'}`,
+        duration,
+      });
+    } catch (e: any) {
+      setMultiTest({ status: 'error', message: e.message, duration: Date.now() - start });
+    }
+  }, []);
+
+  // Run all
+  const runAll = useCallback(async () => {
+    await Promise.all([
+      runFetchGet(),
+      runFetchPost(),
+      runFetchError(),
+      runWsTest(),
+      runTimeoutTest(),
+      runMultiTest(),
+    ]);
+  }, [runFetchGet, runFetchPost, runFetchError, runWsTest, runTimeoutTest, runMultiTest]);
 
   return (
-    <View style={styles.container}>
-      <NewAppScreen templateFileName="App.tsx" safeAreaInsets={safeAreaInsets} />
-
-      {/* Bundler Info Badge */}
-      {bundlerInfo && (
-        <View
-          style={[
-            styles.bundlerBadge,
-            {
-              backgroundColor: bundlerInfo.isBungae
-                ? 'rgba(251, 191, 36, 0.9)' // Amber for Bungae
-                : 'rgba(59, 130, 246, 0.9)', // Blue for Metro
-            },
-          ]}
-        >
-          <Text style={styles.bundlerText}>
-            {bundlerInfo.isBungae ? '⚡' : '📦'} {bundlerInfo.name}
-            {bundlerInfo.version && ` v${bundlerInfo.version}`}
-          </Text>
-        </View>
-      )}
-
-      {/* Hermes Status Badge */}
-      {hermesEnabled !== null && (
-        <View
-          style={[
-            styles.hermesBadge,
-            {
-              backgroundColor: hermesEnabled
-                ? 'rgba(34, 197, 94, 0.9)' // Green for Hermes
-                : 'rgba(239, 68, 68, 0.9)', // Red for JSC
-            },
-          ]}
-        >
-          <Text style={styles.bundlerText}>
-            {hermesEnabled ? '✅ Hermes' : '❌ JSC (No Hermes)'}
-          </Text>
-        </View>
-      )}
-
-      {/* Asset test - verifies image loading */}
-      <View style={styles.assetBadge}>
-        <Image source={testIcon} style={styles.testIcon} />
-        <Text style={styles.assetText}>Asset OK</Text>
+    <ScrollView style={[styles.root, { backgroundColor: bg }]} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+      {/* Header */}
+      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
+        <Text style={[styles.title, { color: textColor }]}>Bungae</Text>
+        <Text style={[styles.subtitle, { color: dimColor }]}>Network Test</Text>
       </View>
 
-      {/* 테스트 버튼 - 이벤트 핸들러 연결 확인용 */}
-      <TouchableOpacity onPress={handleTestPress} style={styles.testButton} activeOpacity={0.7}>
-        <Text style={styles.testButtonText}>🧪 Test Button (Event Handler Test)</Text>
+      {/* Status badges */}
+      <View style={styles.badgeRow}>
+        <Badge label={bundlerName} color={bundlerName.startsWith('Bungae') ? '#f59e0b' : '#3b82f6'} />
+        <Badge label={hermesEnabled ? 'Hermes' : 'JSC'} color={hermesEnabled ? '#22c55e' : '#ef4444'} />
+        <View style={styles.assetBadge}>
+          <Image source={testIcon} style={styles.testIcon} />
+          <Text style={styles.badgeLabel}>Asset</Text>
+        </View>
+      </View>
+
+      {/* Run all */}
+      <TouchableOpacity onPress={runAll} style={styles.runAllBtn} activeOpacity={0.8}>
+        <Text style={styles.runAllText}>Run All Tests</Text>
       </TouchableOpacity>
 
-      {/* 소스맵 테스트 버튼 - 에러 발생으로 소스맵 검증 */}
-      <TouchableOpacity
-        onPress={handleSourceMapTest}
-        style={styles.sourceMapTestButton}
-        activeOpacity={0.7}
-      >
-        <Text style={styles.sourceMapTestButtonText}>🗺️ Source Map Test (Error Test)</Text>
-      </TouchableOpacity>
+      {/* Test cards */}
+      <View style={styles.section}>
+        <TestCard title="GET Request" desc="jsonplaceholder /posts/1" result={fetchGet} onRun={runFetchGet} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard title="POST Request" desc="jsonplaceholder /posts" result={fetchPost} onRun={runFetchPost} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard title="Error Handling" desc="httpstat.us/404" result={fetchError} onRun={runFetchError} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard title="WebSocket Echo" desc="echo.websocket.org" result={wsTest} onRun={runWsTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard title="Abort Timeout" desc="3s timeout on 10s delay" result={timeoutTest} onRun={runTimeoutTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard title="Parallel Fetch" desc="5 concurrent GET requests" result={multiTest} onRun={runMultiTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+      </View>
+    </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Components
+// ---------------------------------------------------------------------------
+
+function Badge({ label, color }: { label: string; color: string }) {
+  return (
+    <View style={[styles.badge, { backgroundColor: color }]}>
+      <Text style={styles.badgeLabel}>{label}</Text>
     </View>
   );
 }
 
+function TestCard({
+  title,
+  desc,
+  result,
+  onRun,
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  title: string;
+  desc: string;
+  result: TestResult;
+  onRun: () => void;
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const statusColor =
+    result.status === 'success' ? '#22c55e' :
+    result.status === 'error' ? '#ef4444' :
+    result.status === 'running' ? '#3b82f6' : dimColor;
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>{title}</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>{desc}</Text>
+        </View>
+        <TouchableOpacity
+          onPress={onRun}
+          style={[styles.runBtn, result.status === 'running' && styles.runBtnDisabled]}
+          activeOpacity={0.7}
+          disabled={result.status === 'running'}
+        >
+          {result.status === 'running' ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.runBtnText}>Run</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {result.status !== 'idle' && (
+        <View style={[styles.resultRow, { borderTopColor: dimColor + '22' }]}>
+          <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
+          <Text style={[styles.resultText, { color: textColor }]} numberOfLines={2}>
+            {result.message}
+          </Text>
+          {result.duration != null && (
+            <Text style={[styles.durationText, { color: dimColor }]}>{result.duration}ms</Text>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
   },
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  subtitle: {
+    fontSize: 17,
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    gap: 8,
+    marginTop: 12,
+  },
+  badge: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  badgeLabel: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   assetBadge: {
-    position: 'absolute',
-    top: 120,
-    right: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.9)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    gap: 6,
+    backgroundColor: '#6366f1',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    gap: 4,
   },
   testIcon: {
-    width: 24,
-    height: 24,
+    width: 18,
+    height: 18,
   },
-  assetText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  bundlerBadge: {
-    position: 'absolute',
-    top: 50,
-    right: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  hermesBadge: {
-    position: 'absolute',
-    top: 85,
-    right: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  bundlerText: {
-    color: '#000',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  testButton: {
-    position: 'absolute',
-    bottom: 160,
-    left: 20,
-    right: 20,
+  runAllBtn: {
+    marginHorizontal: 20,
+    marginTop: 20,
     backgroundColor: '#007AFF',
-    padding: 15,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
-  testButtonText: {
-    color: '#FFFFFF',
+  runAllText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '700',
+  },
+  section: {
+    paddingHorizontal: 20,
+    marginTop: 16,
+    gap: 10,
+  },
+  card: {
+    borderRadius: 12,
+    padding: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  cardTitle: {
     fontSize: 16,
     fontWeight: '600',
   },
-  sourceMapTestButton: {
-    position: 'absolute',
-    bottom: 100,
-    left: 20,
-    right: 20,
-    backgroundColor: '#FF3B30',
-    padding: 15,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+  cardDesc: {
+    fontSize: 13,
+    marginTop: 1,
   },
-  sourceMapTestButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  runBtn: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 8,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  runBtnDisabled: {
+    backgroundColor: '#007AFF88',
+  },
+  runBtnText: {
+    color: '#fff',
+    fontSize: 14,
     fontWeight: '600',
+  },
+  resultRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  resultText: {
+    flex: 1,
+    fontSize: 13,
+  },
+  durationText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
 });
 

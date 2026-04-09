@@ -7,6 +7,7 @@ import { join, dirname, extname, basename, relative } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
 import type { BuildResult } from '../graph-bundler';
+import { logInfo, logWarn } from '../graph-bundler/utils';
 import { runZtsBuild } from './process';
 
 const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
@@ -94,7 +95,7 @@ export async function buildWithZts(
   const outputPath = join(config.outDir, 'bundle.js');
   const sourceMapPath = `${outputPath}.map`;
 
-  console.log('📦 Using zts-bundler (Zig, fast)');
+  logInfo('Using zts-bundler (Zig, fast)');
 
   // Signal start
   onProgress?.(0, 1);
@@ -119,7 +120,7 @@ export async function buildWithZts(
     try {
       copyAssets(config, config.outDir);
     } catch (err) {
-      console.warn(`[zts] Asset copy warning: ${err}`);
+      logWarn(`Asset copy: ${err}`);
     }
   }
 
