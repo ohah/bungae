@@ -229,22 +229,22 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
     }
   });
 
-  // Forward stderr — aggregate circular dependency warnings
+  // Forward stderr — buffer lines + aggregate circular dependency warnings
+  let stderrBuffer = '';
   let circularDepCount = 0;
   let circularDepTimer: ReturnType<typeof setTimeout> | null = null;
 
   child.stderr?.on('data', (chunk: Buffer) => {
-    const text = chunk.toString().trim();
-    if (!text) return;
+    stderrBuffer += chunk.toString();
+    const parts = stderrBuffer.split('\n');
+    // Keep last incomplete line in buffer
+    stderrBuffer = parts.pop() || '';
 
-    // Aggregate circular dependency warnings into a single summary
-    const lines = text.split('\n');
-    for (const line of lines) {
-      const trimmed = line.replace(/^\[warning\]\s*/, '').trim();
+    for (const line of parts) {
+      const trimmed = line.trim();
       if (!trimmed) continue;
-      if (line.includes('Circular dependency detected')) {
+      if (trimmed.includes('Circular dependency detected')) {
         circularDepCount++;
-        // Debounce: print summary after all warnings arrive
         if (circularDepTimer) clearTimeout(circularDepTimer);
         circularDepTimer = setTimeout(() => {
           if (circularDepCount > 0) {
@@ -252,11 +252,11 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
             circularDepCount = 0;
           }
         }, 100);
-      } else if (line.includes('[warning]')) {
-        logWarn(trimmed);
+      } else if (trimmed.startsWith('[warning]')) {
+        // Skip other warnings silently (non-circular)
       } else {
         // Non-warning stderr (real errors)
-        console.error(line);
+        console.error(trimmed);
       }
     }
   });
