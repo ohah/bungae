@@ -249,14 +249,26 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
     console.warn('[Bungae] console.warn test');
     console.error('[Bungae] console.error test');
     console.debug('[Bungae] console.debug test');
+
+    // Object / Array test
+    console.log('Object test:', {
+      bundler: 'Bungae',
+      version: '0.0.1',
+      features: ['HMR', 'Fast Refresh', 'Source Maps'],
+      nested: { platform: 'ios', dev: true },
+    });
+    console.log('Array test:', [1, 'two', { three: 3 }, [4, 5]]);
+
     setConsoleTest({
       status: 'success',
-      message: 'Sent 5 log levels — check terminal output',
+      message: 'Sent 7 logs (5 levels + object + array) — check terminal',
     });
   }, []);
 
   // Run all
   const runAll = useCallback(async () => {
+    runErrorTest();
+    runConsoleTest();
     await Promise.all([
       runFetchGet(),
       runFetchPost(),
@@ -265,7 +277,7 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
       runTimeoutTest(),
       runMultiTest(),
     ]);
-  }, [runFetchGet, runFetchPost, runFetchError, runWsTest, runTimeoutTest, runMultiTest]);
+  }, [runFetchGet, runFetchPost, runFetchError, runWsTest, runTimeoutTest, runMultiTest, runErrorTest, runConsoleTest]);
 
   return (
     <ScrollView
