@@ -227,11 +227,47 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         return;
       }
 
-      res.writeHead(200, {
-        'Content-Type': 'application/javascript',
-        'Content-Length': Buffer.byteLength(currentBundle),
-      });
-      res.end(currentBundle);
+      const acceptHeader = req.headers.accept || '';
+      if (acceptHeader === 'multipart/mixed') {
+        // RN expects multipart/mixed with progress messages to hide "Loading from Metro" bar
+        const BOUNDARY = '3beqjf3apnqeu3h5jqorms4i';
+        const CRLF = '\r\n';
+
+        res.writeHead(200, {
+          'Content-Type': `multipart/mixed; boundary="${BOUNDARY}"`,
+          'Cache-Control': 'no-cache',
+          'X-React-Native-Project-Root': config.root,
+        });
+
+        res.write('If you are seeing this, your client does not support multipart response');
+
+        // Progress: done (bundle is already built)
+        res.write(
+          `${CRLF}--${BOUNDARY}${CRLF}` +
+            `Content-Type: application/json${CRLF}${CRLF}` +
+            JSON.stringify({ done: 1, total: 1 }),
+        );
+
+        // Bundle chunk
+        const bundleBytes = Buffer.byteLength(currentBundle);
+        const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
+        res.end(
+          `${CRLF}--${BOUNDARY}${CRLF}` +
+            `X-Metro-Files-Changed-Count: 0${CRLF}` +
+            `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
+            `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
+            `Content-Length: ${bundleBytes}${CRLF}` +
+            `Last-Modified: ${new Date().toUTCString()}${CRLF}${CRLF}` +
+            currentBundle +
+            `${CRLF}--${BOUNDARY}--${CRLF}`,
+        );
+      } else {
+        res.writeHead(200, {
+          'Content-Type': 'application/javascript',
+          'Content-Length': Buffer.byteLength(currentBundle),
+        });
+        res.end(currentBundle);
+      }
       return;
     }
 
