@@ -449,11 +449,37 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           const pos = consumer.originalPositionFor({ line, column: col });
           info.lookup = { line, col, result: pos };
 
-          // also check nearby lines
+          // find first and last mapped lines by scanning
+          let firstMappedLine: number | null = null;
+          let lastMappedLine: number | null = null;
+          let totalMappings = 0;
+          consumer.eachMapping((m: any) => {
+            totalMappings++;
+            if (firstMappedLine === null || m.generatedLine < firstMappedLine) firstMappedLine = m.generatedLine;
+            if (lastMappedLine === null || m.generatedLine > lastMappedLine) lastMappedLine = m.generatedLine;
+          });
+          info.firstMappedLine = firstMappedLine;
+          info.lastMappedLine = lastMappedLine;
+          info.totalMappings = totalMappings;
+
+          // bundle line count
+          if (state.bundle) {
+            info.bundleLineCount = state.bundle.split('\n').length;
+          }
+
+          // check nearby lines around the first mapped line
           info.nearbyMappings = [];
+          const checkLine = firstMappedLine ?? line;
+          for (let l = Math.max(1, checkLine - 2); l <= checkLine + 5; l++) {
+            const p = consumer.originalPositionFor({ line: l, column: 0 });
+            info.nearbyMappings.push({ genLine: l, source: p.source?.split('/').pop(), origLine: p.line, origCol: p.column });
+          }
+
+          // also check the requested line area
+          info.requestedLineMappings = [];
           for (let l = Math.max(1, line - 2); l <= line + 2; l++) {
             const p = consumer.originalPositionFor({ line: l, column: 0 });
-            info.nearbyMappings.push({ genLine: l, source: p.source, origLine: p.line, origCol: p.column });
+            info.requestedLineMappings.push({ genLine: l, source: p.source?.split('/').pop(), origLine: p.line, origCol: p.column });
           }
         } finally {
           consumer.destroy();
