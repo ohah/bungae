@@ -11,6 +11,7 @@ import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
+import { VERSION } from '../../index';
 import { logWarn } from '../graph-bundler/utils';
 
 /** NDJSON event from zts --watch-json */
@@ -123,6 +124,8 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
       // global: 폴리필/InitializeCore가 직접 참조하는 네이티브 글로벌 (Hermes가 미제공 시 폴백)
       `if(typeof global==='undefined')var global=__BUNGAE_GLOBAL__;`,
       `var process=__BUNGAE_GLOBAL__.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
+      // Bungae bundler identifier — App.tsx에서 번들러 감지용
+      `globalThis.__BUNGAE_BUNDLER__=true;globalThis.__BUNGAE_VERSION__=${JSON.stringify(VERSION)};`,
     ].join('');
     args.push(`--banner:js=${prelude}`);
 
