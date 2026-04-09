@@ -2,7 +2,7 @@
  * ZTS one-shot build
  */
 
-import { readFileSync, existsSync, mkdirSync, copyFileSync, readdirSync } from 'fs';
+import { readFileSync, mkdirSync, copyFileSync, readdirSync } from 'fs';
 import { join, dirname, extname, basename, relative } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
@@ -30,13 +30,13 @@ function copyAssets(config: ResolvedConfig, outputDir: string): void {
 
   // 번들 소스에서 에셋 파일 수집 (node_modules 제외)
   function walkDir(dir: string) {
-    let entries: string[];
+    let dirEntries;
     try {
-      entries = readdirSync(dir, { withFileTypes: true }) as unknown as string[];
+      dirEntries = readdirSync(dir, { withFileTypes: true });
     } catch {
       return;
     }
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    for (const entry of dirEntries) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.bungae') continue;

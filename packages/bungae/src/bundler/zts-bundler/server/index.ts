@@ -24,7 +24,7 @@ import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler
 import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
 import { parseRequestUrl, readJsonBody, sendJson, sendText } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { colors, logInfo, logWarn, logError, printBanner } from '../../graph-bundler/utils';
+import { colors, logInfo, logError, printBanner } from '../../graph-bundler/utils';
 import { spawnZtsWatch, type ZtsProcess } from '../process';
 
 /**
