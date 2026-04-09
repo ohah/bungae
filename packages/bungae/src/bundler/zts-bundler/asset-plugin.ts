@@ -157,19 +157,27 @@ function escapeRegex(s: string): string {
 
 // ===== Metro 호환 에셋 코드 생성 =====
 
-function generateAssetCode(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
-  const name = basename(filePath, extname(filePath));
-  const type = extname(filePath).slice(1);
+/**
+ * Metro 호환 httpServerLocation 계산.
+ * 프로젝트 외부(node_modules 등)의 ../를 정규화하여 asset-handler가 해석 가능한 경로 반환.
+ * @exported for testing
+ */
+export function computeHttpServerLocation(filePath: string, projectRoot: string): string {
   const assetDir = dirname(filePath);
-  let relativePath = relative(PROJECT_ROOT, assetDir).replace(/\\/g, '/');
+  let relativePath = relative(projectRoot, assetDir).replace(/\\/g, '/');
   // 프로젝트 외부(node_modules 등)는 ../가 포함됨.
   // asset-handler의 .. 해석은 빈 스택에서 pop → noop이므로 결과적으로
   // leading ../를 제거한 것과 동일. 여기서 미리 정규화한다.
   while (relativePath.startsWith('../')) relativePath = relativePath.slice(3);
   if (relativePath === '..') relativePath = '';
-  const httpServerLocation =
-    relativePath && relativePath !== '.' ? `/assets/${relativePath}` : '/assets';
+  return relativePath && relativePath !== '.' ? `/assets/${relativePath}` : '/assets';
+}
+
+function generateAssetCode(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  const name = basename(filePath, extname(filePath));
+  const type = extname(filePath).slice(1);
+  const httpServerLocation = computeHttpServerLocation(filePath, PROJECT_ROOT);
   const scales = findScales(filePath);
 
   const { width, height } = readImageDimensions(filePath, ext);
