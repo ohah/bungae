@@ -169,7 +169,14 @@ async function build() {
   }
 
   // Copy ZTS HMR client to dist (asset-plugin.ts가 readFileSync로 읽음)
-  const ztsHmrClientSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'runtime', 'zts-hmr-client.js');
+  const ztsHmrClientSrc = join(
+    ROOT,
+    'src',
+    'bundler',
+    'zts-bundler',
+    'runtime',
+    'zts-hmr-client.js',
+  );
   if (existsSync(ztsHmrClientSrc)) {
     copyFileSync(ztsHmrClientSrc, join(runtimeDir, 'zts-hmr-client.js'));
     console.log('  ✓ Runtime (zts-hmr-client.js) copied');

@@ -22,7 +22,12 @@ import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/serve
 import { handleAssetRequest } from '../../graph-bundler/server/handlers/asset-handler';
 import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler';
 import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
-import { parseRequestUrl, readJsonBody, sendJson, sendText } from '../../graph-bundler/server/utils';
+import {
+  parseRequestUrl,
+  readJsonBody,
+  sendJson,
+  sendText,
+} from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { colors, logInfo, logError, printBanner } from '../../graph-bundler/utils';
 import { spawnZtsWatch, type ZtsProcess } from '../process';
@@ -124,7 +129,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       // Read the initial bundle from output file
       if (existsSync(outputPath)) {
         // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
-        currentBundle = readFileSync(outputPath, 'utf-8').replace(/\/\/# sourceMappingURL=[^\n]*/g, '');
+        currentBundle = readFileSync(outputPath, 'utf-8').replace(
+          /\/\/# sourceMappingURL=[^\n]*/g,
+          '',
+        );
         if (existsSync(sourceMapPath)) {
           currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
         }
@@ -160,7 +168,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     lastBuildError = null;
     if (existsSync(outputPath)) {
       // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
-      currentBundle = readFileSync(outputPath, 'utf-8').replace(/\/\/# sourceMappingURL=[^\n]*/g, '');
+      currentBundle = readFileSync(outputPath, 'utf-8').replace(
+        /\/\/# sourceMappingURL=[^\n]*/g,
+        '',
+      );
       if (existsSync(sourceMapPath)) {
         currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
       }
@@ -237,9 +248,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
       const mapUrl = `http://${host}${mapPathname}${url.search}`;
 
-      const bundle = currentBundle +
-        `\n//# sourceMappingURL=${mapUrl}` +
-        `\n//# sourceURL=${bundleUrl}`;
+      const bundle =
+        currentBundle + `\n//# sourceMappingURL=${mapUrl}` + `\n//# sourceURL=${bundleUrl}`;
 
       const acceptHeader = req.headers.accept || '';
       if (acceptHeader === 'multipart/mixed') {
@@ -394,7 +404,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   });
 
   logInfo(`Dev server running on ${colors.bold}http://localhost:${port}${colors.reset}`);
-  logInfo(`Bundler: ${colors.bold}zts${colors.reset} ${colors.dim}(Zig-based, dev mode + HMR)${colors.reset}`);
+  logInfo(
+    `Bundler: ${colors.bold}zts${colors.reset} ${colors.dim}(Zig-based, dev mode + HMR)${colors.reset}`,
+  );
 
   // Terminal shortcuts
   const useGlobalHotkey = server?.useGlobalHotkey ?? true;
@@ -414,8 +426,12 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     });
     console.log('');
     logInfo('Keyboard shortcuts:');
-    console.log(`     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`);
-    console.log(`     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`);
+    console.log(
+      `     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`,
+    );
+    console.log(
+      `     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`,
+    );
     console.log('');
   }
 
@@ -534,7 +550,11 @@ async function handleSymbolicateRequest(
       });
 
       // Code frame for first non-internal frame
-      let codeFrame: { content: string; location: { row: number; column: number }; fileName: string } | null = null;
+      let codeFrame: {
+        content: string;
+        location: { row: number; column: number };
+        fileName: string;
+      } | null = null;
       for (const frame of symbolicatedStack) {
         if (frame.file && frame.lineNumber != null && !frame.file.includes('.bundle')) {
           try {
@@ -551,7 +571,9 @@ async function handleSymbolicateRequest(
               };
               break;
             }
-          } catch { /* file read failed */ }
+          } catch {
+            /* file read failed */
+          }
         }
       }
 

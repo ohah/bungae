@@ -125,9 +125,7 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
   const runFetchError = useCallback(async () => {
     setFetchError({ status: 'running', message: 'Requesting 404...' });
     try {
-      const { result: res, duration } = await runWithTiming(() =>
-        fetch('https://httpstat.us/404'),
-      );
+      const { result: res, duration } = await runWithTiming(() => fetch('https://httpstat.us/404'));
       setFetchError({
         status: res.ok ? 'success' : 'error',
         message: `${res.status} ${res.statusText || 'Not Found'}`,
@@ -236,7 +234,10 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
   }, [runFetchGet, runFetchPost, runFetchError, runWsTest, runTimeoutTest, runMultiTest]);
 
   return (
-    <ScrollView style={[styles.root, { backgroundColor: bg }]} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}>
+    <ScrollView
+      style={[styles.root, { backgroundColor: bg }]}
+      contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
+    >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
         <Text style={[styles.title, { color: textColor }]}>Bungae</Text>
@@ -245,8 +246,14 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
 
       {/* Status badges */}
       <View style={styles.badgeRow}>
-        <Badge label={bundlerName} color={bundlerName.startsWith('Bungae') ? '#f59e0b' : '#3b82f6'} />
-        <Badge label={hermesEnabled ? 'Hermes' : 'JSC'} color={hermesEnabled ? '#22c55e' : '#ef4444'} />
+        <Badge
+          label={bundlerName}
+          color={bundlerName.startsWith('Bungae') ? '#f59e0b' : '#3b82f6'}
+        />
+        <Badge
+          label={hermesEnabled ? 'Hermes' : 'JSC'}
+          color={hermesEnabled ? '#22c55e' : '#ef4444'}
+        />
         <View style={styles.assetBadge}>
           <Image source={testIcon} style={styles.testIcon} />
           <Text style={styles.badgeLabel}>Asset</Text>
@@ -260,12 +267,60 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
 
       {/* Test cards */}
       <View style={styles.section}>
-        <TestCard title="GET Request" desc="jsonplaceholder /posts/1" result={fetchGet} onRun={runFetchGet} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
-        <TestCard title="POST Request" desc="jsonplaceholder /posts" result={fetchPost} onRun={runFetchPost} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
-        <TestCard title="Error Handling" desc="httpstat.us/404" result={fetchError} onRun={runFetchError} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
-        <TestCard title="WebSocket Echo" desc="echo.websocket.org" result={wsTest} onRun={runWsTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
-        <TestCard title="Abort Timeout" desc="3s timeout on 10s delay" result={timeoutTest} onRun={runTimeoutTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
-        <TestCard title="Parallel Fetch" desc="5 concurrent GET requests" result={multiTest} onRun={runMultiTest} cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <TestCard
+          title="GET Request"
+          desc="jsonplaceholder /posts/1"
+          result={fetchGet}
+          onRun={runFetchGet}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="POST Request"
+          desc="jsonplaceholder /posts"
+          result={fetchPost}
+          onRun={runFetchPost}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="Error Handling"
+          desc="httpstat.us/404"
+          result={fetchError}
+          onRun={runFetchError}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="WebSocket Echo"
+          desc="echo.websocket.org"
+          result={wsTest}
+          onRun={runWsTest}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="Abort Timeout"
+          desc="3s timeout on 10s delay"
+          result={timeoutTest}
+          onRun={runTimeoutTest}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="Parallel Fetch"
+          desc="5 concurrent GET requests"
+          result={multiTest}
+          onRun={runMultiTest}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
       </View>
     </ScrollView>
   );
@@ -301,9 +356,13 @@ function TestCard({
   dimColor: string;
 }) {
   const statusColor =
-    result.status === 'success' ? '#22c55e' :
-    result.status === 'error' ? '#ef4444' :
-    result.status === 'running' ? '#3b82f6' : dimColor;
+    result.status === 'success'
+      ? '#22c55e'
+      : result.status === 'error'
+        ? '#ef4444'
+        : result.status === 'running'
+          ? '#3b82f6'
+          : dimColor;
 
   return (
     <View style={[styles.card, { backgroundColor: cardBg }]}>

@@ -23,7 +23,10 @@ describe('computeHttpServerLocation', () => {
   });
 
   test('node_modules 에셋 (hoisted)', () => {
-    const filePath = join(projectRoot, 'node_modules/react-native/Libraries/LogBox/UI/LogBoxImages/close.png');
+    const filePath = join(
+      projectRoot,
+      'node_modules/react-native/Libraries/LogBox/UI/LogBoxImages/close.png',
+    );
     expect(computeHttpServerLocation(filePath, projectRoot)).toBe(
       '/assets/node_modules/react-native/Libraries/LogBox/UI/LogBoxImages',
     );

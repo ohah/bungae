@@ -8,6 +8,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
+
 import { spawn, type Subprocess } from 'bun';
 
 const EXAMPLE_APP_DIR = resolve(__dirname, '../../../../../examples/ExampleApp');
@@ -46,7 +47,9 @@ describe('ZTS Server Network', () => {
             break;
           }
         }
-      } catch { /* not ready yet */ }
+      } catch {
+        /* not ready yet */
+      }
       await new Promise((r) => setTimeout(r, 2000));
     }
     if (!ready) {
@@ -54,7 +57,9 @@ describe('ZTS Server Network', () => {
       proc?.kill('SIGKILL');
       proc = null;
     } else {
-      console.log(`[test] ZTS server ready (${((Date.now() - (deadline - 60_000)) / 1000).toFixed(1)}s)`);
+      console.log(
+        `[test] ZTS server ready (${((Date.now() - (deadline - 60_000)) / 1000).toFixed(1)}s)`,
+      );
     }
   }, TIMEOUT);
 
@@ -68,125 +73,162 @@ describe('ZTS Server Network', () => {
 
   // ====== Bundle ======
 
-  test('GET /index.bundle — 200 + JS content', async () => {
-    if (!proc) return;
-    const res = await fetch(`${BASE}/index.bundle?platform=ios`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('javascript');
-    const body = await res.text();
-    expect(body.length).toBeGreaterThan(1000);
-  }, TIMEOUT);
+  test(
+    'GET /index.bundle — 200 + JS content',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(`${BASE}/index.bundle?platform=ios`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('javascript');
+      const body = await res.text();
+      expect(body.length).toBeGreaterThan(1000);
+    },
+    TIMEOUT,
+  );
 
-  test('번들에 sourceMappingURL 포함', async () => {
-    if (!proc) return;
-    const res = await fetch(`${BASE}/index.bundle?platform=ios`);
-    const body = await res.text();
-    // sourceMappingURL이 있어야 함 (Metro 호환 URL 또는 ZTS 원본)
-    expect(body).toContain('//# sourceMappingURL=');
-  }, TIMEOUT);
+  test(
+    '번들에 sourceMappingURL 포함',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(`${BASE}/index.bundle?platform=ios`);
+      const body = await res.text();
+      // sourceMappingURL이 있어야 함 (Metro 호환 URL 또는 ZTS 원본)
+      expect(body).toContain('//# sourceMappingURL=');
+    },
+    TIMEOUT,
+  );
 
   // multipart/mixed 테스트는 RN 네이티브 클라이언트만 사용하므로 스킵
   // (bun fetch의 Accept 헤더 처리가 RN과 다름)
 
   // ====== Source Map ======
 
-  test('GET /index.map — 유효한 JSON 소스맵', async () => {
-    if (!proc) return;
-    const res = await fetch(`${BASE}/index.map?platform=ios`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('json');
-    const body = await res.text();
-    // null byte 없어야 함
-    expect(body).not.toContain('\0');
+  test(
+    'GET /index.map — 유효한 JSON 소스맵',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(`${BASE}/index.map?platform=ios`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('json');
+      const body = await res.text();
+      // null byte 없어야 함
+      expect(body).not.toContain('\0');
 
-    const parsed = JSON.parse(body);
-    expect(parsed.version).toBe(3);
-    expect(Array.isArray(parsed.sources)).toBe(true);
-    expect(parsed.sources.length).toBeGreaterThan(0);
-    expect(typeof parsed.mappings).toBe('string');
-    expect(parsed.mappings.length).toBeGreaterThan(0);
-  }, TIMEOUT);
+      const parsed = JSON.parse(body);
+      expect(parsed.version).toBe(3);
+      expect(Array.isArray(parsed.sources)).toBe(true);
+      expect(parsed.sources.length).toBeGreaterThan(0);
+      expect(typeof parsed.mappings).toBe('string');
+      expect(parsed.mappings.length).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
 
   // ====== Assets ======
 
-  test('GET /assets/src/assets/test-icon.png — 프로젝트 에셋 200', async () => {
-    if (!proc) return;
-    const res = await fetch(`${BASE}/assets/src/assets/test-icon.png`);
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('image/png');
-    const buf = await res.arrayBuffer();
-    expect(buf.byteLength).toBeGreaterThan(0);
-  }, TIMEOUT);
+  test(
+    'GET /assets/src/assets/test-icon.png — 프로젝트 에셋 200',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(`${BASE}/assets/src/assets/test-icon.png`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toContain('image/png');
+      const buf = await res.arrayBuffer();
+      expect(buf.byteLength).toBeGreaterThan(0);
+    },
+    TIMEOUT,
+  );
 
   // ====== Status ======
 
-  test('GET /status — packager-status:running', async () => {
-    if (!proc) return;
-    const res = await fetch(`${BASE}/status`);
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    expect(body).toBe('packager-status:running');
-  }, TIMEOUT);
+  test(
+    'GET /status — packager-status:running',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(`${BASE}/status`);
+      expect(res.status).toBe(200);
+      const body = await res.text();
+      expect(body).toBe('packager-status:running');
+    },
+    TIMEOUT,
+  );
 
   // ====== Symbolicate ======
 
-  test('POST /symbolicate — 스택트레이스 응답', async () => {
-    if (!proc) return;
-    // 소스맵이 있어야 symbolicate 동작
-    const mapRes = await fetch(`${BASE}/index.map?platform=ios`);
-    if (mapRes.status !== 200) {
-      console.warn('Source map not available, skipping symbolicate test');
-      return;
-    }
-    const res = await fetch(`${BASE}/symbolicate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        stack: [
-          { file: `${BASE}/index.bundle?platform=ios`, lineNumber: 100, column: 1, methodName: 'test' },
-        ],
-      }),
-    });
-    // symbolicate 엔드포인트가 응답하는지 확인
-    if (res.status === 200) {
-      const body = await res.json();
-      expect(body).toHaveProperty('stack');
-      expect(Array.isArray(body.stack)).toBe(true);
-    } else {
-      // 소스맵이 없으면 500 또는 다른 에러 가능 — 404만 아니면 OK
-      console.warn(`symbolicate returned ${res.status}`);
-    }
-  }, TIMEOUT);
+  test(
+    'POST /symbolicate — 스택트레이스 응답',
+    async () => {
+      if (!proc) return;
+      // 소스맵이 있어야 symbolicate 동작
+      const mapRes = await fetch(`${BASE}/index.map?platform=ios`);
+      if (mapRes.status !== 200) {
+        console.warn('Source map not available, skipping symbolicate test');
+        return;
+      }
+      const res = await fetch(`${BASE}/symbolicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stack: [
+            {
+              file: `${BASE}/index.bundle?platform=ios`,
+              lineNumber: 100,
+              column: 1,
+              methodName: 'test',
+            },
+          ],
+        }),
+      });
+      // symbolicate 엔드포인트가 응답하는지 확인
+      if (res.status === 200) {
+        const body = await res.json();
+        expect(body).toHaveProperty('stack');
+        expect(Array.isArray(body.stack)).toBe(true);
+      } else {
+        // 소스맵이 없으면 500 또는 다른 에러 가능 — 404만 아니면 OK
+        console.warn(`symbolicate returned ${res.status}`);
+      }
+    },
+    TIMEOUT,
+  );
 
   // ====== No-change save ======
 
-  test('파일 수정 없이 저장 시 hmr:reload 미발생', async () => {
-    if (!proc) return;
+  test(
+    '파일 수정 없이 저장 시 hmr:reload 미발생',
+    async () => {
+      if (!proc) return;
 
-    const ws = new WebSocket(`ws://localhost:${PORT}/hot`);
-    const messages: any[] = [];
+      const ws = new WebSocket(`ws://localhost:${PORT}/hot`);
+      const messages: any[] = [];
 
-    await new Promise<void>((resolve, reject) => {
-      ws.addEventListener('open', () => resolve());
-      ws.addEventListener('error', (e) => reject(e));
-      setTimeout(() => reject(new Error('WS timeout')), 5000);
-    });
+      await new Promise<void>((resolve, reject) => {
+        ws.addEventListener('open', () => resolve());
+        ws.addEventListener('error', (e) => reject(e));
+        setTimeout(() => reject(new Error('WS timeout')), 5000);
+      });
 
-    ws.addEventListener('message', (e) => {
-      try { messages.push(JSON.parse(e.data as string)); } catch { /* */ }
-    });
+      ws.addEventListener('message', (e) => {
+        try {
+          messages.push(JSON.parse(e.data as string));
+        } catch {
+          /* */
+        }
+      });
 
-    // touch without change
-    const appPath = resolve(EXAMPLE_APP_DIR, 'App.tsx');
-    if (existsSync(appPath)) {
-      const content = readFileSync(appPath, 'utf-8');
-      writeFileSync(appPath, content);
-    }
+      // touch without change
+      const appPath = resolve(EXAMPLE_APP_DIR, 'App.tsx');
+      if (existsSync(appPath)) {
+        const content = readFileSync(appPath, 'utf-8');
+        writeFileSync(appPath, content);
+      }
 
-    await new Promise((r) => setTimeout(r, 3000));
-    ws.close();
+      await new Promise((r) => setTimeout(r, 3000));
+      ws.close();
 
-    const reloads = messages.filter((m) => m.type === 'hmr:reload');
-    expect(reloads.length).toBe(0);
-  }, TIMEOUT);
+      const reloads = messages.filter((m) => m.type === 'hmr:reload');
+      expect(reloads.length).toBe(0);
+    },
+    TIMEOUT,
+  );
 });

@@ -74,10 +74,7 @@ export function printBanner(version: string): void {
     `${colors.bold}${colors.yellow}Welcome to Bungae ${colors.white}${versionStr}${colors.reset}`,
     50,
   );
-  const tagline = centerText(
-    `${colors.dim}Lightning Fast React Native Bundler${colors.reset}`,
-    50,
-  );
+  const tagline = centerText(`${colors.dim}Lightning Fast React Native Bundler${colors.reset}`, 50);
 
   console.log(`${colors.yellow}${logo.join('\n')}${colors.reset}`);
   console.log(welcomeLine);

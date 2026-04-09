@@ -109,7 +109,8 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
 
       // RCTJavaScriptDidLoadNotification이 발생하지 않아 DevLoadingView가
       // 자동으로 사라지지 않는 문제 해결. Bridge NativeModules로 직접 hide 호출.
-      const hideLoadingView = 'setTimeout(function(){try{NativeModules.DevLoadingView.hide()}catch(e){}},0);';
+      const hideLoadingView =
+        'setTimeout(function(){try{NativeModules.DevLoadingView.hide()}catch(e){}},0);';
       args.push('--footer:js=' + hideLoadingView);
     }
 

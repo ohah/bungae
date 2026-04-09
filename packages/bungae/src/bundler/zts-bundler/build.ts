@@ -39,7 +39,8 @@ function copyAssets(config: ResolvedConfig, outputDir: string): void {
     for (const entry of dirEntries) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.bungae') continue;
+        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.bungae')
+          continue;
         walkDir(fullPath);
       } else if (entry.isFile() && assetExts.has(extname(entry.name).toLowerCase())) {
         copyAssetFile(fullPath, config.root, assetsDir, platform);

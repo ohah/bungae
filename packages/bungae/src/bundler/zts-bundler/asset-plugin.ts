@@ -9,22 +9,51 @@
  *   ZTS_PROJECT_ROOT   — 프로젝트 루트 (httpServerLocation 계산용)
  */
 
+import { createHash } from 'node:crypto';
 import { openSync, readSync, readFileSync, readdirSync, closeSync } from 'node:fs';
 import { basename, dirname, extname, relative } from 'node:path';
 import { createInterface } from 'node:readline';
-import { createHash } from 'node:crypto';
 
 // ===== 환경변수에서 설정 읽기 =====
 
 const ASSET_EXTS: string[] = process.env.ZTS_ASSET_EXTS
-  ? process.env.ZTS_ASSET_EXTS.split(',').map((e) => e.trim()).filter(Boolean)
+  ? process.env.ZTS_ASSET_EXTS.split(',')
+      .map((e) => e.trim())
+      .filter(Boolean)
   : [
-      '.bmp', '.gif', '.jpg', '.jpeg', '.png', '.psd', '.svg', '.webp',
-      '.tiff', '.tif', '.xml', '.avif', '.ico',
-      '.m4v', '.mov', '.mp4', '.mpeg', '.mpg', '.webm',
-      '.aac', '.aiff', '.caf', '.m4a', '.mp3', '.wav',
-      '.html', '.pdf', '.yaml', '.yml',
-      '.otf', '.ttf', '.woff', '.woff2',
+      '.bmp',
+      '.gif',
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.psd',
+      '.svg',
+      '.webp',
+      '.tiff',
+      '.tif',
+      '.xml',
+      '.avif',
+      '.ico',
+      '.m4v',
+      '.mov',
+      '.mp4',
+      '.mpeg',
+      '.mpg',
+      '.webm',
+      '.aac',
+      '.aiff',
+      '.caf',
+      '.m4a',
+      '.mp3',
+      '.wav',
+      '.html',
+      '.pdf',
+      '.yaml',
+      '.yml',
+      '.otf',
+      '.ttf',
+      '.woff',
+      '.woff2',
     ];
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT ?? process.cwd();
@@ -78,15 +107,25 @@ function getImageSizeFromBuffer(buffer: Buffer, ext: string): { width: number; h
     }
   } else if (ext === '.webp') {
     // WebP: RIFF header + VP8 chunk
-    if (buffer.length >= 30 && buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') {
+    if (
+      buffer.length >= 30 &&
+      buffer.toString('ascii', 0, 4) === 'RIFF' &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    ) {
       const chunk = buffer.toString('ascii', 12, 16);
       if (chunk === 'VP8 ' && buffer.length >= 30) {
-        return { width: buffer.readUInt16LE(26) & 0x3fff, height: buffer.readUInt16LE(28) & 0x3fff };
+        return {
+          width: buffer.readUInt16LE(26) & 0x3fff,
+          height: buffer.readUInt16LE(28) & 0x3fff,
+        };
       } else if (chunk === 'VP8L' && buffer.length >= 25) {
         const bits = buffer.readUInt32LE(21);
         return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
       } else if (chunk === 'VP8X' && buffer.length >= 30) {
-        return { width: ((buffer[24]! | (buffer[25]! << 8) | (buffer[26]! << 16)) & 0xffffff) + 1, height: ((buffer[27]! | (buffer[28]! << 8) | (buffer[29]! << 16)) & 0xffffff) + 1 };
+        return {
+          width: ((buffer[24]! | (buffer[25]! << 8) | (buffer[26]! << 16)) & 0xffffff) + 1,
+          height: ((buffer[27]! | (buffer[28]! << 8) | (buffer[29]! << 16)) & 0xffffff) + 1,
+        };
       }
     }
   } else if (ext === '.bmp') {
@@ -102,7 +141,11 @@ function readImageDimensions(filePath: string, ext: string): { width: number; he
     if (ext === '.png' || ext === '.gif') {
       const buf = Buffer.alloc(24);
       const fd = openSync(filePath, 'r');
-      try { readSync(fd, buf, 0, 24, 0); } finally { closeSync(fd); }
+      try {
+        readSync(fd, buf, 0, 24, 0);
+      } finally {
+        closeSync(fd);
+      }
       return getImageSizeFromBuffer(buf, ext);
     }
     return getImageSizeFromBuffer(readFileSync(filePath), ext);
@@ -187,7 +230,16 @@ function generateAssetCode(filePath: string): string {
   const { width, height } = readImageDimensions(filePath, ext);
   const hash = createHash('md5').update(readFileSync(filePath)).digest('hex').slice(0, 16);
 
-  const assetData = JSON.stringify({ __packager_asset: true, httpServerLocation, width, height, scales, hash, name, type });
+  const assetData = JSON.stringify({
+    __packager_asset: true,
+    httpServerLocation,
+    width,
+    height,
+    scales,
+    hash,
+    name,
+    type,
+  });
 
   return [
     `var _registry = require("${ASSET_REGISTRY_SPECIFIERS[0]}");`,
@@ -235,7 +287,13 @@ function handleMessage(msg: IpcMessage): string {
           resolveId: ASSET_REGISTRY_SPECIFIERS,
           load: [...ASSET_EXTS, VIRTUAL_ASSET_REGISTRY, VIRTUAL_HMR_CLIENT, HMR_CLIENT_SUFFIX],
         },
-        hooks: { resolveId: true, load: true, transform: false, renderChunk: false, generateBundle: false },
+        hooks: {
+          resolveId: true,
+          load: true,
+          transform: false,
+          renderChunk: false,
+          generateBundle: false,
+        },
         config: {},
         error: null,
       });
@@ -244,7 +302,11 @@ function handleMessage(msg: IpcMessage): string {
       // react-native/Libraries/Image/AssetRegistry 또는 @react-native/assets-registry/registry
       // → 같은 가상 모듈로 리다이렉트 (단일 assets 배열 공유)
       if (msg.specifier && ASSET_REGISTRY_SPECIFIERS.includes(msg.specifier)) {
-        return JSON.stringify({ id: msg.id, result: { path: VIRTUAL_ASSET_REGISTRY }, error: null });
+        return JSON.stringify({
+          id: msg.id,
+          result: { path: VIRTUAL_ASSET_REGISTRY },
+          error: null,
+        });
       }
       return JSON.stringify({ id: msg.id, result: null, error: null });
     }
@@ -252,11 +314,19 @@ function handleMessage(msg: IpcMessage): string {
     case 'load': {
       // 가상 AssetRegistry 모듈
       if (msg.path === VIRTUAL_ASSET_REGISTRY) {
-        return JSON.stringify({ id: msg.id, result: { contents: ASSET_REGISTRY_CODE }, error: null });
+        return JSON.stringify({
+          id: msg.id,
+          result: { contents: ASSET_REGISTRY_CODE },
+          error: null,
+        });
       }
       // HMRClient.js → ZTS HMR 클라이언트로 교체 (롤리팝 방식: onLoad intercept)
       if (msg.path && msg.path.endsWith(HMR_CLIENT_SUFFIX)) {
-        return JSON.stringify({ id: msg.id, result: { contents: ZTS_HMR_CLIENT_CODE }, error: null });
+        return JSON.stringify({
+          id: msg.id,
+          result: { contents: ZTS_HMR_CLIENT_CODE },
+          error: null,
+        });
       }
       // 에셋 파일
       const filePath = msg.path;
@@ -267,7 +337,11 @@ function handleMessage(msg: IpcMessage): string {
         const code = generateAssetCode(filePath);
         return JSON.stringify({ id: msg.id, result: { contents: code }, error: null });
       } catch (err) {
-        return JSON.stringify({ id: msg.id, result: null, error: `[bungae:react-native-asset] ${err}` });
+        return JSON.stringify({
+          id: msg.id,
+          result: null,
+          error: `[bungae:react-native-asset] ${err}`,
+        });
       }
     }
 

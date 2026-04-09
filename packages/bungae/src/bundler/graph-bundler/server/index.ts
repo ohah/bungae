@@ -386,8 +386,12 @@ export async function serveWithGraph(
     });
     console.log('');
     logInfo('Keyboard shortcuts:');
-    console.log(`     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`);
-    console.log(`     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`);
+    console.log(
+      `     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`,
+    );
+    console.log(
+      `     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`,
+    );
     console.log('');
   }
 

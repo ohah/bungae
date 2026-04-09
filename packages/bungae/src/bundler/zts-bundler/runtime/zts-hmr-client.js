@@ -58,16 +58,26 @@ var HMRClient = {
           case 'hmr:update-start':
             break;
           case 'hmr:update':
-            console.log('[ZTS HMR] update received, modules:', msg.modules ? msg.modules.length : 0);
+            console.log(
+              '[ZTS HMR] update received, modules:',
+              msg.modules ? msg.modules.length : 0,
+            );
             console.log('[ZTS HMR] __zts_apply_update:', typeof __zts_apply_update);
             console.log('[ZTS HMR] global.__zts_apply_update:', typeof global.__zts_apply_update);
-            var applyFn = typeof __zts_apply_update === 'function' ? __zts_apply_update : global.__zts_apply_update;
+            var applyFn =
+              typeof __zts_apply_update === 'function'
+                ? __zts_apply_update
+                : global.__zts_apply_update;
             if (typeof applyFn === 'function' && msg.modules && msg.modules.length > 0) {
-              console.log('[ZTS HMR] calling __zts_apply_update with', msg.modules.length, 'modules');
+              console.log(
+                '[ZTS HMR] calling __zts_apply_update with',
+                msg.modules.length,
+                'modules',
+              );
               try {
                 applyFn(msg.modules);
                 console.log('[ZTS HMR] __zts_apply_update completed successfully');
-              } catch(e) {
+              } catch (e) {
                 console.error('[ZTS HMR] __zts_apply_update threw:', e);
               }
             } else {
