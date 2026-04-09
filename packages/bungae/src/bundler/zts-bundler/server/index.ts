@@ -195,6 +195,12 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = parseRequestUrl(req, hostname, port);
 
+    // Symbolicate — dev middleware보다 먼저 처리 (RN LogBox 스택트레이스)
+    if (url.pathname === '/symbolicate' && req.method === 'POST') {
+      await handleSymbolicateRequest(req, res, config, currentSourceMap);
+      return;
+    }
+
     // Dev middleware
     if (devMiddleware) {
       const shouldHandle = devMiddlewarePathPrefixes.some(
