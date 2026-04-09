@@ -21,8 +21,14 @@ var HMRClient = {
     // No-op: ZTS bundler does not require bundle registration
   },
 
-  log: function (_level, _data) {
-    // No-op: ZTS HMR does not forward logs to server
+  log: function (level, data) {
+    if (this._socket && this._socket.readyState === 1) {
+      try {
+        this._socket.send(JSON.stringify({ type: 'log', level: level, data: data }));
+      } catch (_e) {
+        // ignore
+      }
+    }
   },
 
   setup: function (platform, bundleEntry, host, port, isEnabled, scheme) {
@@ -46,6 +52,44 @@ var HMRClient = {
           platform: platform,
         }),
       );
+
+      // Intercept console methods to forward logs to dev server terminal
+      var levels = ['log', 'info', 'warn', 'error', 'debug'];
+      for (var i = 0; i < levels.length; i++) {
+        (function (level) {
+          var original = console[level];
+          if (typeof original === 'function') {
+            console[level] = function () {
+              // Call original first
+              original.apply(console, arguments);
+              // Forward to server
+              if (socket.readyState === 1) {
+                try {
+                  var args = [];
+                  for (var j = 0; j < arguments.length; j++) {
+                    var arg = arguments[j];
+                    // Serialize safely — avoid circular references
+                    if (arg instanceof Error) {
+                      args.push(arg.message);
+                    } else if (typeof arg === 'object' && arg !== null) {
+                      try {
+                        args.push(JSON.parse(JSON.stringify(arg)));
+                      } catch (_e) {
+                        args.push(String(arg));
+                      }
+                    } else {
+                      args.push(arg);
+                    }
+                  }
+                  socket.send(JSON.stringify({ type: 'log', level: level, data: args }));
+                } catch (_e) {
+                  // ignore serialization errors
+                }
+              }
+            };
+          }
+        })(levels[i]);
+      }
     };
 
     socket.onmessage = function (event) {
