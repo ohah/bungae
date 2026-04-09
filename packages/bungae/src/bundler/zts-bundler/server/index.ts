@@ -42,16 +42,139 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   printBanner(VERSION);
 
-  // Temp directory for zts output
-  const outputDir = mkdtempSync(join(tmpdir(), 'bungae-zts-'));
-  const outputPath = join(outputDir, 'bundle.js');
-  const sourceMapPath = `${outputPath}.map`;
+  // Per-platform state management
+  interface PlatformState {
+    process: ZtsProcess;
+    outputDir: string;
+    outputPath: string;
+    sourceMapPath: string;
+    bundle: string | null;
+    sourceMap: string | null;
+    buildError: string | null;
+    fileCount: number;
+    lastRebuildTime: number;
+  }
 
-  // Track current bundle state
-  let currentBundle: string | null = null;
-  let currentSourceMap: string | null = null;
-  let lastBuildError: string | null = null;
-  let lastFileCount = 1;
+  const platforms = new Map<string, PlatformState>();
+  const defaultPlatform = config.platform ?? 'ios';
+
+  /**
+   * Get or create platform state. Spawns a new ZTS process if needed.
+   */
+  function getOrCreatePlatform(platform: string): PlatformState {
+    let state = platforms.get(platform);
+    if (state) return state;
+
+    const outputDir = mkdtempSync(join(tmpdir(), `bungae-zts-${platform}-`));
+    const outputPath = join(outputDir, 'bundle.js');
+    const sourceMapPath = `${outputPath}.map`;
+    const platformConfig: ResolvedConfig = { ...config, platform: platform as any };
+    const buildStart = Date.now();
+
+    const zts = spawnZtsWatch(platformConfig, outputPath);
+
+    state = {
+      process: zts,
+      outputDir,
+      outputPath,
+      sourceMapPath,
+      bundle: null,
+      sourceMap: null,
+      buildError: null,
+      fileCount: 1,
+      lastRebuildTime: Date.now(),
+    };
+
+    // Handle ready event
+    zts.on('ready', (event: { files?: number }) => {
+      if (event.files) state!.fileCount = event.files;
+      if (existsSync(outputPath)) {
+        state!.bundle = readFileSync(outputPath, 'utf-8').replace(
+          /\/\/# sourceMappingURL=[^\n]*/g,
+          '',
+        );
+        if (existsSync(sourceMapPath)) {
+          state!.sourceMap = readFileSync(sourceMapPath, 'utf-8');
+        }
+        const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
+        const buildTime = Date.now() - buildStart;
+        logInfo(
+          `Build complete ${colors.dim}[${platform}]${colors.reset} ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`,
+        );
+      } else {
+        state!.buildError = 'Build produced no output';
+        logError(`${state!.buildError} [${platform}]`);
+      }
+    });
+
+    // Handle rebuild events
+    zts.on('rebuild', (event) => {
+      const duration = Date.now() - state!.lastRebuildTime;
+      state!.lastRebuildTime = Date.now();
+
+      if (!event.success) {
+        state!.buildError = event.error ?? 'Unknown build error';
+        logError(`Build failed [${platform}]: ${state!.buildError}`);
+        sendToClients(formatHmrError(state!.buildError));
+        return;
+      }
+
+      state!.buildError = null;
+      if (existsSync(outputPath)) {
+        state!.bundle = readFileSync(outputPath, 'utf-8').replace(
+          /\/\/# sourceMappingURL=[^\n]*/g,
+          '',
+        );
+        if (existsSync(sourceMapPath)) {
+          state!.sourceMap = readFileSync(sourceMapPath, 'utf-8');
+        }
+      }
+
+      const changedCount = event.changed?.length ?? 0;
+      const updatesCount = event.updates?.length ?? 0;
+
+      if (event.graph_changed) {
+        logInfo(
+          `Graph changed ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms)${colors.reset}, full reload`,
+        );
+        sendToClients({ type: 'hmr:reload' });
+      } else if (event.updates && event.updates.length > 0) {
+        logInfo(
+          `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${colors.reset}`,
+        );
+        sendToClients({ type: 'hmr:update-start' });
+        sendToClients({ type: 'hmr:update', modules: event.updates });
+        sendToClients({ type: 'hmr:update-done' });
+      } else if (changedCount > 0) {
+        logInfo(
+          `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${colors.reset}`,
+        );
+      }
+    });
+
+    zts.on('error', (error: Error) => {
+      state!.buildError = error.message;
+      logError(`ZTS error [${platform}]: ${error.message}`);
+    });
+
+    platforms.set(platform, state);
+    return state;
+  }
+
+  // Spawn default platform eagerly
+  const defaultState = getOrCreatePlatform(defaultPlatform);
+
+  // Wait for initial build
+  await new Promise<void>((resolve) => {
+    const check = () => {
+      if (defaultState.bundle !== null || defaultState.buildError !== null) {
+        resolve();
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    check();
+  });
 
   // Load RN dev middleware
   const devMiddleware: DevMiddleware | null = await loadDevMiddleware(port, config.root);
@@ -90,6 +213,17 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         const msg = JSON.parse(message.toString());
         if (msg.type === 'register-entrypoints') {
           ws.send(JSON.stringify({ type: 'bundle-registered' }));
+        } else if (msg.type === 'log') {
+          // Console forwarding: client → terminal
+          const level: string = msg.level || 'log';
+          const data: unknown[] = Array.isArray(msg.data) ? msg.data : [msg.data];
+          const prefix =
+            level === 'error'
+              ? `${colors.red}${colors.bold} error ${colors.reset}`
+              : level === 'warn'
+                ? `${colors.yellow}${colors.bold} warn ${colors.reset}`
+                : `${colors.dim} log ${colors.reset}`;
+          console.log(`${prefix}`, ...data);
         }
       } catch {
         /* ignore */
@@ -117,89 +251,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     }
   };
 
-  // Spawn ZTS in watch mode — handles file watching + incremental rebuilds
-  const ztsProcess: ZtsProcess = spawnZtsWatch(config, outputPath);
-  const buildStartTime = Date.now();
-
-  // Wait for initial build
-  await new Promise<void>((resolve) => {
-    const onReady = (event: { files?: number }) => {
-      ztsProcess.removeListener('ready', onReady);
-      ztsProcess.removeListener('error', onError);
-      if (event.files) lastFileCount = event.files;
-      // Read the initial bundle from output file
-      if (existsSync(outputPath)) {
-        // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
-        currentBundle = readFileSync(outputPath, 'utf-8').replace(
-          /\/\/# sourceMappingURL=[^\n]*/g,
-          '',
-        );
-        if (existsSync(sourceMapPath)) {
-          currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
-        }
-        const sizeKB = (Buffer.byteLength(currentBundle) / 1024).toFixed(1);
-        const buildTime = Date.now() - buildStartTime;
-        logInfo(`Initial build complete ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`);
-      } else {
-        lastBuildError = 'Initial build produced no output';
-        logError(lastBuildError);
-      }
-      resolve();
-    };
-    const onError = (error: Error) => {
-      ztsProcess.removeListener('ready', onReady);
-      ztsProcess.removeListener('error', onError);
-      lastBuildError = error.message;
-      logError(`Initial build failed: ${lastBuildError}`);
-      resolve();
-    };
-    ztsProcess.on('ready', onReady);
-    ztsProcess.on('error', onError);
-  });
-
-  // Handle rebuild events from ZTS watch mode
-  let lastRebuildTime = Date.now();
-  ztsProcess.on('rebuild', (event) => {
-    const rebuildDuration = Date.now() - lastRebuildTime;
-    lastRebuildTime = Date.now();
-    if (!event.success) {
-      lastBuildError = event.error ?? 'Unknown build error';
-      logError(`Build failed: ${lastBuildError}`);
-      sendToClients({ type: 'hmr:error', message: lastBuildError });
-      return;
-    }
-
-    // Build succeeded — update cached bundle
-    lastBuildError = null;
-    if (existsSync(outputPath)) {
-      // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
-      currentBundle = readFileSync(outputPath, 'utf-8').replace(
-        /\/\/# sourceMappingURL=[^\n]*/g,
-        '',
-      );
-      if (existsSync(sourceMapPath)) {
-        currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
-      }
-    }
-
-    const changedCount = event.changed?.length ?? 0;
-    const updatesCount = event.updates?.length ?? 0;
-
-    if (event.graph_changed) {
-      // Module graph changed (new imports added) — full reload required
-      logInfo(`Graph changed ${colors.dim}(${changedCount} files, ${rebuildDuration}ms)${colors.reset}, full reload`);
-      sendToClients({ type: 'hmr:reload' });
-    } else if (event.updates && event.updates.length > 0) {
-      // Incremental HMR update — send changed module codes
-      logInfo(`HMR update: ${updatesCount} module(s) changed ${colors.dim}(${rebuildDuration}ms)${colors.reset}`);
-      sendToClients({ type: 'hmr:update-start' });
-      sendToClients({ type: 'hmr:update', modules: event.updates });
-      sendToClients({ type: 'hmr:update-done' });
-    } else if (changedCount > 0) {
-      // 파일은 변경됐지만 코드 diff 없음 (타입만 변경, 주석만 변경 등) — 무시
-      logInfo(`Rebuilt ${colors.dim}(${changedCount} files, ${rebuildDuration}ms, no code change)${colors.reset}`);
-    }
-  });
+  // ZTS processes and rebuild events are managed per-platform in getOrCreatePlatform()
 
   // HTTP request handler
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
@@ -207,7 +259,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
     // Symbolicate — dev middleware보다 먼저 처리 (RN LogBox 스택트레이스)
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
-      await handleSymbolicateRequest(req, res, config, currentSourceMap);
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = platforms.get(platform) || defaultState;
+      await handleSymbolicateRequest(req, res, config, state.sourceMap);
       return;
     }
 
@@ -235,26 +289,40 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   ): Promise<void> => {
     // Bundle request
     if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
-      if (lastBuildError) {
-        const errorJs = `throw new Error(${JSON.stringify(lastBuildError)});`;
+      // Detect platform from URL query param (?platform=ios)
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = getOrCreatePlatform(platform);
+
+      // Wait for build if still in progress (new platform spawned on demand)
+      if (state.bundle === null && state.buildError === null) {
+        await new Promise<void>((resolve) => {
+          const check = () => {
+            if (state.bundle !== null || state.buildError !== null) resolve();
+            else setTimeout(check, 50);
+          };
+          check();
+        });
+      }
+
+      if (state.buildError) {
+        const errorJs = `throw new Error(${JSON.stringify(state.buildError)});`;
         sendText(res, 200, errorJs, 'application/javascript');
         return;
       }
 
-      if (!currentBundle) {
+      if (!state.bundle) {
         sendText(res, 503, 'Bundle not ready yet. Build may have failed - check server logs.');
         return;
       }
 
       // Metro 호환: sourceMappingURL + sourceURL 주석 삽입
-      // currentBundle에는 ZTS의 sourceMappingURL이 이미 제거된 상태
       const host = req.headers.host || `localhost:${port}`;
       const bundleUrl = `http://${host}${url.pathname}${url.search}`;
       const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
       const mapUrl = `http://${host}${mapPathname}${url.search}`;
 
       const bundle =
-        currentBundle + `\n//# sourceMappingURL=${mapUrl}` + `\n//# sourceURL=${bundleUrl}`;
+        state.bundle + `\n//# sourceMappingURL=${mapUrl}` + `\n//# sourceURL=${bundleUrl}`;
 
       const acceptHeader = req.headers.accept || '';
       if (acceptHeader === 'multipart/mixed') {
@@ -274,7 +342,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         res.write(
           `${CRLF}--${BOUNDARY}${CRLF}` +
             `Content-Type: application/json${CRLF}${CRLF}` +
-            JSON.stringify({ done: lastFileCount, total: lastFileCount }),
+            JSON.stringify({ done: state.fileCount, total: state.fileCount }),
         );
 
         // Bundle chunk
@@ -283,7 +351,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         // X-Metro-Files-Changed-Count > 0이어야 네이티브가 번들 로드 완료로 인식
         res.end(
           `${CRLF}--${BOUNDARY}${CRLF}` +
-            `X-Metro-Files-Changed-Count: ${lastFileCount}${CRLF}` +
+            `X-Metro-Files-Changed-Count: ${state.fileCount}${CRLF}` +
             `X-Metro-Delta-ID: ${revisionId}${CRLF}` +
             `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
             `Content-Length: ${bundleBytes}${CRLF}` +
@@ -303,25 +371,30 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
     // Source map (Metro 호환: /index.map, /index.bundle.map 등)
     if (url.pathname.endsWith('.map') || url.pathname.endsWith('.bundle.map')) {
-      if (!currentSourceMap) {
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = platforms.get(platform) || defaultState;
+
+      if (!state.sourceMap) {
         sendText(res, 404, 'Source map not available');
         return;
       }
 
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(currentSourceMap),
+        'Content-Length': Buffer.byteLength(state.sourceMap),
         'Access-Control-Allow-Origin': 'devtools://devtools',
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'no-cache',
       });
-      res.end(currentSourceMap);
+      res.end(state.sourceMap);
       return;
     }
 
-    // Symbolicate (스택트레이스 심볼리케이션)
+    // Symbolicate (스택트레이스 심볼리케이션) — 이미 handleRequest에서 처리
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
-      await handleSymbolicateRequest(req, res, config, currentSourceMap);
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = platforms.get(platform) || defaultState;
+      await handleSymbolicateRequest(req, res, config, state.sourceMap);
       return;
     }
 
@@ -421,9 +494,11 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       enabled: true,
       hmrClients,
       onClearCache: () => {
-        currentBundle = null;
-        currentSourceMap = null;
-        lastBuildError = null;
+        for (const state of platforms.values()) {
+          state.bundle = null;
+          state.sourceMap = null;
+          state.buildError = null;
+        }
       },
       projectRoot: config.root,
       port,
@@ -453,7 +528,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     }
 
     try {
-      ztsProcess.kill();
+      for (const state of platforms.values()) state.process.kill();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();
@@ -477,11 +552,48 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   return {
     stop: async () => {
-      ztsProcess.kill();
+      for (const state of platforms.values()) state.process.kill();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();
       await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+    },
+  };
+}
+
+/**
+ * Format build error into Metro-compatible HMR error message.
+ * React Native's LogBox/RedScreen expects: { type: 'error', body: { type, message, errors } }
+ */
+function formatHmrError(errorMessage: string): object {
+  // Try to extract file:line:column from ZTS error output
+  // ZTS format: "/path/to/file.ts:10:5: error: ..."
+  const locationMatch = errorMessage.match(/([^\s]+\.[jt]sx?):(\d+):(\d+)/);
+
+  const errors: Array<{
+    description: string;
+    filename?: string;
+    lineNumber?: number;
+    column?: number;
+  }> = [];
+
+  if (locationMatch) {
+    errors.push({
+      description: errorMessage,
+      filename: locationMatch[1]!,
+      lineNumber: parseInt(locationMatch[2]!, 10),
+      column: parseInt(locationMatch[3]!, 10),
+    });
+  } else {
+    errors.push({ description: errorMessage });
+  }
+
+  return {
+    type: 'error',
+    body: {
+      type: 'BuildError',
+      message: errorMessage,
+      errors,
     },
   };
 }
