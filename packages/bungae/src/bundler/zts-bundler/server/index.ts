@@ -14,6 +14,7 @@ import { join } from 'path';
 import type { Duplex } from 'stream';
 
 import { createDevServerMiddleware } from '@react-native-community/cli-server-api';
+import * as jscSafeUrl from 'jsc-safe-url';
 import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { ResolvedConfig } from '../../../config/types';
@@ -328,7 +329,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
       // Metro 호환: sourceMappingURL + sourceURL 주석 삽입
       const host = req.headers.host || `localhost:${port}`;
-      const bundleUrl = `http://${host}${url.pathname}${url.search}`;
+      // Metro-compatible: sourceURL uses jscSafeUrl.toJscSafeUrl() for Hermes source map matching
+      const fullUrl = `http://${host}${url.pathname}${url.search}${url.hash || ''}`;
+      const bundleUrl = jscSafeUrl.toJscSafeUrl(fullUrl);
       const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
       const mapUrl = `http://${host}${mapPathname}${url.search}`;
 
@@ -372,8 +375,11 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         );
       } else {
         res.writeHead(200, {
-          'Content-Type': 'application/javascript',
+          'Content-Type': 'application/javascript; charset=UTF-8',
           'Content-Length': Buffer.byteLength(bundle),
+          'Cache-Control': 'no-cache',
+          'X-React-Native-Project-Root': config.root,
+          'Content-Location': bundleUrl,
         });
         res.end(bundle);
       }
@@ -630,13 +636,7 @@ async function handleSymbolicateRequest(
 
     const stack = body.stack || [];
 
-    console.log('[symbolicate] request:', stack.length, 'frames, sourceMap:', sourceMap ? `${sourceMap.length} bytes` : 'null');
-    if (stack.length > 0) {
-      console.log('[symbolicate] first frame:', JSON.stringify(stack[0]));
-    }
-
     if (!sourceMap) {
-      console.log('[symbolicate] no sourceMap — returning raw stack');
       sendJson(res, 200, { stack, codeFrame: null });
       return;
     }
@@ -661,11 +661,7 @@ async function handleSymbolicateRequest(
             line: frame.lineNumber,
             column: frame.column ?? 0,
           });
-          if (pos.source == null || pos.line == null) {
-            console.log('[symbolicate] no mapping for', frame.lineNumber, frame.column ?? 0);
-            return { ...frame };
-          }
-          console.log('[symbolicate]', frame.lineNumber, ':', frame.column ?? 0, '→', pos.source, pos.line, ':', pos.column);
+          if (pos.source == null || pos.line == null) return { ...frame };
 
           const { resolve } = require('path');
           let sourcePath = pos.source;
