@@ -127,7 +127,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       ztsProcess.removeListener('error', onError);
       // Read the initial bundle from output file
       if (existsSync(outputPath)) {
-        currentBundle = readFileSync(outputPath, 'utf-8');
+        // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
+        currentBundle = readFileSync(outputPath, 'utf-8').replace(/\/\/# sourceMappingURL=[^\n]*/g, '');
         if (existsSync(sourceMapPath)) {
           currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
         }
@@ -162,7 +163,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     // Build succeeded — update cached bundle
     lastBuildError = null;
     if (existsSync(outputPath)) {
-      currentBundle = readFileSync(outputPath, 'utf-8');
+      // ZTS가 삽입한 sourceMappingURL 제거 (번들 전송 시 Metro 호환 URL로 재삽입)
+      currentBundle = readFileSync(outputPath, 'utf-8').replace(/\/\/# sourceMappingURL=[^\n]*/g, '');
       if (existsSync(sourceMapPath)) {
         currentSourceMap = readFileSync(sourceMapPath, 'utf-8');
       }
@@ -226,6 +228,17 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         return;
       }
 
+      // Metro 호환: sourceMappingURL + sourceURL 주석 삽입
+      // currentBundle에는 ZTS의 sourceMappingURL이 이미 제거된 상태
+      const host = req.headers.host || `localhost:${port}`;
+      const bundleUrl = `http://${host}${url.pathname}${url.search}`;
+      const mapPathname = url.pathname.replace(/\.bundle(\.js)?$/, '.map');
+      const mapUrl = `http://${host}${mapPathname}${url.search}`;
+
+      const bundle = currentBundle +
+        `\n//# sourceMappingURL=${mapUrl}` +
+        `\n//# sourceURL=${bundleUrl}`;
+
       const acceptHeader = req.headers.accept || '';
       if (acceptHeader === 'multipart/mixed') {
         // RN expects multipart/mixed with progress messages to hide "Loading from Metro" bar
@@ -248,7 +261,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         );
 
         // Bundle chunk
-        const bundleBytes = Buffer.byteLength(currentBundle);
+        const bundleBytes = Buffer.byteLength(bundle);
         const revisionId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
         res.end(
           `${CRLF}--${BOUNDARY}${CRLF}` +
@@ -257,20 +270,20 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             `Content-Type: application/javascript; charset=UTF-8${CRLF}` +
             `Content-Length: ${bundleBytes}${CRLF}` +
             `Last-Modified: ${new Date().toUTCString()}${CRLF}${CRLF}` +
-            currentBundle +
+            bundle +
             `${CRLF}--${BOUNDARY}--${CRLF}`,
         );
       } else {
         res.writeHead(200, {
           'Content-Type': 'application/javascript',
-          'Content-Length': Buffer.byteLength(currentBundle),
+          'Content-Length': Buffer.byteLength(bundle),
         });
-        res.end(currentBundle);
+        res.end(bundle);
       }
       return;
     }
 
-    // Source map
+    // Source map (Metro 호환: /index.map, /index.bundle.map 등)
     if (url.pathname.endsWith('.map') || url.pathname.endsWith('.bundle.map')) {
       if (!currentSourceMap) {
         sendText(res, 404, 'Source map not available');
@@ -281,6 +294,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         'Content-Type': 'application/json',
         'Content-Length': Buffer.byteLength(currentSourceMap),
         'Access-Control-Allow-Origin': 'devtools://devtools',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-cache',
       });
       res.end(currentSourceMap);
       return;
