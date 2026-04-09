@@ -18,7 +18,7 @@ import { buildSourceRequestRoutingMap } from '../build/utils';
 import { createHMRUpdateMessage, incrementalBuild } from '../hmr';
 import { setupTerminalActions } from '../terminal-actions';
 import type { BuildResult, HMRErrorMessage, PlatformBuildState } from '../types';
-import { printBanner } from '../utils';
+import { colors, logInfo, logWarn, logError, printBanner } from '../utils';
 import { loadDevMiddleware, type DevMiddleware } from './dev-middleware';
 import { handleAssetRequest } from './handlers/asset-handler';
 import { handleBundleRequest } from './handlers/bundle-handler';
@@ -40,17 +40,12 @@ export async function serveWithGraph(
   // Use config host or default to 0.0.0.0 (allows Android emulator 10.0.2.2 and other devices)
   const hostname = server?.host || '0.0.0.0';
 
-  // Print ASCII art banner
   printBanner(VERSION);
-  console.log(`Starting dev server on http://${hostname}:${port}`);
 
   // Load @react-native/dev-middleware for DevTools support
   const devMiddleware: DevMiddleware | null = await loadDevMiddleware(port, config.root);
 
-  // Log dev-middleware websocket endpoints
-  if (devMiddleware) {
-    console.log('   DevTools endpoints:', Object.keys(devMiddleware.websocketEndpoints).join(', '));
-  }
+  // dev-middleware loaded (DevTools endpoints logged in dev-middleware.ts)
 
   // Dev middleware paths that should be handled by dev-middleware
   // Note: Match any path starting with /json to support /json/client, /json/list, etc.
@@ -75,8 +70,7 @@ export async function serveWithGraph(
   // Get broadcast function from message socket (Metro-compatible)
   const broadcast = messageSocketEndpoint.broadcast;
 
-  // Log CLI server middleware endpoints
-  console.log('   CLI endpoints:', Object.keys(cliWebsocketEndpoints).join(', '));
+  // CLI server middleware ready (message socket for reload/devMenu)
 
   // Platform-aware cache: key is platform name
   const cachedBuilds = new Map<string, BuildResult>();
@@ -95,7 +89,7 @@ export async function serveWithGraph(
 
   // HMR WebSocket handlers
   hmrWss.on('connection', (ws: WebSocket) => {
-    console.log('[HMR] Client connected');
+    logInfo('HMR client connected');
     const client = {
       send: (msg: string) => {
         try {
@@ -112,24 +106,21 @@ export async function serveWithGraph(
         const msg = JSON.parse(message.toString());
         switch (msg.type) {
           case 'register-entrypoints':
-            console.log('[HMR] Sending bundle-registered');
             ws.send(JSON.stringify({ type: 'bundle-registered' }));
             break;
           case 'log':
-            // Client log forwarding disabled - use DevTools console instead
-            break;
           case 'log-opt-in':
             break;
           default:
-            console.log('[HMR] Unknown message type:', msg.type);
+            break;
         }
-      } catch (error) {
-        console.error('[HMR] Error parsing message:', error);
+      } catch {
+        // ignore malformed messages
       }
     });
 
     ws.on('close', () => {
-      console.log('[HMR] Client disconnected');
+      logInfo('HMR client disconnected');
       hmrClients.delete(client);
     });
   });
@@ -328,7 +319,7 @@ export async function serveWithGraph(
   // Handle WebSocket upgrades
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {
     const url = parseRequestUrl(req, hostname, port);
-    console.log(`[WS] Upgrade: ${url.pathname}`);
+    // WebSocket upgrade — silent unless debugging
 
     // HMR WebSocket (/hot)
     if (url.pathname === '/hot' || url.pathname.startsWith('/hot?')) {
@@ -352,7 +343,7 @@ export async function serveWithGraph(
     if (devMiddleware) {
       for (const [path, handler] of Object.entries(devMiddleware.websocketEndpoints)) {
         if (url.pathname === path || url.pathname.startsWith(path + '/')) {
-          console.log(`[WS] Inspector connected: ${url.pathname}`);
+          // Inspector WebSocket connected
           handler.handleUpgrade(req, socket, head, (ws) => {
             handler.emit('connection', ws, req);
           });
@@ -372,8 +363,7 @@ export async function serveWithGraph(
     });
   });
 
-  console.log(`\n✅ Dev server running at http://${hostname}:${port}`);
-  console.log(`   HMR endpoint: ws://${hostname}:${port}/hot`);
+  logInfo(`Dev server running on ${colors.bold}http://localhost:${port}${colors.reset}`);
 
   // Setup terminal keyboard shortcuts
   const useGlobalHotkey = server?.useGlobalHotkey ?? true;
@@ -394,42 +384,33 @@ export async function serveWithGraph(
       port,
       broadcast: (method: string, params?: Record<string, any>) => broadcast(method, params ?? {}),
     });
-    console.log('\n📱 Terminal shortcuts enabled:');
-    console.log('   r - Reload app');
-    console.log('   d - Open Dev Menu');
-    console.log('   j - Open DevTools');
-    console.log('   i - Open iOS Simulator');
-    console.log('   a - Open Android Emulator');
-    console.log('   c - Clear cache');
+    console.log('');
+    logInfo('Keyboard shortcuts:');
+    console.log(`     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`);
+    console.log(`     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`);
+    console.log('');
   }
 
   // File watcher for HMR
   let fileWatcher: FileWatcher | null = null;
   if (config.dev) {
     const handleFileChange = async (changedFiles: string[] = []) => {
-      console.log('File changed, invalidating cache and triggering HMR update...');
-
       for (const platformKey of cachedBuilds.keys()) {
         cachedBuilds.delete(platformKey);
         sourceMapConsumers.delete(platformKey);
-        console.log(`Invalidated cache for ${platformKey}`);
       }
 
       if (platformBuildStates.size === 0) {
-        console.log('No build states available yet. Waiting for initial build...');
         return;
       }
 
       if (hmrClients.size === 0) {
-        console.log('No HMR clients connected. Cache invalidated, will rebuild on next request.');
         return;
       }
 
       const changedFilesSet = new Set(changedFiles);
 
-      console.log(
-        `Processing HMR update for ${platformBuildStates.size} platform(s), ${hmrClients.size} client(s) connected`,
-      );
+      // Process HMR updates for all platforms
 
       for (const [platformKey, oldState] of platformBuildStates.entries()) {
         try {
@@ -445,9 +426,7 @@ export async function serveWithGraph(
           );
 
           if (!result) {
-            console.warn(
-              `Incremental build failed for ${platformKey}, falling back to full rebuild`,
-            );
+            logWarn(`Incremental build failed for ${platformKey}, falling back to full rebuild`);
             cachedBuilds.delete(platformKey);
             sourceMapConsumers.delete(platformKey);
             buildingPlatforms.delete(platformKey);
@@ -457,7 +436,6 @@ export async function serveWithGraph(
           const { delta, newState } = result;
 
           if (delta.added.size === 0 && delta.modified.size === 0 && delta.deleted.size === 0) {
-            console.log(`No changes detected for ${platformKey}`);
             continue;
           }
 
@@ -473,46 +451,36 @@ export async function serveWithGraph(
             newState.graph,
           );
 
-          const sendToClients = (msg: object, msgType: string) => {
-            if (hmrClients.size === 0) {
-              console.warn(`No HMR clients connected, cannot send ${msgType}`);
-              return;
-            }
+          const sendToClients = (msg: object) => {
+            if (hmrClients.size === 0) return;
             const messageStr = JSON.stringify(msg);
-            let sentCount = 0;
             for (const client of hmrClients) {
               try {
                 client.send(messageStr);
-                sentCount++;
-              } catch (error) {
-                console.error(`Error sending ${msgType}:`, error);
+              } catch {
+                // disconnected
               }
             }
-            console.log(`Sent ${msgType} to ${sentCount} client(s)`);
           };
 
-          // Validate message structure
-          if (!hmrMessage.body) {
-            console.error('CRITICAL: hmrMessage.body is missing!');
-            continue;
-          }
+          if (!hmrMessage.body) continue;
           if (!Array.isArray(hmrMessage.body.added)) hmrMessage.body.added = [];
           if (!Array.isArray(hmrMessage.body.modified)) hmrMessage.body.modified = [];
           if (!Array.isArray(hmrMessage.body.deleted)) hmrMessage.body.deleted = [];
 
-          sendToClients({ type: 'update-start', body: { isInitialUpdate: false } }, 'update-start');
-          sendToClients(hmrMessage, 'update');
-          sendToClients({ type: 'update-done' }, 'update-done');
+          sendToClients({ type: 'update-start', body: { isInitialUpdate: false } });
+          sendToClients(hmrMessage);
+          sendToClients({ type: 'update-done' });
 
-          console.log(
-            `HMR update sent for ${platformKey}: ${delta.added.size} added, ` +
-              `${delta.modified.size} modified, ${delta.deleted.size} deleted`,
+          logInfo(
+            `HMR update ${colors.dim}(${delta.added.size} added, ` +
+              `${delta.modified.size} modified, ${delta.deleted.size} deleted)${colors.reset}`,
           );
 
           cachedBuilds.delete(platformKey);
           sourceMapConsumers.delete(platformKey);
         } catch (error) {
-          console.error(`Error processing HMR update for ${platformKey}:`, error);
+          logError(`HMR update failed for ${platformKey}:`, error);
 
           const errorMessage: HMRErrorMessage = {
             type: 'error',
@@ -527,8 +495,8 @@ export async function serveWithGraph(
           for (const client of hmrClients) {
             try {
               client.send(errorStr);
-            } catch (sendError) {
-              console.error('Error sending HMR error:', sendError);
+            } catch {
+              // disconnected
             }
           }
 
@@ -555,7 +523,7 @@ export async function serveWithGraph(
 
     const isTestMode = process.env.NODE_ENV === 'test' || (globalThis as any).__BUNGAE_TEST_MODE__;
     if (!isTestMode) {
-      console.log(`\n${signal} received, shutting down dev server...`);
+      logInfo(`${signal} received, shutting down...`);
     }
 
     try {
@@ -582,7 +550,7 @@ export async function serveWithGraph(
       });
 
       if (!isTestMode) {
-        console.log('Server stopped');
+        logInfo('Server stopped');
         process.exit(0);
       }
     } catch (error) {

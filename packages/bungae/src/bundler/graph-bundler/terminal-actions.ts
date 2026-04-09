@@ -7,6 +7,8 @@ import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
+import { logInfo, logWarn, logError } from './utils';
+
 export interface TerminalActionsOptions {
   /** Enable global hotkey support */
   enabled: boolean;
@@ -124,91 +126,70 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
   };
 
   const handleReload = () => {
-    console.log('[Terminal] Reloading app...');
-    // Metro's reload mechanism:
-    // When 'r' is pressed in terminal, React Native CLI calls /reload HTTP endpoint
-    // The server then broadcasts 'reload' via message socket WebSocket (/message)
-    // React Native app listens to message socket and calls DevSettings.reload()
+    logInfo('Reloading app...');
     if (broadcast) {
-      // Use message socket broadcast (Metro-compatible)
       broadcast('reload');
-      console.log('[Terminal] Broadcast reload sent');
     } else {
-      // Fallback: try HTTP endpoint
       fetch(`http://localhost:${port}/reload`).catch((error) => {
-        console.error('Error calling /reload endpoint:', error);
+        logError('Failed to reload:', error);
       });
     }
   };
 
   const handleDevMenu = () => {
-    console.log('[Terminal] Opening Dev Menu...');
-    // Metro's devMenu mechanism:
-    // When 'd' is pressed in terminal, React Native CLI calls /devmenu HTTP endpoint
-    // The server then broadcasts 'devMenu' via message socket WebSocket (/message)
-    // React Native app listens to message socket and opens Dev Menu
+    logInfo('Opening Dev Menu...');
     if (broadcast) {
-      // Use message socket broadcast (Metro-compatible)
       broadcast('devMenu');
-      console.log('[Terminal] Broadcast devMenu sent');
     } else {
-      // Fallback: try HTTP endpoint
       fetch(`http://localhost:${port}/devmenu`).catch((error) => {
-        console.error('Error calling /devmenu endpoint:', error);
+        logError('Failed to open Dev Menu:', error);
       });
     }
   };
 
   const handleOpenDevTools = () => {
-    console.log('[Terminal] Opening DevTools...');
-    // Open React Native DevTools via /open-debugger endpoint
-    // This endpoint is provided by @react-native/dev-middleware
+    logInfo('Opening DevTools...');
     fetch(`http://localhost:${port}/open-debugger`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
     }).catch((error) => {
-      console.error('Error opening DevTools:', error);
+      logError('Failed to open DevTools:', error);
     });
   };
 
   const handleOpenIOSSimulator = () => {
     if (process.platform !== 'darwin') {
-      console.log('iOS Simulator is only available on macOS');
+      logWarn('iOS Simulator is only available on macOS');
       return;
     }
 
-    // Check if xcrun is available
     const xcrunPath = '/usr/bin/xcrun';
     if (!existsSync(xcrunPath)) {
-      console.log('xcrun not found. iOS Simulator cannot be opened.');
+      logWarn('xcrun not found. Install Xcode Command Line Tools.');
       return;
     }
 
-    // Open iOS Simulator using xcrun simctl
-    // First, try to boot a simulator if none is running
-    // Then open Simulator.app
     const openSimulator = spawn('open', ['-a', 'Simulator'], {
       detached: true,
       stdio: ['ignore', 'ignore', 'ignore'],
     });
     openSimulator.unref();
 
-    console.log('Opening iOS Simulator...');
+    logInfo('Opening iOS Simulator...');
   };
 
   const handleOpenAndroidEmulator = async () => {
-    // Try to find Android SDK
     const androidHome = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
     if (!androidHome) {
-      console.log('ANDROID_HOME or ANDROID_SDK_ROOT not set. Android Emulator cannot be opened.');
+      logWarn('ANDROID_HOME or ANDROID_SDK_ROOT not set');
       return;
     }
 
     const emulatorPath = join(androidHome, 'emulator', 'emulator');
     if (!existsSync(emulatorPath)) {
-      console.log('Android emulator not found. Please check your Android SDK installation.');
+      logWarn('Android emulator not found. Check your Android SDK installation.');
       return;
     }
 
@@ -232,7 +213,7 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
     });
 
     if (exitCode !== 0) {
-      console.log('Failed to list Android AVDs');
+      logWarn('Failed to list Android AVDs');
       return;
     }
 
@@ -242,27 +223,22 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
       .filter((line) => line.length > 0);
 
     if (avds.length === 0) {
-      console.log('No Android AVDs found. Please create an AVD first.');
+      logWarn('No Android AVDs found. Create an AVD first.');
       return;
     }
 
-    // Use the first AVD (or you could use a default like "Pixel_5_API_33")
     const avdName = avds[0];
     if (!avdName) {
-      console.log('No Android AVDs found. Please create an AVD first.');
+      logWarn('No Android AVDs found. Create an AVD first.');
       return;
     }
 
-    // Validate AVD name to prevent command injection
-    // AVD names should only contain alphanumeric characters, underscores, hyphens, and dots
     if (!/^[a-zA-Z0-9._-]+$/.test(avdName)) {
-      console.log(
-        'Invalid AVD name. AVD names must contain only alphanumeric characters, underscores, hyphens, and dots.',
-      );
+      logWarn('Invalid AVD name');
       return;
     }
 
-    console.log(`Opening Android Emulator: ${avdName}`);
+    logInfo(`Opening Android Emulator: ${avdName}`);
 
     const emulator = spawn(emulatorPath, ['-avd', avdName], {
       detached: true,
@@ -272,9 +248,8 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
   };
 
   const handleClearCache = () => {
-    console.log('Clearing cache...');
     onClearCache();
-    console.log('Cache cleared');
+    logInfo('Cache cleared');
   };
 
   // Set up key press handler
@@ -286,8 +261,7 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
 
   process.stdin.on('data', dataHandler);
 
-  // Debug: confirm terminal actions are ready
-  console.log('[Terminal] Keyboard shortcuts active (raw mode:', process.stdin.isRaw, ')');
+  // Terminal actions ready — no debug output needed
 
   // Cleanup function
   const cleanup = () => {

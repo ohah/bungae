@@ -11,6 +11,7 @@ import { existsSync } from 'fs';
 import { join, resolve } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
+import { logWarn } from '../graph-bundler/utils';
 
 /** NDJSON event from zts --watch-json */
 export interface ZtsReadyEvent {
@@ -191,9 +192,6 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
   const binaryPath = findZtsBinary(config.root);
   const args = buildZtsArgs(config, outputPath, true);
 
-  console.log(`[zts] Binary: ${binaryPath}`);
-  console.log(`[zts] Args: ${args.join(' ')}`);
-
   const child: ChildProcess = spawn(binaryPath, args, {
     cwd: config.root,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -222,17 +220,40 @@ export function spawnZtsWatch(config: ResolvedConfig, outputPath: string): ZtsPr
         const event: ZtsEvent = JSON.parse(line);
         (emitter as EventEmitter).emit(event.type, event);
       } catch {
-        // Not JSON, treat as regular stdout
-        console.log(`[zts] ${line}`);
+        // Not JSON — skip non-event stdout silently
       }
     }
   });
 
-  // Forward stderr
+  // Forward stderr — aggregate circular dependency warnings
+  let circularDepCount = 0;
+  let circularDepTimer: ReturnType<typeof setTimeout> | null = null;
+
   child.stderr?.on('data', (chunk: Buffer) => {
     const text = chunk.toString().trim();
-    if (text) {
-      console.error(`[zts] ${text}`);
+    if (!text) return;
+
+    // Aggregate circular dependency warnings into a single summary
+    const lines = text.split('\n');
+    for (const line of lines) {
+      const trimmed = line.replace(/^\[warning\]\s*/, '').trim();
+      if (!trimmed) continue;
+      if (line.includes('Circular dependency detected')) {
+        circularDepCount++;
+        // Debounce: print summary after all warnings arrive
+        if (circularDepTimer) clearTimeout(circularDepTimer);
+        circularDepTimer = setTimeout(() => {
+          if (circularDepCount > 0) {
+            logWarn(`${circularDepCount} circular dependency warning(s) detected`);
+            circularDepCount = 0;
+          }
+        }, 100);
+      } else if (line.includes('[warning]')) {
+        logWarn(trimmed);
+      } else {
+        // Non-warning stderr (real errors)
+        console.error(line);
+      }
     }
   });
 
