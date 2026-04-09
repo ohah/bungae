@@ -415,6 +415,57 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       return;
     }
 
+    // Debug: 소스맵 진단 — /debug-sourcemap?line=493&platform=ios
+    if (url.pathname === '/debug-sourcemap') {
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = platforms.get(platform) || defaultState;
+      const line = parseInt(url.searchParams.get('line') || '1', 10);
+      const col = parseInt(url.searchParams.get('col') || '0', 10);
+
+      if (!state.sourceMap) {
+        sendJson(res, 200, { error: 'no sourceMap' });
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(state.sourceMap);
+        const info: any = {
+          version: parsed.version,
+          file: parsed.file,
+          sourceRoot: parsed.sourceRoot,
+          sourcesCount: parsed.sources?.length,
+          sources: parsed.sources?.slice(0, 10),
+          hasSourcesContent: !!parsed.sourcesContent,
+          mappingsLength: parsed.mappings?.length,
+          namesCount: parsed.names?.length,
+          hasIgnoreList: !!parsed.x_google_ignoreList,
+          hasXFacebookSources: !!parsed.x_facebook_sources,
+        };
+
+        // lookup specific line
+        const { SourceMapConsumer } = await import('source-map');
+        const consumer = await new SourceMapConsumer(parsed);
+        try {
+          const pos = consumer.originalPositionFor({ line, column: col });
+          info.lookup = { line, col, result: pos };
+
+          // also check nearby lines
+          info.nearbyMappings = [];
+          for (let l = Math.max(1, line - 2); l <= line + 2; l++) {
+            const p = consumer.originalPositionFor({ line: l, column: 0 });
+            info.nearbyMappings.push({ genLine: l, source: p.source, origLine: p.line, origCol: p.column });
+          }
+        } finally {
+          consumer.destroy();
+        }
+
+        sendJson(res, 200, info);
+      } catch (e: any) {
+        sendJson(res, 200, { error: e.message });
+      }
+      return;
+    }
+
     // Status
     if (url.pathname === '/status' || url.pathname === '/status.txt') {
       res.writeHead(200, {
