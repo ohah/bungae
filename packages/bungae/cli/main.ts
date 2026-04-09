@@ -25,9 +25,10 @@ Usage:
   bungae <command> [options]
 
 Commands:
-  build          Build the React Native bundle
-  serve          Start the development server
-  start          Alias for serve
+  bundle         Build the React Native bundle
+  build          Alias for bundle
+  start          Start the development server
+  serve          Alias for start
   dependencies   List all module dependencies
 
 Common Options:
@@ -145,6 +146,7 @@ async function main() {
   const resolvedConfig = resolveConfig(mergedConfig, projectRoot);
 
   switch (parsed.command) {
+    case 'bundle':
     case 'build':
       await build(resolvedConfig);
       break;
