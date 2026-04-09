@@ -35,7 +35,11 @@ const IOS_VALID_SCALES = new Set([1, 2, 3]);
 
 // AssetRegistry 가상 모듈 ID
 const VIRTUAL_ASSET_REGISTRY = '\0bungae:asset-registry';
-const ASSET_REGISTRY_SPECIFIER = 'react-native/Libraries/Image/AssetRegistry';
+// RN이 AssetRegistry를 import하는 두 가지 경로 — 둘 다 가상 모듈로 리다이렉트해야 함
+const ASSET_REGISTRY_SPECIFIERS = [
+  'react-native/Libraries/Image/AssetRegistry',
+  '@react-native/assets-registry/registry',
+];
 
 // HMRClient 교체 (롤리팝 방식: onLoad hook으로 Metro HMRClient를 ZTS HMR 클라이언트로 교체)
 const VIRTUAL_HMR_CLIENT = '\0bungae:hmr-client';
@@ -186,7 +190,7 @@ function generateAssetCode(filePath: string): string {
   const assetData = JSON.stringify({ __packager_asset: true, httpServerLocation, width, height, scales, hash, name, type });
 
   return [
-    `var _registry = require("${ASSET_REGISTRY_SPECIFIER}");`,
+    `var _registry = require("${ASSET_REGISTRY_SPECIFIERS[0]}");`,
     `module.exports = _registry.registerAsset(${assetData});`,
   ].join('\n');
 }
@@ -228,7 +232,7 @@ function handleMessage(msg: IpcMessage): string {
         id: msg.id,
         name: 'bungae:react-native-asset',
         filters: {
-          resolveId: [ASSET_REGISTRY_SPECIFIER],
+          resolveId: ASSET_REGISTRY_SPECIFIERS,
           load: [...ASSET_EXTS, VIRTUAL_ASSET_REGISTRY, VIRTUAL_HMR_CLIENT, HMR_CLIENT_SUFFIX],
         },
         hooks: { resolveId: true, load: true, transform: false, renderChunk: false, generateBundle: false },
@@ -237,8 +241,9 @@ function handleMessage(msg: IpcMessage): string {
       });
 
     case 'resolveId': {
-      // react-native/Libraries/Image/AssetRegistry → 가상 모듈로 리다이렉트
-      if (msg.specifier === ASSET_REGISTRY_SPECIFIER) {
+      // react-native/Libraries/Image/AssetRegistry 또는 @react-native/assets-registry/registry
+      // → 같은 가상 모듈로 리다이렉트 (단일 assets 배열 공유)
+      if (msg.specifier && ASSET_REGISTRY_SPECIFIERS.includes(msg.specifier)) {
         return JSON.stringify({ id: msg.id, result: { path: VIRTUAL_ASSET_REGISTRY }, error: null });
       }
       return JSON.stringify({ id: msg.id, result: null, error: null });
