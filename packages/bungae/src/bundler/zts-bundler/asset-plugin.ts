@@ -161,7 +161,13 @@ function generateAssetCode(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   const name = basename(filePath, extname(filePath));
   const type = extname(filePath).slice(1);
-  const relativePath = relative(PROJECT_ROOT, dirname(filePath)).replace(/\\/g, '/');
+  const assetDir = dirname(filePath);
+  let relativePath = relative(PROJECT_ROOT, assetDir).replace(/\\/g, '/');
+  // 프로젝트 외부(node_modules 등)는 ../가 포함됨.
+  // asset-handler의 .. 해석은 빈 스택에서 pop → noop이므로 결과적으로
+  // leading ../를 제거한 것과 동일. 여기서 미리 정규화한다.
+  while (relativePath.startsWith('../')) relativePath = relativePath.slice(3);
+  if (relativePath === '..') relativePath = '';
   const httpServerLocation =
     relativePath && relativePath !== '.' ? `/assets/${relativePath}` : '/assets';
   const scales = findScales(filePath);
