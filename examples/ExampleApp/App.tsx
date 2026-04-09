@@ -80,6 +80,8 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
   const [wsTest, setWsTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [timeoutTest, setTimeoutTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [multiTest, setMultiTest] = useState<TestResult>({ status: 'idle', message: '' });
+  const [errorTest, setErrorTest] = useState<TestResult>({ status: 'idle', message: '' });
+  const [consoleTest, setConsoleTest] = useState<TestResult>({ status: 'idle', message: '' });
 
   // --- Test: GET ---
   const runFetchGet = useCallback(async () => {
@@ -221,6 +223,38 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
     }
   }, []);
 
+  // --- Test: Error (throw) ---
+  const runErrorTest = useCallback(() => {
+    setErrorTest({ status: 'running', message: 'Throwing error...' });
+    try {
+      const nested = () => {
+        throw new Error('Bungae Error Test: intentional error for Red Screen / LogBox testing');
+      };
+      nested();
+    } catch (e: any) {
+      console.error('Error test:', e.message);
+      console.error('Stack:', e.stack);
+      setErrorTest({
+        status: 'error',
+        message: `Caught: ${e.message.slice(0, 60)}`,
+      });
+    }
+  }, []);
+
+  // --- Test: Console levels ---
+  const runConsoleTest = useCallback(() => {
+    setConsoleTest({ status: 'running', message: 'Logging...' });
+    console.log('[Bungae] console.log test');
+    console.info('[Bungae] console.info test');
+    console.warn('[Bungae] console.warn test');
+    console.error('[Bungae] console.error test');
+    console.debug('[Bungae] console.debug test');
+    setConsoleTest({
+      status: 'success',
+      message: 'Sent 5 log levels — check terminal output',
+    });
+  }, []);
+
   // Run all
   const runAll = useCallback(async () => {
     await Promise.all([
@@ -317,6 +351,24 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
           desc="5 concurrent GET requests"
           result={multiTest}
           onRun={runMultiTest}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="Error / SourceMap"
+          desc="Throw error — check Red Screen + stack trace"
+          result={errorTest}
+          onRun={runErrorTest}
+          cardBg={cardBg}
+          textColor={textColor}
+          dimColor={dimColor}
+        />
+        <TestCard
+          title="Console Levels"
+          desc="log, info, warn, error, debug — check terminal"
+          result={consoleTest}
+          onRun={runConsoleTest}
           cardBg={cardBg}
           textColor={textColor}
           dimColor={dimColor}
