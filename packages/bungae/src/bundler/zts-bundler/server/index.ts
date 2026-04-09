@@ -181,10 +181,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       sendToClients({ type: 'hmr:update-start' });
       sendToClients({ type: 'hmr:update', modules: event.updates });
       sendToClients({ type: 'hmr:update-done' });
-    } else {
-      // No module-level changes (non-dev mode fallback)
-      console.log(`[zts] Rebuilt (${changedCount} files), no HMR data — sending reload`);
-      sendToClients({ type: 'hmr:reload' });
+    } else if (changedCount > 0) {
+      // 파일은 변경됐지만 코드 diff 없음 (타입만 변경, 주석만 변경 등) — 무시
+      console.log(`[zts] Rebuilt (${changedCount} files), no code change — skipping`);
     }
   });
 
