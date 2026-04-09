@@ -39,47 +39,53 @@ export function logError(...args: unknown[]): void {
 }
 
 /**
- * Center text for banner display
+ * Helper to create a banner line with exact width (59 chars inside box)
  */
-function centerText(text: string, width: number): string {
+function bannerLine(content: string): string {
   // eslint-disable-next-line no-control-regex
-  const visibleLength = text.replace(/\x1b\[[0-9;]*m/g, '').length;
-  const padding = Math.max(0, Math.floor((width - visibleLength) / 2));
-  return ' '.repeat(padding) + text;
+  const contentLength = content.replace(/\x1b\[[0-9;]*m/g, '').length;
+  const padding = 59 - contentLength;
+  const leftPad = Math.floor(padding / 2);
+  const rightPad = padding - leftPad;
+  return `${colors.cyan}    ║${colors.reset}${' '.repeat(leftPad)}${content}${' '.repeat(rightPad)}${colors.cyan}║${colors.reset}`;
 }
 
 /**
- * Print Bungae banner (Metro-style)
+ * Print Bungae ASCII art banner with version
  */
 export function printBanner(version: string): void {
-  const logo = [
-    '',
-    '                        ▒▒▓▓▓▓▒▒',
-    '                     ▒▓▓▓▒▒░░▒▒▓▓▓▒',
-    '                  ▒▓▓▓▓░░░▒▒▒▒░░░▓▓▓▓▒',
-    '                 ▓▓▒▒▒▓▓▓▓▓▓▓▓▓▓▓▒▒▒▓▓',
-    '                 ▓▓░░░░░▒▓▓▓▓▓▓▒░░░░░▓▓',
-    '                 ▓▓░░▓▓▒░░░▒▒░░░▒▓▒░░▓▓',
-    '                 ▓▓░░▓▓▓▓▓▒▒▒▒▓▓▓▓▒░░▓▓',
-    '                 ▓▓░░▓▓▓▓▓▓▓▓▓▓▓▓▓▒░░▓▓',
-    '                 ▓▓▒░░▒▒▓▓▓▓▓▓▓▓▒░░░▒▓▓',
-    '                  ▒▓▓▓▒░░░▒▓▓▒░░░▒▓▓▓▒',
-    '                     ▒▓▓▓▒░░░░▒▓▓▓▒',
-    '                        ▒▒▓▓▓▓▒▒',
-    '',
+  const versionText = `v${version}`;
+
+  // "BUNGAE" ASCII art (6 lines) with gradient colors
+  const bungaeLines = [
+    '██████╗ ██╗   ██╗███╗   ██╗ ██████╗  █████╗ ███████╗',
+    '██╔══██╗██║   ██║████╗  ██║██╔════╝ ██╔══██╗██╔════╝',
+    '██████╔╝██║   ██║██╔██╗ ██║██║  ███╗███████║█████╗  ',
+    '██╔══██╗██║   ██║██║╚██╗██║██║   ██║██╔══██║██╔══╝  ',
+    '██████╔╝╚██████╔╝██║ ╚████║╚██████╔╝██║  ██║███████╗',
+    '╚═════╝  ╚═════╝ ╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝',
   ];
 
-  const versionStr = `v${version}`;
-  const welcomeLine = centerText(
-    `${colors.bold}${colors.yellow}Welcome to Bungae ${colors.white}${versionStr}${colors.reset}`,
-    50,
-  );
-  const tagline = centerText(`${colors.dim}Lightning Fast React Native Bundler${colors.reset}`, 50);
+  const gradientColors = [
+    colors.yellow,
+    colors.yellow,
+    colors.blue,
+    colors.blue,
+    colors.magenta,
+    colors.magenta,
+  ];
 
-  console.log(`${colors.yellow}${logo.join('\n')}${colors.reset}`);
-  console.log(welcomeLine);
-  console.log(tagline);
-  console.log('');
+  const banner = `
+${colors.cyan}    ╔${'═'.repeat(59)}╗${colors.reset}
+${bannerLine('')}
+${bungaeLines.map((line, i) => bannerLine(`${colors.bold}${gradientColors[i]}${line}${colors.reset}`)).join('\n')}
+${bannerLine('')}
+${bannerLine(`${colors.cyan}Lightning Fast React Native Bundler${colors.reset}`)}
+${bannerLine(`${colors.gray}${versionText}${colors.reset}`)}
+${bannerLine('')}
+${colors.cyan}    ╚${'═'.repeat(59)}╝${colors.reset}
+`;
+  console.log(banner);
 }
 
 /**
