@@ -69,10 +69,7 @@ export async function loadDevMiddleware(
         warn: () => {},
         error: (...args: unknown[]) => console.error('[DevTools]', ...args),
       },
-      unstable_experiments: {
-        enableNetworkInspector: true,
-        enableStandaloneFuseboxShell: true,
-      },
+      // Metro defaults: enableNetworkInspector=false, enableStandaloneFuseboxShell=true
     });
 
     logInfo('DevTools support enabled');
