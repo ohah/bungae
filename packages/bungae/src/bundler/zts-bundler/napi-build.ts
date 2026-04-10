@@ -85,11 +85,28 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     plugins,
   };
 
-  // React Native specific options
+  // React Native specific options (CLI --platform=react-native 프리셋과 동일)
   if (platform === 'react-native') {
     opts.target = 'es5';
     opts.flow = true;
     opts.jsxInJs = true;
+    opts.configurableExports = true;
+
+    // resolve extensions: 플랫폼별 확장자 순서 (Metro/CLI 프리셋 호환)
+    const nativeAndBase = [
+      '.native.ts', '.native.tsx', '.native.js', '.native.jsx',
+      '.ts', '.tsx', '.js', '.jsx', '.json',
+    ];
+    if (rnPlatform === 'ios') {
+      opts.resolveExtensions = ['.ios.ts', '.ios.tsx', '.ios.js', '.ios.jsx', ...nativeAndBase];
+    } else if (rnPlatform === 'android') {
+      opts.resolveExtensions = ['.android.ts', '.android.tsx', '.android.js', '.android.jsx', ...nativeAndBase];
+    } else {
+      opts.resolveExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json'];
+    }
+
+    // main fields: RN → browser → module → main
+    opts.mainFields = ['react-native', 'browser', 'module', 'main'];
 
     // global -> __BUNGAE_GLOBAL__ substitution (preserve native Hermes global)
     define['global'] = '__BUNGAE_GLOBAL__';
