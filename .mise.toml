@@ -4,6 +4,7 @@ node = "24.11.1"
 ruby = "3.3"
 java = "17"
 pnpm = "10.23.0"
+zig = "0.15.2"
 
 [env]
 BUN_DEBUG = "0"
