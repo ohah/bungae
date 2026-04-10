@@ -15,7 +15,8 @@ import {
   type WatchReadyEvent,
   type WatchRebuildEvent,
 } from '@zts/core';
-import { resolve } from 'path';
+import { resolve, join } from 'path';
+import { existsSync } from 'fs';
 
 import type { ResolvedConfig } from '../../config/types';
 import { VERSION } from '../../version';
@@ -23,6 +24,22 @@ import { createAssetPlugin, createBabelPlugin, type PluginConfig } from './napi-
 import { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills } from './rn-constants';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
+
+/**
+ * 프로젝트 루트 기준으로 zts.node 경로를 탐색한다.
+ * 번개 dist에서 실행될 때 @zts/core의 findAddon()이 경로를 못 찾으므로 직접 탐색.
+ */
+function findZtsAddon(projectRoot: string): string | undefined {
+  const candidates = [
+    join(projectRoot, 'zts/zig-out/lib/zts.node'),
+    join(projectRoot, '../zts/zig-out/lib/zts.node'),
+    resolve(projectRoot, '../../zts/zig-out/lib/zts.node'),
+  ];
+  for (const c of candidates) {
+    if (existsSync(c)) return c;
+  }
+  return undefined;
+}
 
 // ===== Config Conversion =====
 
@@ -151,7 +168,7 @@ export async function buildWithNapi(
   config: ResolvedConfig,
   outputPath?: string,
 ): Promise<NapiBuildResult> {
-  init();
+  init(findZtsAddon(config.root));
 
   const opts = buildNapiOptions(config);
 
@@ -203,7 +220,7 @@ export function watchWithNapi(
     onRebuild?: (event: WatchRebuildEvent) => void;
   },
 ): NapiWatchResult {
-  init();
+  init(findZtsAddon(config.root));
 
   const opts = buildNapiOptions(config);
   opts.outfile = outputPath;
