@@ -9,10 +9,20 @@
  *   ZTS_PROJECT_ROOT   — 프로젝트 루트 (httpServerLocation 계산용)
  */
 
-import { createHash } from 'node:crypto';
-import { openSync, readSync, readFileSync, readdirSync, closeSync } from 'node:fs';
-import { basename, dirname, extname, relative } from 'node:path';
+import { extname } from 'node:path';
 import { createInterface } from 'node:readline';
+
+import {
+  ASSET_EXTS_DEFAULT,
+  ASSET_REGISTRY_CODE,
+  ZTS_HMR_CLIENT_CODE,
+  ASSET_REGISTRY_SPECIFIERS,
+  HMR_CLIENT_SUFFIX,
+  generateAssetCode,
+  computeHttpServerLocation,
+} from './plugin-core';
+
+export { computeHttpServerLocation };
 
 // ===== 환경변수에서 설정 읽기 =====
 
@@ -20,246 +30,15 @@ const ASSET_EXTS: string[] = process.env.ZTS_ASSET_EXTS
   ? process.env.ZTS_ASSET_EXTS.split(',')
       .map((e) => e.trim())
       .filter(Boolean)
-  : [
-      '.bmp',
-      '.gif',
-      '.jpg',
-      '.jpeg',
-      '.png',
-      '.psd',
-      '.svg',
-      '.webp',
-      '.tiff',
-      '.tif',
-      '.xml',
-      '.avif',
-      '.ico',
-      '.m4v',
-      '.mov',
-      '.mp4',
-      '.mpeg',
-      '.mpg',
-      '.webm',
-      '.aac',
-      '.aiff',
-      '.caf',
-      '.m4a',
-      '.mp3',
-      '.wav',
-      '.html',
-      '.pdf',
-      '.yaml',
-      '.yml',
-      '.otf',
-      '.ttf',
-      '.woff',
-      '.woff2',
-    ];
+  : ASSET_EXTS_DEFAULT;
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT ?? process.cwd();
 const RN_PLATFORM = process.env.ZTS_RN_PLATFORM ?? 'ios';
 
-// iOS: 1x, 2x, 3x만 허용 (롤리팝 호환)
-const IOS_VALID_SCALES = new Set([1, 2, 3]);
-
 // AssetRegistry 가상 모듈 ID
 const VIRTUAL_ASSET_REGISTRY = '\0bungae:asset-registry';
-// RN이 AssetRegistry를 import하는 두 가지 경로 — 둘 다 가상 모듈로 리다이렉트해야 함
-const ASSET_REGISTRY_SPECIFIERS = [
-  'react-native/Libraries/Image/AssetRegistry',
-  '@react-native/assets-registry/registry',
-];
-
 // HMRClient 교체 (롤리팝 방식: onLoad hook으로 Metro HMRClient를 ZTS HMR 클라이언트로 교체)
 const VIRTUAL_HMR_CLIENT = '\0bungae:hmr-client';
-const HMR_CLIENT_SUFFIX = '/Libraries/Utilities/HMRClient.js';
-// ZTS HMR 클라이언트 코드를 빌드 시 읽어서 인라인 (런타임에 파일 읽기 불필요)
-const ZTS_HMR_CLIENT_CODE = (() => {
-  try {
-    const { join } = require('node:path');
-    return readFileSync(join(__dirname, 'runtime/zts-hmr-client.js'), 'utf-8');
-  } catch {
-    return 'module.exports = { setup() {}, enable() {}, disable() {}, registerBundle() {}, log() {} }; module.exports.default = module.exports;';
-  }
-})();
-
-// ===== 이미지 치수 추출 =====
-// TODO: graph-bundler/utils.ts의 getImageSize와 중복 — 공용 유틸로 추출 필요
-
-function getImageSizeFromBuffer(buffer: Buffer, ext: string): { width: number; height: number } {
-  if (ext === '.png') {
-    if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50) {
-      return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
-    }
-  } else if (ext === '.jpg' || ext === '.jpeg') {
-    let offset = 2;
-    while (offset < buffer.length) {
-      if (buffer[offset] !== 0xff) break;
-      const marker = buffer[offset + 1]!;
-      if (marker === 0xc0 || marker === 0xc2) {
-        return { width: buffer.readUInt16BE(offset + 7), height: buffer.readUInt16BE(offset + 5) };
-      }
-      offset += 2 + buffer.readUInt16BE(offset + 2);
-    }
-  } else if (ext === '.gif') {
-    if (buffer.length >= 10 && buffer.toString('ascii', 0, 3) === 'GIF') {
-      return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
-    }
-  } else if (ext === '.webp') {
-    // WebP: RIFF header + VP8 chunk
-    if (
-      buffer.length >= 30 &&
-      buffer.toString('ascii', 0, 4) === 'RIFF' &&
-      buffer.toString('ascii', 8, 12) === 'WEBP'
-    ) {
-      const chunk = buffer.toString('ascii', 12, 16);
-      if (chunk === 'VP8 ' && buffer.length >= 30) {
-        return {
-          width: buffer.readUInt16LE(26) & 0x3fff,
-          height: buffer.readUInt16LE(28) & 0x3fff,
-        };
-      } else if (chunk === 'VP8L' && buffer.length >= 25) {
-        const bits = buffer.readUInt32LE(21);
-        return { width: (bits & 0x3fff) + 1, height: ((bits >> 14) & 0x3fff) + 1 };
-      } else if (chunk === 'VP8X' && buffer.length >= 30) {
-        return {
-          width: ((buffer[24]! | (buffer[25]! << 8) | (buffer[26]! << 16)) & 0xffffff) + 1,
-          height: ((buffer[27]! | (buffer[28]! << 8) | (buffer[29]! << 16)) & 0xffffff) + 1,
-        };
-      }
-    }
-  } else if (ext === '.bmp') {
-    if (buffer.length >= 26 && buffer[0] === 0x42 && buffer[1] === 0x4d) {
-      return { width: Math.abs(buffer.readInt32LE(18)), height: Math.abs(buffer.readInt32LE(22)) };
-    }
-  }
-  return { width: 0, height: 0 };
-}
-
-function readImageDimensions(filePath: string, ext: string): { width: number; height: number } {
-  try {
-    if (ext === '.png' || ext === '.gif') {
-      const buf = Buffer.alloc(24);
-      const fd = openSync(filePath, 'r');
-      try {
-        readSync(fd, buf, 0, 24, 0);
-      } finally {
-        closeSync(fd);
-      }
-      return getImageSizeFromBuffer(buf, ext);
-    }
-    return getImageSizeFromBuffer(readFileSync(filePath), ext);
-  } catch {
-    return { width: 0, height: 0 };
-  }
-}
-
-// ===== 스케일 변형 탐색 =====
-
-const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
-const dirCache = new Map<string, string[]>();
-
-function cachedReaddirSync(dir: string): string[] {
-  let entries = dirCache.get(dir);
-  if (!entries) {
-    entries = readdirSync(dir);
-    dirCache.set(dir, entries);
-  }
-  return entries;
-}
-
-function findScales(filePath: string): number[] {
-  const ext = extname(filePath);
-  const dir = dirname(filePath);
-  const nameWithoutExt = basename(filePath, ext);
-
-  try {
-    const files = cachedReaddirSync(dir);
-    const scales = new Set<number>([1]);
-    const pattern = new RegExp(`^${escapeRegex(nameWithoutExt)}${SCALE_REGEX.source}$`);
-
-    for (const file of files) {
-      if (!file.endsWith(ext)) continue;
-      const match = basename(file, ext).match(pattern);
-      if (match?.[1]) {
-        scales.add(parseFloat(match[1]));
-      }
-    }
-
-    // 플랫폼별 스케일 필터링: iOS는 1x, 2x, 3x만 유효
-    let result = Array.from(scales).sort((a, b) => a - b);
-    if (RN_PLATFORM === 'ios') {
-      result = result.filter((s) => IOS_VALID_SCALES.has(s));
-      if (result.length === 0) result = [1];
-    }
-    return result;
-  } catch {
-    return [1];
-  }
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-// ===== Metro 호환 에셋 코드 생성 =====
-
-/**
- * Metro 호환 httpServerLocation 계산.
- * 프로젝트 외부(node_modules 등)의 ../를 정규화하여 asset-handler가 해석 가능한 경로 반환.
- * @exported for testing
- */
-export function computeHttpServerLocation(filePath: string, projectRoot: string): string {
-  const assetDir = dirname(filePath);
-  let relativePath = relative(projectRoot, assetDir).replace(/\\/g, '/');
-  // 프로젝트 외부(node_modules 등)는 ../가 포함됨.
-  // asset-handler의 .. 해석은 빈 스택에서 pop → noop이므로 결과적으로
-  // leading ../를 제거한 것과 동일. 여기서 미리 정규화한다.
-  while (relativePath.startsWith('../')) relativePath = relativePath.slice(3);
-  if (relativePath === '..') relativePath = '';
-  return relativePath && relativePath !== '.' ? `/assets/${relativePath}` : '/assets';
-}
-
-function generateAssetCode(filePath: string): string {
-  const ext = extname(filePath).toLowerCase();
-  const name = basename(filePath, extname(filePath));
-  const type = extname(filePath).slice(1);
-  const httpServerLocation = computeHttpServerLocation(filePath, PROJECT_ROOT);
-  const scales = findScales(filePath);
-
-  const { width, height } = readImageDimensions(filePath, ext);
-  const hash = createHash('md5').update(readFileSync(filePath)).digest('hex').slice(0, 16);
-
-  const assetData = JSON.stringify({
-    __packager_asset: true,
-    httpServerLocation,
-    width,
-    height,
-    scales,
-    hash,
-    name,
-    type,
-  });
-
-  return [
-    `var _registry = require("${ASSET_REGISTRY_SPECIFIERS[0]}");`,
-    `module.exports = _registry.registerAsset(${assetData});`,
-  ].join('\n');
-}
-
-// AssetRegistry 인라인 구현 — @react-native/assets-registry 패키지가
-// 설치되지 않은 환경에서도 동작. RN AssetRegistry.js가 ESM re-export로
-// 깨지는 문제를 우회한다.
-const ASSET_REGISTRY_CODE = `
-var assets = [];
-function registerAsset(asset) {
-  return assets.push(asset);
-}
-function getAssetByID(assetId) {
-  return assets[assetId - 1];
-}
-module.exports = { registerAsset: registerAsset, getAssetByID: getAssetByID };
-`;
 
 // ===== ZTS IPC 프로토콜 =====
 
@@ -334,7 +113,10 @@ function handleMessage(msg: IpcMessage): string {
         return JSON.stringify({ id: msg.id, result: null, error: null });
       }
       try {
-        const code = generateAssetCode(filePath);
+        const code = generateAssetCode(filePath, {
+          projectRoot: PROJECT_ROOT,
+          platform: RN_PLATFORM,
+        });
         return JSON.stringify({ id: msg.id, result: { contents: code }, error: null });
       } catch (err) {
         return JSON.stringify({

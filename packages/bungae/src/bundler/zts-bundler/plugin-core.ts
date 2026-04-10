@@ -79,9 +79,9 @@ export const ASSET_REGISTRY_SPECIFIERS = [
 export const HMR_CLIENT_SUFFIX = '/Libraries/Utilities/HMRClient.js';
 
 // iOS: 1x, 2x, 3x only (Hermes compatibility)
-const IOS_VALID_SCALES = new Set([1, 2, 3]);
+export const IOS_SCALES = new Set([1, 2, 3]);
 
-const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
+export const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
 
 // ===== Image Dimensions =====
 
@@ -168,19 +168,8 @@ export function readImageDimensions(
 
 // ===== Scale Variants =====
 
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-const dirCache = new Map<string, string[]>();
-
-function cachedReaddirSync(dir: string): string[] {
-  let entries = dirCache.get(dir);
-  if (!entries) {
-    entries = readdirSync(dir);
-    dirCache.set(dir, entries);
-  }
-  return entries;
 }
 
 /**
@@ -196,7 +185,7 @@ export function findScales(filePath: string, platform: string): number[] {
   const nameWithoutExt = basename(filePath, ext);
 
   try {
-    const files = cachedReaddirSync(dir);
+    const files = readdirSync(dir);
     const scales = new Set<number>([1]);
     const pattern = new RegExp(`^${escapeRegex(nameWithoutExt)}${SCALE_REGEX.source}$`);
 
@@ -210,7 +199,7 @@ export function findScales(filePath: string, platform: string): number[] {
 
     let result = Array.from(scales).sort((a, b) => a - b);
     if (platform === 'ios') {
-      result = result.filter((s) => IOS_VALID_SCALES.has(s));
+      result = result.filter((s) => IOS_SCALES.has(s));
       if (result.length === 0) result = [1];
     }
     return result;
@@ -252,8 +241,9 @@ export function generateAssetCode(
   const httpServerLocation = computeHttpServerLocation(filePath, config.projectRoot);
   const scales = findScales(filePath, config.platform);
 
-  const { width, height } = readImageDimensions(filePath, ext);
-  const hash = createHash('md5').update(readFileSync(filePath)).digest('hex').slice(0, 16);
+  const buf = readFileSync(filePath);
+  const { width, height } = getImageSizeFromBuffer(buf, ext);
+  const hash = createHash('md5').update(buf).digest('hex').slice(0, 16);
 
   const assetData = JSON.stringify({
     __packager_asset: true,

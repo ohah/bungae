@@ -13,6 +13,7 @@ import { join, resolve } from 'path';
 import type { ResolvedConfig } from '../../config/types';
 import { VERSION } from '../../index';
 import { logWarn } from '../graph-bundler/utils';
+import { tryResolve, resolveRnPolyfills, RN_GLOBAL_IDENTIFIERS } from './rn-constants';
 
 /** NDJSON event from zts --watch-json */
 export interface ZtsReadyEvent {
@@ -322,100 +323,3 @@ export async function runZtsBuild(
   }
 }
 
-/**
- * require.resolve with fallback — returns null if not found.
- */
-function tryResolve(specifier: string, fromDir: string): string | null {
-  try {
-    return require.resolve(specifier, { paths: [fromDir] });
-  } catch {
-    return null;
-  }
-}
-
-/**
- * Resolve RN polyfill paths (console.js, error-guard.js).
- * Tries rn-get-polyfills first (RN 0.73+), falls back to @react-native/js-polyfills.
- */
-function resolveRnPolyfills(projectRoot: string): string[] {
-  const candidates = ['react-native/rn-get-polyfills', '@react-native/js-polyfills'];
-  for (const candidate of candidates) {
-    const resolved = tryResolve(candidate, projectRoot);
-    if (resolved) {
-      try {
-        return (require(resolved) as () => string[])();
-      } catch {
-        continue;
-      }
-    }
-  }
-  console.warn('[zts] Could not resolve RN polyfills, skipping');
-  return [];
-}
-
-/**
- * RN 예약 전역 식별자 목록 (RN 0.83 기준).
- * polyfillGlobal()로 globalThis에 등록되는 이름. scope hoisting 시 모듈 변수와 충돌 방지.
- */
-const RN_GLOBAL_IDENTIFIERS = [
-  // polyfillPromise
-  'Promise',
-  // setUpRegeneratorRuntime
-  'regeneratorRuntime',
-  // setUpXHR
-  'XMLHttpRequest',
-  'FormData',
-  'fetch',
-  'Headers',
-  'Request',
-  'Response',
-  'WebSocket',
-  'Blob',
-  'File',
-  'FileReader',
-  'URL',
-  'URLSearchParams',
-  'AbortController',
-  'AbortSignal',
-  // setUpTimers
-  'queueMicrotask',
-  'setImmediate',
-  'clearImmediate',
-  'requestIdleCallback',
-  'cancelIdleCallback',
-  'setTimeout',
-  'clearTimeout',
-  'setInterval',
-  'clearInterval',
-  'requestAnimationFrame',
-  'cancelAnimationFrame',
-  // setUpDOM
-  'DOMRect',
-  'DOMRectReadOnly',
-  'DOMRectList',
-  'HTMLCollection',
-  'NodeList',
-  'Node',
-  'Document',
-  'CharacterData',
-  'Text',
-  'Element',
-  'HTMLElement',
-  // setUpIntersectionObserver
-  'IntersectionObserver',
-  // setUpMutationObserver
-  'MutationObserver',
-  'MutationRecord',
-  // setUpPerformanceModern
-  'EventCounts',
-  'Performance',
-  'PerformanceEntry',
-  'PerformanceEventTiming',
-  'PerformanceLongTaskTiming',
-  'PerformanceMark',
-  'PerformanceMeasure',
-  'PerformanceObserver',
-  'PerformanceObserverEntryList',
-  'PerformanceResourceTiming',
-  'TaskAttributionTiming',
-];

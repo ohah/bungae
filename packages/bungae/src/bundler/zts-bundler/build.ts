@@ -9,11 +9,7 @@ import type { ResolvedConfig } from '../../config/types';
 import type { BuildResult } from '../graph-bundler';
 import { logInfo, logWarn } from '../graph-bundler/utils';
 import { buildWithNapi } from './napi-build';
-
-const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
-
-// iOS: 1x, 2x, 3x만 허용 (롤리팝 호환)
-const IOS_SCALES = new Set([1, 2, 3]);
+import { SCALE_REGEX, IOS_SCALES } from './plugin-core';
 
 /**
  * 에셋 파일을 플랫폼별 출력 디렉토리에 복사.

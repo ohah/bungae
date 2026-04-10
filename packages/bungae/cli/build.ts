@@ -196,6 +196,13 @@ async function build() {
     console.log('  ✓ ZTS babel plugin copied');
   }
 
+  // Copy plugin-core.ts (shared logic imported by asset-plugin.ts and babel-plugin.ts)
+  const pluginCoreSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'plugin-core.ts');
+  if (existsSync(pluginCoreSrc)) {
+    copyFileSync(pluginCoreSrc, join(DIST, 'plugin-core.ts'));
+    console.log('  ✓ ZTS plugin-core copied');
+  }
+
   // Copy type declarations from tsc output structure to dist root
   const typeMappings = [
     { from: 'src/index.d.ts', to: 'index.d.ts' },
@@ -254,6 +261,7 @@ async function build() {
     'main.d.cts',
     'asset-plugin.ts',
     'babel-plugin.ts',
+    'plugin-core.ts',
   ]);
   for (const file of readdir(DIST)) {
     if (!filesToKeep.has(file) && statSync(join(DIST, file)).isFile()) {

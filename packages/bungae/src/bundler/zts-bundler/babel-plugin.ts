@@ -15,6 +15,8 @@
 import { extname } from 'node:path';
 import { createInterface } from 'node:readline';
 
+import { detectCustomPlugins, createBabelTransformer } from './plugin-core';
+
 const SOURCE_EXTS = new Set(
   (process.env.ZTS_SOURCE_EXTS || '.js,.jsx,.ts,.tsx')
     .split(',')
@@ -24,66 +26,9 @@ const SOURCE_EXTS = new Set(
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT || process.cwd();
 
-// Check if babel.config.js has custom plugins — NO require('@babel/core') here (too slow)
-let hasCustomPlugins = false;
-try {
-  const { existsSync } = require('node:fs');
-  const { join } = require('node:path');
-  const configPath = join(PROJECT_ROOT, 'babel.config.js');
-  if (existsSync(configPath)) {
-    const config = require(configPath);
-    const plugins: string[] = config?.plugins || [];
-    hasCustomPlugins = plugins.some((p) => {
-      const name = typeof p === 'string' ? p : Array.isArray(p) ? p[0] : '';
-      return (
-        typeof name === 'string' &&
-        (name.includes('reanimated') || name.includes('nativewind') || name.includes('worklet'))
-      );
-    });
-  }
-} catch {
-  // ignore
-}
+const hasCustomPlugins = detectCustomPlugins(PROJECT_ROOT);
 
-// Lazy-loaded Babel state
-let babel: any = null;
-let babelOptions: any = null;
-
-function ensureBabel() {
-  if (babel) return;
-  babel = require('@babel/core');
-
-  const { join } = require('node:path');
-  const configPath = join(PROJECT_ROOT, 'babel.config.js');
-  const config = require(configPath);
-  const plugins: string[] = config?.plugins || [];
-
-  const customPaths: string[] = [];
-  for (const plugin of plugins) {
-    const name = typeof plugin === 'string' ? plugin : Array.isArray(plugin) ? plugin[0] : '';
-    if (
-      typeof name === 'string' &&
-      (name.includes('reanimated') || name.includes('nativewind') || name.includes('worklet'))
-    ) {
-      try {
-        customPaths.push(require.resolve(name));
-      } catch {
-        customPaths.push(name);
-      }
-    }
-  }
-
-  babelOptions = {
-    presets: [['@babel/preset-typescript', { isTSX: true, allExtensions: true }]],
-    plugins: customPaths,
-    babelrc: false,
-    configFile: false,
-    compact: false,
-    sourceMaps: false,
-  };
-
-  process.stderr.write(`[bungae:babel] loaded: ${customPaths.join(', ')}\n`);
-}
+let transformer: ((code: string, filename: string) => string | null) | null = null;
 
 // ===== IPC Protocol =====
 
@@ -140,27 +85,20 @@ function handleMessage(msg: IpcMessage): string {
       }
 
       try {
-        // Lazy-load Babel on first transform call
-        ensureBabel();
+        if (!transformer) {
+          transformer = createBabelTransformer(PROJECT_ROOT);
+        }
 
-        const result = babel.transformSync(code, {
-          ...babelOptions,
-          filename: filePath,
-        });
-
-        if (result?.code && result.code !== code) {
-          process.stderr.write(
-            `[bungae:babel] ${filePath.split('/').pop()}: ${code.length} → ${result.code.length}\n`,
-          );
+        const result = transformer(code, filePath);
+        if (result) {
           return JSON.stringify({
             id: msg.id,
-            result: { code: result.code },
+            result: { code: result },
             error: null,
           });
         }
         return JSON.stringify({ id: msg.id, result: null, error: null });
       } catch (err: any) {
-        process.stderr.write(`[bungae:babel] error: ${err.message?.slice(0, 100)}\n`);
         return JSON.stringify({
           id: msg.id,
           result: null,

@@ -14,6 +14,7 @@ import {
   generateAssetCode,
   detectCustomPlugins,
   createBabelTransformer,
+  escapeRegex,
 } from './plugin-core';
 
 export interface PluginConfig {
@@ -38,7 +39,7 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
       // onResolve: redirect AssetRegistry imports to virtual module
       // Both specifiers point to the same virtual module (single assets array)
       const registryPattern = new RegExp(
-        ASSET_REGISTRY_SPECIFIERS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|'),
+        ASSET_REGISTRY_SPECIFIERS.map((s) => escapeRegex(s)).join('|'),
       );
       build.onResolve({ filter: registryPattern }, () => ({
         path: '\0bungae:asset-registry',
@@ -57,7 +58,7 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
 
       // onLoad: HMRClient.js replacement — intercept Metro's HMRClient with ZTS version
       const hmrClientPattern = new RegExp(
-        HMR_CLIENT_SUFFIX.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$',
+        escapeRegex(HMR_CLIENT_SUFFIX) + '$',
       );
       build.onLoad({ filter: hmrClientPattern }, () => ({
         contents: ZTS_HMR_CLIENT_CODE,
