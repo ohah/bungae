@@ -45,7 +45,9 @@ function postProcessSourceMap(rawJson: string, projectRoot: string): string {
     if (map.version !== 3 || !map.sources) return rawJson;
 
     // 기존 x_google_ignoreList 보존 (zts가 생성한 폴리필 인덱스)
-    const existing = new Set<number>(Array.isArray(map.x_google_ignoreList) ? map.x_google_ignoreList : []);
+    const existing = new Set<number>(
+      Array.isArray(map.x_google_ignoreList) ? map.x_google_ignoreList : [],
+    );
 
     // node_modules 소스 추가
     for (let i = 0; i < map.sources.length; i++) {
@@ -126,7 +128,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'), config.root);
+          state!.sourceMap = postProcessSourceMap(
+            readFileSync(sourceMapPath, 'utf-8'),
+            config.root,
+          );
         }
         const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
         const buildTime = Date.now() - buildStart;
@@ -158,7 +163,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           '',
         );
         if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(readFileSync(sourceMapPath, 'utf-8'), config.root);
+          state!.sourceMap = postProcessSourceMap(
+            readFileSync(sourceMapPath, 'utf-8'),
+            config.root,
+          );
         }
       }
 
@@ -251,20 +259,30 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           const data: unknown[] = Array.isArray(msg.data) ? msg.data : [msg.data];
 
           const levelColor =
-            level === 'error' ? colors.red
-            : level === 'warn' ? colors.yellow
-            : level === 'debug' ? colors.magenta
-            : level === 'info' ? colors.cyan
-            : colors.white;
+            level === 'error'
+              ? colors.red
+              : level === 'warn'
+                ? colors.yellow
+                : level === 'debug'
+                  ? colors.magenta
+                  : level === 'info'
+                    ? colors.cyan
+                    : colors.white;
 
           const badge = `${levelColor}${colors.inverse}${colors.bold} ${level.toUpperCase()} ${colors.reset}`;
 
-          const formatted = data.map((arg) => {
-            if (typeof arg === 'object' && arg !== null) {
-              try { return JSON.stringify(arg, null, 2); } catch { return String(arg); }
-            }
-            return String(arg);
-          }).join(' ');
+          const formatted = data
+            .map((arg) => {
+              if (typeof arg === 'object' && arg !== null) {
+                try {
+                  return JSON.stringify(arg, null, 2);
+                } catch {
+                  return String(arg);
+                }
+              }
+              return String(arg);
+            })
+            .join(' ');
 
           console.log(`${badge} ${formatted}`);
         }

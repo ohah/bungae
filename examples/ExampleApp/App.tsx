@@ -15,6 +15,14 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withRepeat,
+  withSequence,
+} from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const testIcon = require('./src/assets/test-icon.png');
@@ -82,6 +90,14 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
   const [multiTest, setMultiTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [errorTest, setErrorTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [consoleTest, setConsoleTest] = useState<TestResult>({ status: 'idle', message: '' });
+  const [reanimatedTest, setReanimatedTest] = useState<TestResult>({ status: 'idle', message: '' });
+
+  // Reanimated shared values
+  const scale = useSharedValue(1);
+  const rotation = useSharedValue(0);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { rotateZ: `${rotation.value}deg` }],
+  }));
 
   // --- Test: GET ---
   const runFetchGet = useCallback(async () => {
@@ -265,6 +281,27 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
     });
   }, []);
 
+  // --- Test: Reanimated ---
+  const runReanimatedTest = useCallback(() => {
+    setReanimatedTest({ status: 'running', message: 'Animating...' });
+    // Spring bounce
+    scale.value = withSequence(
+      withSpring(1.5, { damping: 4, stiffness: 200 }),
+      withSpring(1, { damping: 6 }),
+    );
+    // Spin
+    rotation.value = withSequence(
+      withTiming(360, { duration: 600 }),
+      withTiming(0, { duration: 0 }),
+    );
+    setTimeout(() => {
+      setReanimatedTest({
+        status: 'success',
+        message: 'Spring + rotation animation completed',
+      });
+    }, 800);
+  }, [scale, rotation]);
+
   // Run all
   const runAll = useCallback(async () => {
     runErrorTest();
@@ -277,7 +314,16 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
       runTimeoutTest(),
       runMultiTest(),
     ]);
-  }, [runFetchGet, runFetchPost, runFetchError, runWsTest, runTimeoutTest, runMultiTest, runErrorTest, runConsoleTest]);
+  }, [
+    runFetchGet,
+    runFetchPost,
+    runFetchError,
+    runWsTest,
+    runTimeoutTest,
+    runMultiTest,
+    runErrorTest,
+    runConsoleTest,
+  ]);
 
   return (
     <ScrollView
@@ -385,6 +431,51 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
           textColor={textColor}
           dimColor={dimColor}
         />
+
+        {/* Reanimated test with animated box */}
+        <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <View style={styles.cardHeader}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardTitle, { color: textColor }]}>Reanimated</Text>
+              <Text style={[styles.cardDesc, { color: dimColor }]}>
+                Spring + rotation animation
+              </Text>
+            </View>
+            <TouchableOpacity onPress={runReanimatedTest} style={styles.runBtn} activeOpacity={0.7}>
+              <Text style={styles.runBtnText}>Run</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ alignItems: 'center', paddingVertical: 16 }}>
+            <Animated.View
+              style={[
+                {
+                  width: 60,
+                  height: 60,
+                  borderRadius: 12,
+                  backgroundColor: '#f59e0b',
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                },
+                animatedStyle,
+              ]}
+            >
+              <Text style={{ fontSize: 24 }}>⚡</Text>
+            </Animated.View>
+          </View>
+          {reanimatedTest.status !== 'idle' && (
+            <View style={[styles.resultRow, { borderTopColor: dimColor + '22' }]}>
+              <View
+                style={[
+                  styles.statusDot,
+                  { backgroundColor: reanimatedTest.status === 'success' ? '#22c55e' : '#3b82f6' },
+                ]}
+              />
+              <Text style={[styles.resultText, { color: textColor }]}>
+                {reanimatedTest.message}
+              </Text>
+            </View>
+          )}
+        </View>
       </View>
     </ScrollView>
   );

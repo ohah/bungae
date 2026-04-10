@@ -11,7 +11,7 @@
 
 import { parseArgs as nodeParseArgs } from 'util';
 
-export type Command = 'build' | 'serve' | 'start' | 'dependencies';
+export type Command = 'bundle' | 'build' | 'serve' | 'start' | 'dependencies';
 
 export interface ParsedArgs {
   command: Command | undefined;
