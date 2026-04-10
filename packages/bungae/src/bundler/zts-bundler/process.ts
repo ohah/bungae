@@ -167,6 +167,8 @@ function buildZtsArgs(config: ResolvedConfig, outputPath: string, watchMode: boo
     const babelPluginPath = resolve(__dirname, 'babel-plugin.ts');
     if (existsSync(babelPluginPath)) {
       args.push('--plugin', babelPluginPath);
+      // 멀티스레드 + IPC 플러그인 경합 방지: 단일 스레드로 실행
+      args.push('--jobs=1');
     }
   }
 
@@ -294,10 +296,13 @@ export async function runZtsBuild(
   console.log(`[zts] Binary: ${binaryPath}`);
   console.log(`[zts] Args: ${args.join(' ')}`);
 
-  return new Promise((resolve) => {
-    const child = spawn(binaryPath, args, {
+  // Use execFileSync to avoid Bun's child_process.spawn IPC issues
+  // with nested sub-processes (ZTS → bun run babel-plugin.ts)
+  const { execFileSync } = require('child_process');
+  try {
+    execFileSync(binaryPath, args, {
       cwd: config.root,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'ignore', 'inherit'],
       env: {
         ...process.env,
         NODE_ENV: config.dev ? 'development' : 'production',
@@ -306,44 +311,15 @@ export async function runZtsBuild(
         ZTS_RN_PLATFORM: config.platform === 'android' ? 'android' : 'ios',
         ZTS_SOURCE_EXTS: config.resolver.sourceExts.map((e) => `.${e}`).join(','),
       },
+      maxBuffer: 50 * 1024 * 1024,
     });
-
-    // IMPORTANT: drain stdout to prevent ZTS from blocking on pipe buffer
-    child.stdout?.resume();
-
-    let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('exit', (code: number | null, signal: string | null) => {
-      // Print stderr after exit
-      for (const line of stderr.split('\n')) {
-        const trimmed = line.trim();
-        if (
-          !trimmed ||
-          trimmed.includes('Circular dependency') ||
-          trimmed.startsWith('[warning]') ||
-          trimmed.startsWith('[error]')
-        )
-          continue;
-        console.error(trimmed);
-      }
-
-      if (code === 0 || code === null) {
-        resolve({ success: true });
-      } else {
-        resolve({
-          success: false,
-          error: stderr.trim() || `zts exited with code ${code} (signal: ${signal})`,
-        });
-      }
-    });
-
-    child.on('error', (error: Error) => {
-      resolve({ success: false, error: error.message });
-    });
-  });
+    return { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.stderr?.toString()?.trim() || err.message || 'zts build failed',
+    };
+  }
 }
 
 /**

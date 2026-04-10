@@ -4,6 +4,9 @@
  * Runs user-configured Babel plugins on source files during ZTS bundling.
  * Activated when babel.config.js contains custom plugins (e.g., react-native-reanimated/plugin).
  *
+ * IMPORTANT: Init must respond instantly — Babel is lazy-loaded on first transform.
+ * This prevents race conditions with ZTS's multi-threaded module parsing.
+ *
  * Environment variables:
  *   ZTS_PROJECT_ROOT  — Project root directory
  *   ZTS_SOURCE_EXTS   — Source file extensions to transform (comma-separated)
@@ -21,57 +24,66 @@ const SOURCE_EXTS = new Set(
 
 const PROJECT_ROOT = process.env.ZTS_PROJECT_ROOT || process.cwd();
 
-// Detect custom Babel plugins by reading babel.config.js directly (faster than loadPartialConfig)
-let babel: any;
+// Check if babel.config.js has custom plugins — NO require('@babel/core') here (too slow)
 let hasCustomPlugins = false;
-const customPluginPaths: string[] = [];
-
 try {
-  babel = require('@babel/core');
-
-  // Read babel.config.js directly for speed
   const { existsSync } = require('node:fs');
   const { join } = require('node:path');
   const configPath = join(PROJECT_ROOT, 'babel.config.js');
-
   if (existsSync(configPath)) {
     const config = require(configPath);
     const plugins: string[] = config?.plugins || [];
-    for (const plugin of plugins) {
-      const name = typeof plugin === 'string' ? plugin : Array.isArray(plugin) ? plugin[0] : '';
-      if (
+    hasCustomPlugins = plugins.some((p) => {
+      const name = typeof p === 'string' ? p : Array.isArray(p) ? p[0] : '';
+      return (
         typeof name === 'string' &&
         (name.includes('reanimated') || name.includes('nativewind') || name.includes('worklet'))
-      ) {
-        try {
-          customPluginPaths.push(require.resolve(name));
-        } catch {
-          customPluginPaths.push(name);
-        }
+      );
+    });
+  }
+} catch {
+  // ignore
+}
+
+// Lazy-loaded Babel state
+let babel: any = null;
+let babelOptions: any = null;
+
+function ensureBabel() {
+  if (babel) return;
+  babel = require('@babel/core');
+
+  const { join } = require('node:path');
+  const configPath = join(PROJECT_ROOT, 'babel.config.js');
+  const config = require(configPath);
+  const plugins: string[] = config?.plugins || [];
+
+  const customPaths: string[] = [];
+  for (const plugin of plugins) {
+    const name = typeof plugin === 'string' ? plugin : Array.isArray(plugin) ? plugin[0] : '';
+    if (
+      typeof name === 'string' &&
+      (name.includes('reanimated') || name.includes('nativewind') || name.includes('worklet'))
+    ) {
+      try {
+        customPaths.push(require.resolve(name));
+      } catch {
+        customPaths.push(name);
       }
     }
   }
 
-  hasCustomPlugins = customPluginPaths.length > 0;
-  process.stderr.write(
-    `[bungae:babel] custom plugins: ${hasCustomPlugins ? customPluginPaths.join(', ') : 'none'}\n`,
-  );
-} catch (e: any) {
-  process.stderr.write(`[bungae:babel] init error: ${e.message}\n`);
-}
+  babelOptions = {
+    presets: [['@babel/preset-typescript', { isTSX: true, allExtensions: true }]],
+    plugins: customPaths,
+    babelrc: false,
+    configFile: false,
+    compact: false,
+    sourceMaps: false,
+  };
 
-// Only run custom plugins with TypeScript parser — NOT the full @react-native/babel-preset.
-// ZTS handles standard transforms (TSX, Flow, ESM→CJS, etc.)
-const babelOptions = hasCustomPlugins
-  ? {
-      presets: [['@babel/preset-typescript', { isTSX: true, allExtensions: true }]],
-      plugins: customPluginPaths,
-      babelrc: false,
-      configFile: false,
-      compact: false,
-      sourceMaps: false,
-    }
-  : null;
+  process.stderr.write(`[bungae:babel] loaded: ${customPaths.join(', ')}\n`);
+}
 
 // ===== IPC Protocol =====
 
@@ -86,6 +98,7 @@ interface IpcMessage {
 function handleMessage(msg: IpcMessage): string {
   switch (msg.type) {
     case 'init':
+      // Respond INSTANTLY — no Babel loading here
       return JSON.stringify({
         id: msg.id,
         name: 'bungae:babel-transform',
@@ -122,12 +135,14 @@ function handleMessage(msg: IpcMessage): string {
         return JSON.stringify({ id: msg.id, result: null, error: null });
       }
 
-      if (!babelOptions) {
+      if (!hasCustomPlugins) {
         return JSON.stringify({ id: msg.id, result: null, error: null });
       }
 
       try {
-        process.stderr.write(`[bungae:babel] transforming: ${filePath.split('/').pop()}\n`);
+        // Lazy-load Babel on first transform call
+        ensureBabel();
+
         const result = babel.transformSync(code, {
           ...babelOptions,
           filename: filePath,
@@ -135,7 +150,7 @@ function handleMessage(msg: IpcMessage): string {
 
         if (result?.code && result.code !== code) {
           process.stderr.write(
-            `[bungae:babel] transformed: ${code.length} → ${result.code.length}\n`,
+            `[bungae:babel] ${filePath.split('/').pop()}: ${code.length} → ${result.code.length}\n`,
           );
           return JSON.stringify({
             id: msg.id,
@@ -143,10 +158,9 @@ function handleMessage(msg: IpcMessage): string {
             error: null,
           });
         }
-        process.stderr.write(`[bungae:babel] no change\n`);
         return JSON.stringify({ id: msg.id, result: null, error: null });
       } catch (err: any) {
-        process.stderr.write(`[bungae:babel] error: ${err.message.slice(0, 100)}\n`);
+        process.stderr.write(`[bungae:babel] error: ${err.message?.slice(0, 100)}\n`);
         return JSON.stringify({
           id: msg.id,
           result: null,

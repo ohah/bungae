@@ -58,8 +58,13 @@ if (!bunPath) {
 // Use .cjs extension since we're running with Bun and want CommonJS
 const cliImplPath = join(currentDir, 'main.cjs');
 
-// Spawn bun with the actual CLI implementation
-const result = spawnSync(bunPath, [cliImplPath, ...process.argv.slice(2)], {
+// Determine runtime: bundle/build commands use Node to avoid Bun's nested spawn IPC issues.
+// serve/start commands use Bun for Bun.serve() API support.
+const command = process.argv[2] || '';
+const useNode = command === 'bundle' || command === 'build';
+const runtime = useNode ? process.execPath : bunPath;
+
+const result = spawnSync(runtime, [cliImplPath, ...process.argv.slice(2)], {
   stdio: 'inherit',
   cwd: process.cwd(),
   env: process.env,

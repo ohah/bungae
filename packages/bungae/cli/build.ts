@@ -189,6 +189,13 @@ async function build() {
     console.log('  ✓ ZTS asset plugin copied');
   }
 
+  // Copy ZTS babel plugin (standalone subprocess for custom Babel transforms)
+  const babelPluginSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'babel-plugin.ts');
+  if (existsSync(babelPluginSrc)) {
+    copyFileSync(babelPluginSrc, join(DIST, 'babel-plugin.ts'));
+    console.log('  ✓ ZTS babel plugin copied');
+  }
+
   // Copy type declarations from tsc output structure to dist root
   const typeMappings = [
     { from: 'src/index.d.ts', to: 'index.d.ts' },
@@ -246,6 +253,7 @@ async function build() {
     'main.d.ts',
     'main.d.cts',
     'asset-plugin.ts',
+    'babel-plugin.ts',
   ]);
   for (const file of readdir(DIST)) {
     if (!filesToKeep.has(file) && statSync(join(DIST, file)).isFile()) {
