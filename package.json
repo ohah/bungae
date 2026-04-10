@@ -44,6 +44,7 @@
   },
   "dependencies": {},
   "devDependencies": {
+    "@babel/preset-typescript": "^7.28.5",
     "@swc/core": "^1.15.11",
     "@types/bun": "latest",
     "@types/node": "^22",

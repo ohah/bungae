@@ -1,7 +1,7 @@
 /**
  * ZTS Bundler - Zig-based transpiler/bundler integration
  *
- * Uses zts CLI as a subprocess with --watch-json for NDJSON event streaming.
+ * Uses @zts/core NAPI bindings for in-process bundling + watch.
  * Bungae handles the HTTP server, RN dev middleware, and Metro HMR protocol.
  */
 

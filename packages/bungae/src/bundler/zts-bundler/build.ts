@@ -2,13 +2,13 @@
  * ZTS one-shot build
  */
 
-import { readFileSync, mkdirSync, copyFileSync, readdirSync } from 'fs';
+import { mkdirSync, copyFileSync, readdirSync } from 'fs';
 import { join, dirname, extname, basename, relative } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
 import type { BuildResult } from '../graph-bundler';
 import { logInfo, logWarn } from '../graph-bundler/utils';
-import { runZtsBuild } from './process';
+import { buildWithNapi } from './napi-build';
 
 const SCALE_REGEX = /@(\d+(?:\.\d+)?)x/;
 
@@ -94,27 +94,15 @@ export async function buildWithZts(
   onProgress?: (transformedFileCount: number, totalFileCount: number) => void,
 ): Promise<BuildResult> {
   const outputPath = join(config.outDir, 'bundle.js');
-  const sourceMapPath = `${outputPath}.map`;
 
-  logInfo('Using zts-bundler (Zig, fast)');
+  logInfo('Using zts-bundler (NAPI, in-process)');
 
   // Signal start
   onProgress?.(0, 1);
 
-  const result = await runZtsBuild(config, outputPath);
-
-  if (!result.success) {
-    throw new Error(`zts build failed: ${result.error}`);
-  }
-
-  // Read output files
-  const code = readFileSync(outputPath, 'utf-8');
-  let map: string | undefined;
-  try {
-    map = readFileSync(sourceMapPath, 'utf-8');
-  } catch {
-    // Source map may not exist if not requested
-  }
+  const napiResult = await buildWithNapi(config, outputPath);
+  const code = napiResult.code;
+  const map = napiResult.map;
 
   // 에셋 파일 복사 (prod build)
   if (!config.dev) {

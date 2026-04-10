@@ -31,7 +31,8 @@ import {
 } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { colors, logInfo, logError, printBanner } from '../../graph-bundler/utils';
-import { spawnZtsWatch, type ZtsProcess } from '../process';
+import { watchWithNapi } from '../napi-build';
+import type { WatchHandle } from '@zts/core';
 
 /**
  * zts 소스맵 후처리: x_google_ignoreList 확장.
@@ -78,7 +79,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // Per-platform state management
   interface PlatformState {
-    process: ZtsProcess;
+    handle: WatchHandle;
     outputDir: string;
     outputPath: string;
     sourceMapPath: string;
@@ -105,10 +106,80 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     const platformConfig: ResolvedConfig = { ...config, platform: platform as any };
     const buildStart = Date.now();
 
-    const zts = spawnZtsWatch(platformConfig, outputPath);
+    const { handle } = watchWithNapi(platformConfig, outputPath, {
+      onReady(event) {
+        if (event.files) state!.fileCount = event.files;
+        if (existsSync(outputPath)) {
+          state!.bundle = readFileSync(outputPath, 'utf-8').replace(
+            /\/\/# sourceMappingURL=[^\n]*/g,
+            '',
+          );
+          if (existsSync(sourceMapPath)) {
+            state!.sourceMap = postProcessSourceMap(
+              readFileSync(sourceMapPath, 'utf-8'),
+              config.root,
+            );
+          }
+          const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
+          const buildTime = Date.now() - buildStart;
+          logInfo(
+            `Build complete ${colors.dim}[${platform}]${colors.reset} ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`,
+          );
+        } else {
+          state!.buildError = 'Build produced no output';
+          logError(`${state!.buildError} [${platform}]`);
+        }
+      },
+      onRebuild(event) {
+        const duration = Date.now() - state!.lastRebuildTime;
+        state!.lastRebuildTime = Date.now();
+
+        if (!event.success) {
+          state!.buildError = event.error ?? 'Unknown build error';
+          logError(`Build failed [${platform}]: ${state!.buildError}`);
+          sendToClients(formatHmrError(state!.buildError));
+          return;
+        }
+
+        state!.buildError = null;
+        if (existsSync(outputPath)) {
+          state!.bundle = readFileSync(outputPath, 'utf-8').replace(
+            /\/\/# sourceMappingURL=[^\n]*/g,
+            '',
+          );
+          if (existsSync(sourceMapPath)) {
+            state!.sourceMap = postProcessSourceMap(
+              readFileSync(sourceMapPath, 'utf-8'),
+              config.root,
+            );
+          }
+        }
+
+        const changedCount = event.changed?.length ?? 0;
+        const updatesCount = event.updates?.length ?? 0;
+
+        if (event.graphChanged) {
+          logInfo(
+            `Graph changed ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms)${colors.reset}, full reload`,
+          );
+          sendToClients({ type: 'hmr:reload' });
+        } else if (event.updates && event.updates.length > 0) {
+          logInfo(
+            `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${colors.reset}`,
+          );
+          sendToClients({ type: 'hmr:update-start' });
+          sendToClients({ type: 'hmr:update', modules: event.updates });
+          sendToClients({ type: 'hmr:update-done' });
+        } else if (changedCount > 0) {
+          logInfo(
+            `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${colors.reset}`,
+          );
+        }
+      },
+    });
 
     state = {
-      process: zts,
+      handle,
       outputDir,
       outputPath,
       sourceMapPath,
@@ -118,84 +189,6 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       fileCount: 1,
       lastRebuildTime: Date.now(),
     };
-
-    // Handle ready event
-    zts.on('ready', (event: { files?: number }) => {
-      if (event.files) state!.fileCount = event.files;
-      if (existsSync(outputPath)) {
-        state!.bundle = readFileSync(outputPath, 'utf-8').replace(
-          /\/\/# sourceMappingURL=[^\n]*/g,
-          '',
-        );
-        if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(
-            readFileSync(sourceMapPath, 'utf-8'),
-            config.root,
-          );
-        }
-        const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
-        const buildTime = Date.now() - buildStart;
-        logInfo(
-          `Build complete ${colors.dim}[${platform}]${colors.reset} ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`,
-        );
-      } else {
-        state!.buildError = 'Build produced no output';
-        logError(`${state!.buildError} [${platform}]`);
-      }
-    });
-
-    // Handle rebuild events
-    zts.on('rebuild', (event) => {
-      const duration = Date.now() - state!.lastRebuildTime;
-      state!.lastRebuildTime = Date.now();
-
-      if (!event.success) {
-        state!.buildError = event.error ?? 'Unknown build error';
-        logError(`Build failed [${platform}]: ${state!.buildError}`);
-        sendToClients(formatHmrError(state!.buildError));
-        return;
-      }
-
-      state!.buildError = null;
-      if (existsSync(outputPath)) {
-        state!.bundle = readFileSync(outputPath, 'utf-8').replace(
-          /\/\/# sourceMappingURL=[^\n]*/g,
-          '',
-        );
-        if (existsSync(sourceMapPath)) {
-          state!.sourceMap = postProcessSourceMap(
-            readFileSync(sourceMapPath, 'utf-8'),
-            config.root,
-          );
-        }
-      }
-
-      const changedCount = event.changed?.length ?? 0;
-      const updatesCount = event.updates?.length ?? 0;
-
-      if (event.graph_changed) {
-        logInfo(
-          `Graph changed ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms)${colors.reset}, full reload`,
-        );
-        sendToClients({ type: 'hmr:reload' });
-      } else if (event.updates && event.updates.length > 0) {
-        logInfo(
-          `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${colors.reset}`,
-        );
-        sendToClients({ type: 'hmr:update-start' });
-        sendToClients({ type: 'hmr:update', modules: event.updates });
-        sendToClients({ type: 'hmr:update-done' });
-      } else if (changedCount > 0) {
-        logInfo(
-          `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${colors.reset}`,
-        );
-      }
-    });
-
-    zts.on('error', (error: Error) => {
-      state!.buildError = error.message;
-      logError(`ZTS error [${platform}]: ${error.message}`);
-    });
 
     platforms.set(platform, state);
     return state;
@@ -594,7 +587,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     }
 
     try {
-      for (const state of platforms.values()) state.process.kill();
+      for (const state of platforms.values()) state.handle.stop();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();
@@ -618,7 +611,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   return {
     stop: async () => {
-      for (const state of platforms.values()) state.process.kill();
+      for (const state of platforms.values()) state.handle.stop();
       terminalActionsCleanup?.();
       hmrWss.close();
       hmrClients.clear();

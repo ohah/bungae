@@ -53,9 +53,11 @@
     "dev": "bun cli/build.ts --watch",
     "build": "bun cli/build.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "cd ../../zts && zig build napi && cd packages/core && bun build index.ts --outdir dist --format esm --target bun"
   },
   "dependencies": {
+    "@zts/core": "file:../../zts/packages/core",
     "@babel/core": "^7.28.6",
     "@babel/generator": "^7.28.6",
     "@babel/plugin-transform-class-properties": "^7.28.6",
