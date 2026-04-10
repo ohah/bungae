@@ -15,6 +15,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -22,6 +23,12 @@ import Animated, {
   withTiming,
   withRepeat,
   withSequence,
+  withDelay,
+  interpolateColor,
+  useDerivedValue,
+  FadeIn,
+  FadeOut,
+  SlideInRight,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -56,10 +63,12 @@ async function runWithTiming<T>(fn: () => Promise<T>): Promise<{ result: T; dura
 function App() {
   const isDarkMode = useColorScheme() === 'dark';
   return (
-    <SafeAreaProvider>
-      <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
-      <AppContent isDarkMode={isDarkMode} />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar barStyle={isDarkMode ? 'light-content' : 'dark-content'} />
+        <AppContent isDarkMode={isDarkMode} />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -90,14 +99,6 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
   const [multiTest, setMultiTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [errorTest, setErrorTest] = useState<TestResult>({ status: 'idle', message: '' });
   const [consoleTest, setConsoleTest] = useState<TestResult>({ status: 'idle', message: '' });
-  const [reanimatedTest, setReanimatedTest] = useState<TestResult>({ status: 'idle', message: '' });
-
-  // Reanimated shared values
-  const scale = useSharedValue(1);
-  const rotation = useSharedValue(0);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotateZ: `${rotation.value}deg` }],
-  }));
 
   // --- Test: GET ---
   const runFetchGet = useCallback(async () => {
@@ -281,27 +282,6 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
     });
   }, []);
 
-  // --- Test: Reanimated ---
-  const runReanimatedTest = useCallback(() => {
-    setReanimatedTest({ status: 'running', message: 'Animating...' });
-    // Spring bounce
-    scale.value = withSequence(
-      withSpring(1.5, { damping: 4, stiffness: 200 }),
-      withSpring(1, { damping: 6 }),
-    );
-    // Spin
-    rotation.value = withSequence(
-      withTiming(360, { duration: 600 }),
-      withTiming(0, { duration: 0 }),
-    );
-    setTimeout(() => {
-      setReanimatedTest({
-        status: 'success',
-        message: 'Spring + rotation animation completed',
-      });
-    }, 800);
-  }, [scale, rotation]);
-
   // Run all
   const runAll = useCallback(async () => {
     runErrorTest();
@@ -432,52 +412,165 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
           dimColor={dimColor}
         />
 
-        {/* Reanimated test with animated box */}
-        <View style={[styles.card, { backgroundColor: cardBg }]}>
-          <View style={styles.cardHeader}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.cardTitle, { color: textColor }]}>Reanimated</Text>
-              <Text style={[styles.cardDesc, { color: dimColor }]}>
-                Spring + rotation animation
-              </Text>
-            </View>
-            <TouchableOpacity onPress={runReanimatedTest} style={styles.runBtn} activeOpacity={0.7}>
-              <Text style={styles.runBtnText}>Run</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={{ alignItems: 'center', paddingVertical: 16 }}>
-            <Animated.View
-              style={[
-                {
-                  width: 60,
-                  height: 60,
-                  borderRadius: 12,
-                  backgroundColor: '#f59e0b',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                },
-                animatedStyle,
-              ]}
-            >
-              <Text style={{ fontSize: 24 }}>⚡</Text>
-            </Animated.View>
-          </View>
-          {reanimatedTest.status !== 'idle' && (
-            <View style={[styles.resultRow, { borderTopColor: dimColor + '22' }]}>
-              <View
-                style={[
-                  styles.statusDot,
-                  { backgroundColor: reanimatedTest.status === 'success' ? '#22c55e' : '#3b82f6' },
-                ]}
-              />
-              <Text style={[styles.resultText, { color: textColor }]}>
-                {reanimatedTest.message}
-              </Text>
-            </View>
-          )}
-        </View>
+        {/* Reanimated Demo */}
+        <ReanimatedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
       </View>
     </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Reanimated Demo
+// ---------------------------------------------------------------------------
+
+function ReanimatedDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  // 1. Spring bounce + rotation
+  const scale = useSharedValue(1);
+  const rotation = useSharedValue(0);
+  const bounceStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { rotateZ: `${rotation.value}deg` }],
+  }));
+
+  // 2. Draggable box (Gesture Handler)
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const dragStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
+  }));
+  const dragGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      translateX.value = e.translationX;
+      translateY.value = e.translationY;
+    })
+    .onEnd(() => {
+      translateX.value = withSpring(0);
+      translateY.value = withSpring(0);
+    });
+
+  // 3. Color interpolation
+  const progress = useSharedValue(0);
+  const bgColor = useDerivedValue(() =>
+    interpolateColor(progress.value, [0, 1], ['#3b82f6', '#ef4444']),
+  );
+  const colorStyle = useAnimatedStyle(() => ({
+    backgroundColor: bgColor.value,
+  }));
+
+  // 4. Toggle for layout animation
+  const [showExtra, setShowExtra] = useState(false);
+
+  const runAll = () => {
+    // Bounce
+    scale.value = withSequence(withSpring(1.4, { damping: 4 }), withSpring(1));
+    rotation.value = withSequence(
+      withTiming(360, { duration: 500 }),
+      withTiming(0, { duration: 0 }),
+    );
+    // Color cycle
+    progress.value = withSequence(
+      withTiming(1, { duration: 600 }),
+      withDelay(200, withTiming(0, { duration: 600 })),
+    );
+    // Layout toggle
+    setShowExtra((v) => !v);
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Reanimated + Gesture</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            Spring, drag, color interpolation, layout animation
+          </Text>
+        </View>
+        <TouchableOpacity onPress={runAll} style={styles.runBtn} activeOpacity={0.7}>
+          <Text style={styles.runBtnText}>Run</Text>
+        </TouchableOpacity>
+      </View>
+
+      <View
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-around',
+          alignItems: 'center',
+          paddingVertical: 20,
+        }}
+      >
+        {/* Spring + Rotation */}
+        <Animated.View
+          style={[
+            {
+              width: 56,
+              height: 56,
+              borderRadius: 12,
+              backgroundColor: '#f59e0b',
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
+            bounceStyle,
+          ]}
+        >
+          <Text style={{ fontSize: 20 }}>⚡</Text>
+        </Animated.View>
+
+        {/* Draggable */}
+        <GestureDetector gesture={dragGesture}>
+          <Animated.View
+            style={[
+              {
+                width: 56,
+                height: 56,
+                borderRadius: 28,
+                backgroundColor: '#22c55e',
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+              dragStyle,
+            ]}
+          >
+            <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>Drag</Text>
+          </Animated.View>
+        </GestureDetector>
+
+        {/* Color Interpolation */}
+        <Animated.View
+          style={[
+            {
+              width: 56,
+              height: 56,
+              borderRadius: 12,
+              justifyContent: 'center',
+              alignItems: 'center',
+            },
+            colorStyle,
+          ]}
+        >
+          <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>Color</Text>
+        </Animated.View>
+      </View>
+
+      {/* Layout Animation */}
+      {showExtra && (
+        <Animated.View
+          entering={SlideInRight.duration(300)}
+          exiting={FadeOut.duration(200)}
+          style={{ backgroundColor: '#6366f1', padding: 12, borderRadius: 8, marginTop: 4 }}
+        >
+          <Text style={{ color: '#fff', fontSize: 13 }}>
+            Layout animation working! (SlideInRight + FadeOut)
+          </Text>
+        </Animated.View>
+      )}
+    </View>
   );
 }
 
