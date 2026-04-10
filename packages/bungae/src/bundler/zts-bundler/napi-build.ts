@@ -88,6 +88,8 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
   // React Native specific options
   if (platform === 'react-native') {
     opts.target = 'es5';
+    opts.flow = true;
+    opts.jsxInJs = true;
 
     // global -> __BUNGAE_GLOBAL__ substitution (preserve native Hermes global)
     define['global'] = '__BUNGAE_GLOBAL__';
@@ -181,7 +183,7 @@ export async function buildWithNapi(
   const result: BuildResult = await build(opts);
 
   if (result.errors.length > 0) {
-    const errorMessages = result.errors.map((e) => e.text).join('\n');
+    const errorMessages = result.errors.map((e) => e.location?.file ? `${e.location.file}: ${e.text}` : e.text).join('\n');
     throw new Error(`[zts] Build failed:\n${errorMessages}`);
   }
 
