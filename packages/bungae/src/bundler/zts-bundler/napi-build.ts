@@ -91,6 +91,7 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     opts.flow = true;
     opts.jsxInJs = true;
     opts.configurableExports = true;
+    opts.workletTransform = true;
 
     // resolve extensions: 플랫폼별 확장자 순서 (Metro/CLI 프리셋 호환)
     const nativeAndBase = [
