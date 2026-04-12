@@ -558,10 +558,15 @@ function ReanimatedDemo({
         </Animated.View>
       </View>
 
-      {/* Layout Animation */}
+      {/* Layout Animation — Phase 2: .withCallback() auto-worklet */}
       {showExtra && (
         <Animated.View
-          entering={SlideInRight.duration(300)}
+          entering={SlideInRight.duration(300).withCallback((finished) => {
+            'worklet';
+            if (finished) {
+              console.log('[ZTS] SlideInRight.withCallback 완료');
+            }
+          })}
           exiting={FadeOut.duration(200)}
           style={{ backgroundColor: '#6366f1', padding: 12, borderRadius: 8, marginTop: 4 }}
         >
@@ -572,6 +577,16 @@ function ReanimatedDemo({
       )}
     </View>
   );
+}
+
+// ZTS Phase 4 예제: class field arrow worklet.
+// `multiplier = (x) => { 'worklet'; ... }` 형태의 필드는 인스턴스 프로퍼티로 할당되지만
+// ZTS의 class field worklet 변환이 적용되어 UI 스레드에서도 실행 가능.
+class WorkletHelper {
+  multiplier = (x: number) => {
+    'worklet';
+    return x * 2;
+  };
 }
 
 // ---------------------------------------------------------------------------
