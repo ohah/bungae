@@ -265,7 +265,8 @@ export function generateAssetCode(
 // ===== Babel Plugin Detection & Transformer =====
 
 /** Known Babel plugin name patterns that require runtime transformation */
-const CUSTOM_PLUGIN_PATTERNS = ['reanimated', 'nativewind', 'worklet'];
+// reanimated/worklet은 ZTS 네이티브 worklet 변환으로 대체 (#1082)
+const CUSTOM_PLUGIN_PATTERNS = ['nativewind'];
 
 /**
  * Detect whether the project has custom Babel plugins that require runtime transformation.
