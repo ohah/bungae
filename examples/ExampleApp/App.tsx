@@ -19,16 +19,25 @@ import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-g
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedScrollHandler,
   withSpring,
   withTiming,
   withRepeat,
   withSequence,
   withDelay,
+  interpolate,
   interpolateColor,
   useDerivedValue,
   FadeIn,
   FadeOut,
+  FadeInDown,
   SlideInRight,
+  SlideInLeft,
+  ZoomIn,
+  ZoomOut,
+  Layout,
+  LinearTransition,
+  Extrapolation,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -332,6 +341,16 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
         </View>
       </View>
 
+      {/* Reanimated Demos — 최상단에 배치 (런타임 검증용) */}
+      <View style={styles.section}>
+        <ReanimatedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <ScrollLinkedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <PinchRotateDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <LayoutTransitionDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <CustomEnteringDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <SharedMorphDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+      </View>
+
       {/* Run all */}
       <TouchableOpacity onPress={runAll} style={styles.runAllBtn} activeOpacity={0.8}>
         <Text style={styles.runAllText}>Run All Tests</Text>
@@ -411,9 +430,6 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
           textColor={textColor}
           dimColor={dimColor}
         />
-
-        {/* Reanimated Demo */}
-        <ReanimatedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
       </View>
     </ScrollView>
   );
@@ -575,6 +591,358 @@ function ReanimatedDemo({
           </Text>
         </Animated.View>
       )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Scroll-linked animation — useAnimatedScrollHandler + interpolate
+// ---------------------------------------------------------------------------
+function ScrollLinkedDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const scrollY = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y;
+    },
+  });
+
+  const headerStyle = useAnimatedStyle(() => {
+    const h = interpolate(scrollY.value, [0, 120], [80, 40], Extrapolation.CLAMP);
+    const op = interpolate(scrollY.value, [0, 120], [1, 0.5], Extrapolation.CLAMP);
+    return { height: h, opacity: op };
+  });
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Scroll-linked Animation</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            useAnimatedScrollHandler + interpolate (헤더 축소)
+          </Text>
+        </View>
+      </View>
+      <Animated.View
+        style={[
+          {
+            borderRadius: 8,
+            backgroundColor: '#0ea5e9',
+            justifyContent: 'center',
+            alignItems: 'center',
+            marginBottom: 8,
+          },
+          headerStyle,
+        ]}
+      >
+        <Text style={{ color: '#fff', fontWeight: '700' }}>Scroll below ⬇</Text>
+      </Animated.View>
+      <Animated.ScrollView
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        style={{ height: 120, backgroundColor: '#f1f5f9', borderRadius: 8 }}
+        contentContainerStyle={{ padding: 12 }}
+      >
+        {Array.from({ length: 20 }).map((_, i) => (
+          <Text key={i} style={{ paddingVertical: 4, color: '#334155' }}>
+            item {i + 1}
+          </Text>
+        ))}
+      </Animated.ScrollView>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pinch + Rotate composed gestures (Gesture.Simultaneous)
+// ---------------------------------------------------------------------------
+function PinchRotateDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const angle = useSharedValue(0);
+  const savedAngle = useSharedValue(0);
+
+  const pinch = Gesture.Pinch()
+    .onUpdate((e) => {
+      scale.value = savedScale.value * e.scale;
+    })
+    .onEnd(() => {
+      savedScale.value = scale.value;
+    });
+
+  const rotate = Gesture.Rotation()
+    .onUpdate((e) => {
+      angle.value = savedAngle.value + e.rotation;
+    })
+    .onEnd(() => {
+      savedAngle.value = angle.value;
+    });
+
+  const composed = Gesture.Simultaneous(pinch, rotate);
+
+  const boxStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: scale.value },
+      { rotateZ: `${(angle.value * 180) / Math.PI}deg` },
+    ],
+  }));
+
+  const reset = () => {
+    scale.value = withSpring(1);
+    savedScale.value = 1;
+    angle.value = withSpring(0);
+    savedAngle.value = 0;
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Pinch + Rotate</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            두 제스처를 Simultaneous로 합성 (두 손가락으로 조작)
+          </Text>
+        </View>
+        <TouchableOpacity onPress={reset} style={styles.runBtn} activeOpacity={0.7}>
+          <Text style={styles.runBtnText}>Reset</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+        <GestureDetector gesture={composed}>
+          <Animated.View
+            style={[
+              {
+                width: 100,
+                height: 100,
+                borderRadius: 16,
+                backgroundColor: '#a855f7',
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+              boxStyle,
+            ]}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Pinch/Rot</Text>
+          </Animated.View>
+        </GestureDetector>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Layout transition — 리스트 아이템 add/remove with LinearTransition
+// ---------------------------------------------------------------------------
+function LayoutTransitionDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const [items, setItems] = useState<number[]>([1, 2, 3]);
+
+  const add = () => {
+    setItems((prev) => [...prev, prev.length > 0 ? Math.max(...prev) + 1 : 1]);
+  };
+  const remove = (id: number) => {
+    setItems((prev) => prev.filter((i) => i !== id));
+  };
+  const shuffle = () => {
+    setItems((prev) => [...prev].sort(() => Math.random() - 0.5));
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Layout Transition</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            LinearTransition + FadeIn/FadeOut — add/remove/shuffle
+          </Text>
+        </View>
+      </View>
+      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+        <TouchableOpacity onPress={add} style={styles.smallBtn}>
+          <Text style={styles.smallBtnText}>+ Add</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={shuffle} style={styles.smallBtn}>
+          <Text style={styles.smallBtnText}>Shuffle</Text>
+        </TouchableOpacity>
+      </View>
+      {items.map((id) => (
+        <Animated.View
+          key={id}
+          entering={FadeInDown.duration(300)}
+          exiting={FadeOut.duration(200)}
+          layout={LinearTransition.springify()}
+          style={{
+            backgroundColor: '#14b8a6',
+            padding: 12,
+            borderRadius: 8,
+            marginBottom: 6,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '600' }}>item #{id}</Text>
+          <TouchableOpacity onPress={() => remove(id)}>
+            <Text style={{ color: '#fff', fontSize: 18 }}>×</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Custom entering animation — initialValues + animations builder
+// ---------------------------------------------------------------------------
+function CustomEnteringDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const [key, setKey] = useState(0);
+
+  // Custom entering: scale 0 + rotate -180 → scale 1 + rotate 0, 순차 애니메이션.
+  // (이 함수 자체가 UI 스레드에서 실행되는 worklet — 'worklet' 디렉티브 필수)
+  const customEntering = (values: { targetWidth: number; targetHeight: number }) => {
+    'worklet';
+    const animations = {
+      transform: [
+        { scale: withSpring(1, { damping: 8 }) },
+        { rotateZ: withTiming('0deg', { duration: 500 }) },
+      ],
+      opacity: withTiming(1, { duration: 400 }),
+    };
+    const initialValues = {
+      transform: [{ scale: 0 }, { rotateZ: '-180deg' }],
+      opacity: 0,
+    };
+    return { initialValues, animations };
+  };
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Custom Entering</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            initialValues + animations worklet builder
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setKey((k) => k + 1)}
+          style={styles.runBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.runBtnText}>Replay</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ alignItems: 'center', paddingVertical: 24 }}>
+        <Animated.View
+          key={key}
+          entering={customEntering}
+          exiting={ZoomOut.duration(200)}
+          style={{
+            width: 80,
+            height: 80,
+            borderRadius: 40,
+            backgroundColor: '#ec4899',
+            justifyContent: 'center',
+            alignItems: 'center',
+          }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700' }}>★</Text>
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Shared morph — 하나의 element를 두 레이아웃 사이로 전환
+// ---------------------------------------------------------------------------
+function SharedMorphDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  const progress = useDerivedValue(() => withSpring(expanded ? 1 : 0, { damping: 14 }));
+
+  const morphStyle = useAnimatedStyle(() => {
+    const p = progress.value;
+    return {
+      width: interpolate(p, [0, 1], [80, 240]),
+      height: interpolate(p, [0, 1], [80, 120]),
+      borderRadius: interpolate(p, [0, 1], [40, 16]),
+      backgroundColor: interpolateColor(p, [0, 1], ['#f97316', '#0ea5e9']),
+    };
+  });
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: progress.value,
+  }));
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Shared Morph</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            derived spring + interpolate로 크기/색/반경 동시 전환
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={() => setExpanded((v) => !v)}
+          style={styles.runBtn}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.runBtnText}>Toggle</Text>
+        </TouchableOpacity>
+      </View>
+      <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+        <Animated.View
+          style={[
+            { justifyContent: 'center', alignItems: 'center' },
+            morphStyle,
+          ]}
+        >
+          <Animated.Text style={[{ color: '#fff', fontWeight: '700' }, labelStyle]}>
+            expanded
+          </Animated.Text>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -815,6 +1183,17 @@ const styles = StyleSheet.create({
   runBtnText: {
     color: '#fff',
     fontSize: 14,
+    fontWeight: '600',
+  },
+  smallBtn: {
+    backgroundColor: '#64748b',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  smallBtnText: {
+    color: '#fff',
+    fontSize: 13,
     fontWeight: '600',
   },
   resultRow: {
