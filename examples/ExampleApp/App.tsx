@@ -344,6 +344,7 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
       {/* Reanimated Demos — 최상단에 배치 (런타임 검증용) */}
       <View style={styles.section}>
         <ReanimatedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
+        <DragDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
         <ScrollLinkedDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
         <PinchRotateDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
         <LayoutTransitionDemo cardBg={cardBg} textColor={textColor} dimColor={dimColor} />
@@ -455,21 +456,7 @@ function ReanimatedDemo({
     transform: [{ scale: scale.value }, { rotateZ: `${rotation.value}deg` }],
   }));
 
-  // 2. Draggable box (Gesture Handler)
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const dragStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
-  }));
-  const dragGesture = Gesture.Pan()
-    .onUpdate((e) => {
-      translateX.value = e.translationX;
-      translateY.value = e.translationY;
-    })
-    .onEnd(() => {
-      translateX.value = withSpring(0);
-      translateY.value = withSpring(0);
-    });
+  // (Drag demo는 DragDemo 컴포넌트로 분리 — 최상위 ScrollView의 Pan 가로챔 회피용)
 
   // 3. Color interpolation
   const progress = useSharedValue(0);
@@ -538,25 +525,6 @@ function ReanimatedDemo({
           <Text style={{ fontSize: 20 }}>⚡</Text>
         </Animated.View>
 
-        {/* Draggable */}
-        <GestureDetector gesture={dragGesture}>
-          <Animated.View
-            style={[
-              {
-                width: 56,
-                height: 56,
-                borderRadius: 28,
-                backgroundColor: '#22c55e',
-                justifyContent: 'center',
-                alignItems: 'center',
-              },
-              dragStyle,
-            ]}
-          >
-            <Text style={{ fontSize: 14, color: '#fff', fontWeight: '700' }}>Drag</Text>
-          </Animated.View>
-        </GestureDetector>
-
         {/* Color Interpolation */}
         <Animated.View
           style={[
@@ -591,6 +559,73 @@ function ReanimatedDemo({
           </Text>
         </Animated.View>
       )}
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Drag demo — Gesture.Pan with ScrollView coexistence
+// ---------------------------------------------------------------------------
+// 외부 ScrollView가 Pan 제스처를 가로채지 못하도록 activeOffsetX/Y 경계를 좁게 두고
+// 첫 포인터 다운 즉시 활성화되도록 minDistance(0) 설정.
+function DragDemo({
+  cardBg,
+  textColor,
+  dimColor,
+}: {
+  cardBg: string;
+  textColor: string;
+  dimColor: string;
+}) {
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+
+  const dragStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
+  }));
+
+  const dragGesture = Gesture.Pan()
+    .minDistance(0)
+    .activeOffsetX([-5, 5])
+    .activeOffsetY([-5, 5])
+    .onUpdate((e) => {
+      translateX.value = e.translationX;
+      translateY.value = e.translationY;
+    })
+    .onEnd(() => {
+      translateX.value = withSpring(0);
+      translateY.value = withSpring(0);
+    });
+
+  return (
+    <View style={[styles.card, { backgroundColor: cardBg }]}>
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Drag</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            Gesture.Pan — drop 시 withSpring으로 원위치 복귀
+          </Text>
+        </View>
+      </View>
+      <View style={{ height: 160, alignItems: 'center', justifyContent: 'center' }}>
+        <GestureDetector gesture={dragGesture}>
+          <Animated.View
+            style={[
+              {
+                width: 80,
+                height: 80,
+                borderRadius: 40,
+                backgroundColor: '#22c55e',
+                justifyContent: 'center',
+                alignItems: 'center',
+              },
+              dragStyle,
+            ]}
+          >
+            <Text style={{ color: '#fff', fontWeight: '700' }}>Drag me</Text>
+          </Animated.View>
+        </GestureDetector>
+      </View>
     </View>
   );
 }
