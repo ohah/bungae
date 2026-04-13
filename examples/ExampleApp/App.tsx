@@ -588,13 +588,29 @@ function DragDemo({
     .minDistance(0)
     .activeOffsetX([-5, 5])
     .activeOffsetY([-5, 5])
+    .onBegin(() => {
+      'worklet';
+      console.log('[drag] BEGIN');
+    })
+    .onStart(() => {
+      'worklet';
+      console.log('[drag] START');
+    })
     .onUpdate((e) => {
+      'worklet';
+      console.log('[drag] UPDATE', e.translationX, e.translationY);
       translateX.value = e.translationX;
       translateY.value = e.translationY;
     })
     .onEnd(() => {
+      'worklet';
+      console.log('[drag] END');
       translateX.value = withSpring(0);
       translateY.value = withSpring(0);
+    })
+    .onFinalize(() => {
+      'worklet';
+      console.log('[drag] FINALIZE');
     });
 
   return (
