@@ -989,21 +989,11 @@ const WorkletContextHolder = {
 // Phase 6.4: implicit context object via file-level directive는 별도 파일에서 (런타임
 // 테스트 대상 아닌 구조 검증 목적). App.tsx 자체는 file-level directive 미적용.
 
-// Phase 6.2: isWeb() substitution은 substitute_web_platform_checks 옵션을
-// bungae가 전달할 때만 트리거 — 여기서는 호출 데모만.
-function workletWebCheck() {
-  'worklet';
-  // 옵션 활성화 시 아래 호출은 컴파일타임 `true`로 치환됨.
-  // @ts-ignore
-  return typeof isWeb === 'function' ? isWeb() : false;
-}
-
 // 참조 마커 (트리셰이킹 방지)
 void WorkletHelper;
 void WorkletMethodHolder;
 void WorkletMarkedClass;
 void WorkletContextHolder;
-void workletWebCheck;
 
 // ---------------------------------------------------------------------------
 // Components
