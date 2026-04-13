@@ -579,15 +579,63 @@ function ReanimatedDemo({
   );
 }
 
-// ZTS Phase 4 예제: class field arrow worklet.
-// `multiplier = (x) => { 'worklet'; ... }` 형태의 필드는 인스턴스 프로퍼티로 할당되지만
-// ZTS의 class field worklet 변환이 적용되어 UI 스레드에서도 실행 가능.
+// =============================================================================
+// ZTS Worklet Parity Demos — Phase별 AST 변환 시연
+// =============================================================================
+// 각 예제는 빌드 시 ZTS가 워크릿 변환을 올바르게 적용하는지 확인하기 위한 샘플.
+// 런타임 실행 여부는 Reanimated runtime 통합에 따라 다름.
+
+// Phase 4: class field arrow worklet
 class WorkletHelper {
   multiplier = (x: number) => {
     'worklet';
     return x * 2;
   };
 }
+
+// Phase 3: object method worklet (class getter/setter는 TS private field와 간섭하므로
+// 여기선 object literal 형태로 시연 — 동일한 method_definition 경로 사용)
+const WorkletMethodHolder = {
+  describe(x: number) {
+    'worklet';
+    return 'value=' + x;
+  },
+};
+
+// Phase 5: __workletClass marker → <Class>__classFactory 자동 생성
+class WorkletMarkedClass {
+  __workletClass = true;
+  sayHello() {
+    return 'hi from worklet class';
+  }
+}
+
+// Phase 6.5: __workletContextObject marker → context factory
+const WorkletContextHolder = {
+  add(a: number, b: number) {
+    return a + b;
+  },
+  __workletContextObject: true,
+};
+
+// Phase 6.4: implicit context object via file-level directive는 별도 파일에서 (런타임
+// 테스트 대상 아닌 구조 검증 목적). App.tsx 자체는 file-level directive 미적용.
+
+// Phase 6.2: isWeb() substitution은 substitute_web_platform_checks 옵션을
+// bungae가 전달할 때만 트리거 — 여기서는 호출 데모만.
+function workletWebCheck() {
+  'worklet';
+  // 옵션 활성화 시 아래 호출은 컴파일타임 `true`로 치환됨.
+  // @ts-ignore
+  return typeof isWeb === 'function' ? isWeb() : false;
+}
+
+// 참조 마커 (트리셰이킹 방지)
+void WorkletHelper;
+void WorkletMethodHolder;
+void WorkletMarkedClass;
+void WorkletContextHolder;
+void workletWebCheck;
 
 // ---------------------------------------------------------------------------
 // Components
