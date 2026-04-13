@@ -94,6 +94,20 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     opts.strictExecutionOrder = true;
     opts.workletTransform = true;
 
+    // Reanimated runtime의 jsVersion과 대조를 위해 사용자 설치 worklets 패키지 버전을 주입.
+    // 불일치 시 __DEV__ 모드에서 WorkletsError throw (serializable.native.ts:464).
+    // Node resolution algorithm 사용 — 모노레포(Yarn workspaces, pnpm) 호이스팅된
+    // 경로도 부모 디렉토리 traversal로 탐지.
+    try {
+      const pkgPath = require.resolve('react-native-worklets/package.json', {
+        paths: [config.root],
+      });
+      const wkPkg = require(pkgPath);
+      if (wkPkg?.version) opts.workletPluginVersion = wkPkg.version;
+    } catch {
+      // 패키지 미설치/resolve 실패 — ZTS 기본 상수 사용
+    }
+
     // resolve extensions: 플랫폼별 확장자 순서 (Metro/CLI 프리셋 호환)
     const nativeAndBase = [
       '.native.ts', '.native.tsx', '.native.js', '.native.jsx',
