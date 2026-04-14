@@ -63,6 +63,15 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
 
   // Handle key presses
   const handleKeyPress = (key: string) => {
+    // Guard: re-enable raw mode if it was reset externally (Bun event loop edge case)
+    if (process.stdin.isTTY && !process.stdin.isRaw) {
+      try {
+        process.stdin.setRawMode(true);
+      } catch {
+        // ignore
+      }
+    }
+
     // Handle Ctrl+C separately (it's \u0003)
     // In raw mode, Ctrl+C doesn't automatically send SIGINT, so we need to handle it
     if (key === '\u0003') {

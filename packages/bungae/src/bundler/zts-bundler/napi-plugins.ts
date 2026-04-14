@@ -66,13 +66,13 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
       }));
 
       // onLoad: custom babelTransformerPath (Metro-compatible)
-      // Reads babelTransformerPath from config. The transformer handles files it cares about
-      // (e.g. .svg) and delegates others to the default transformer (decorator pattern).
+      // Metro transformers return { ast } (not code), so we generate code from AST via Babel.
+      // The transform() call is async, so onLoad must be async too.
       if (config.babelTransformerPath) {
         let customTransformer: any = null;
+        let babel: any = null;
         const transformerPath = config.babelTransformerPath;
 
-        // Non-standard sourceExts (not JS/TS/JSON) likely need the custom transformer
         const customExts = config.sourceExts
           .filter((e) => !/^\.(tsx?|jsx?|mjs|cjs|json)$/.test(e))
           .map((e) => e.replace(/^\./, ''))
@@ -80,24 +80,33 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
 
         if (customExts) {
           const customExtPattern = new RegExp(`\\.(${customExts})$`);
-          build.onLoad({ filter: customExtPattern }, (args) => {
+          build.onLoad({ filter: customExtPattern }, async (args) => {
             try {
               if (!customTransformer) {
                 customTransformer = require(
-                  require.resolve(transformerPath, {
-                    paths: [config.projectRoot],
-                  }),
+                  require.resolve(transformerPath, { paths: [config.projectRoot] }),
                 );
+              }
+              if (!babel) {
+                babel = require('@babel/core');
               }
               const fs = require('fs');
               const src = fs.readFileSync(args.path, 'utf8');
-              const result = customTransformer.transform({
+              const result = await customTransformer.transform({
                 src,
                 filename: args.path,
                 options: { platform: config.rnPlatform, dev: true },
               });
-              const code = typeof result === 'string' ? result : result?.code || result?.output;
-              if (code) return { contents: code };
+              // Metro transformers return { ast } or { code }
+              if (result?.code) return { contents: result.code };
+              if (result?.ast) {
+                const generated = babel.transformFromAstSync(result.ast, undefined, {
+                  filename: args.path,
+                  babelrc: false,
+                  configFile: false,
+                });
+                if (generated?.code) return { contents: generated.code };
+              }
             } catch (e: any) {
               process.stderr.write(
                 `[bungae:transformer] ${args.path.split('/').pop()}: ${e.message?.slice(0, 100)}\n`,

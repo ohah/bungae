@@ -40,8 +40,6 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SvgProps } from 'react-native-svg';
-
 // ~/  alias test (babel-plugin-root-import: ~/ → ./src)
 import { getGreeting, getVersion } from '~/utils/greeting';
 
