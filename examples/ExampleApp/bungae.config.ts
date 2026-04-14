@@ -20,7 +20,7 @@ export default defineConfig({
   outDir: join(__dirname, '.bungae'),
   bundler: 'zts',
   resolver: {
-    sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
+    sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json', '.svg'],
     assetExts: [
       '.bmp',
       '.gif',
@@ -41,9 +41,8 @@ export default defineConfig({
   transformer: {
     minifier: 'terser',
     inlineRequires: false,
-    babel: {
-      presets: ['@ohah/react-native-mcp-server/babel-preset'],
-    },
+    babelTransformerPath: 'react-native-svg-transformer/react-native',
+    babel: {},
   },
   serializer: {
     polyfills: [],

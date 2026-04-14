@@ -14,6 +14,7 @@ import { join } from 'path';
 import type { Duplex } from 'stream';
 
 import { createDevServerMiddleware } from '@react-native-community/cli-server-api';
+import type { WatchHandle } from '@zts/core';
 import * as jscSafeUrl from 'jsc-safe-url';
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -32,7 +33,6 @@ import {
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
 import { colors, logInfo, logError, printBanner } from '../../graph-bundler/utils';
 import { watchWithNapi } from '../napi-build';
-import type { WatchHandle } from '@zts/core';
 
 /**
  * zts 소스맵 후처리: x_google_ignoreList 확장.
@@ -131,7 +131,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         }
       },
       onRebuild(event) {
-        const duration = Date.now() - state!.lastRebuildTime;
+        const duration =
+          (event as any).phaseDurations?.total ?? Date.now() - state!.lastRebuildTime;
         state!.lastRebuildTime = Date.now();
 
         if (!event.success) {

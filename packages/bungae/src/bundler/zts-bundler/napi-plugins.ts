@@ -6,6 +6,7 @@
  */
 
 import type { ZtsPlugin } from '@zts/core';
+
 import {
   ASSET_REGISTRY_CODE,
   ASSET_REGISTRY_SPECIFIERS,
@@ -22,6 +23,8 @@ export interface PluginConfig {
   assetExts: string[];
   rnPlatform: 'ios' | 'android';
   sourceExts: string[];
+  /** Metro-compatible custom file transformer path (e.g. react-native-svg-transformer) */
+  babelTransformerPath?: string;
 }
 
 /**
@@ -57,17 +60,56 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
       });
 
       // onLoad: HMRClient.js replacement — intercept Metro's HMRClient with ZTS version
-      const hmrClientPattern = new RegExp(
-        escapeRegex(HMR_CLIENT_SUFFIX) + '$',
-      );
+      const hmrClientPattern = new RegExp(escapeRegex(HMR_CLIENT_SUFFIX) + '$');
       build.onLoad({ filter: hmrClientPattern }, () => ({
         contents: ZTS_HMR_CLIENT_CODE,
       }));
 
+      // onLoad: custom babelTransformerPath (Metro-compatible)
+      // Reads babelTransformerPath from config. The transformer handles files it cares about
+      // (e.g. .svg) and delegates others to the default transformer (decorator pattern).
+      if (config.babelTransformerPath) {
+        let customTransformer: any = null;
+        const transformerPath = config.babelTransformerPath;
+
+        // Non-standard sourceExts (not JS/TS/JSON) likely need the custom transformer
+        const customExts = config.sourceExts
+          .filter((e) => !/^\.(tsx?|jsx?|mjs|cjs|json)$/.test(e))
+          .map((e) => e.replace(/^\./, ''))
+          .join('|');
+
+        if (customExts) {
+          const customExtPattern = new RegExp(`\\.(${customExts})$`);
+          build.onLoad({ filter: customExtPattern }, (args) => {
+            try {
+              if (!customTransformer) {
+                customTransformer = require(
+                  require.resolve(transformerPath, {
+                    paths: [config.projectRoot],
+                  }),
+                );
+              }
+              const fs = require('fs');
+              const src = fs.readFileSync(args.path, 'utf8');
+              const result = customTransformer.transform({
+                src,
+                filename: args.path,
+                options: { platform: config.rnPlatform, dev: true },
+              });
+              const code = typeof result === 'string' ? result : result?.code || result?.output;
+              if (code) return { contents: code };
+            } catch (e: any) {
+              process.stderr.write(
+                `[bungae:transformer] ${args.path.split('/').pop()}: ${e.message?.slice(0, 100)}\n`,
+              );
+            }
+            return null;
+          });
+        }
+      }
+
       // onLoad: asset files (.png, .jpg, etc.) -> Metro-compatible registerAsset() code
-      const extPatterns = config.assetExts
-        .map((e) => e.replace(/^\./, ''))
-        .join('|');
+      const extPatterns = config.assetExts.map((e) => e.replace(/^\./, '')).join('|');
       const assetPattern = new RegExp(`\\.(${extPatterns})$`);
 
       build.onLoad({ filter: assetPattern }, (args) => ({
@@ -96,9 +138,7 @@ export function createBabelPlugin(config: PluginConfig): ZtsPlugin {
 
       const transformer = createBabelTransformer(config.projectRoot);
 
-      const extPatterns = config.sourceExts
-        .map((e) => e.replace(/^\./, ''))
-        .join('|');
+      const extPatterns = config.sourceExts.map((e) => e.replace(/^\./, '')).join('|');
       const sourcePattern = new RegExp(`\\.(${extPatterns})$`);
 
       build.onTransform({ filter: sourcePattern }, (args) => {

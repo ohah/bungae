@@ -34,6 +34,16 @@ export interface TransformerConfig {
   /** Enable inline requires */
   inlineRequires?: boolean;
   /**
+   * Path to a custom file transformer (Metro-compatible).
+   * The module must export a `transform({ src, filename, options })` function.
+   * Transformers chain by internally delegating to the default transformer for
+   * file types they don't handle (decorator pattern — same as Metro).
+   *
+   * @example
+   * babelTransformerPath: 'react-native-svg-transformer/react-native'
+   */
+  babelTransformerPath?: string;
+  /**
    * Babel configuration for OXC bundler.
    * Runs user-configured Babel presets/plugins as a Rolldown transform hook.
    *

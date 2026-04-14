@@ -5,6 +5,9 @@
  * Converts ResolvedConfig to BuildOptions and manages plugins in-process.
  */
 
+import { existsSync } from 'fs';
+import { resolve, join } from 'path';
+
 import {
   init,
   build,
@@ -15,8 +18,6 @@ import {
   type WatchReadyEvent,
   type WatchRebuildEvent,
 } from '@zts/core';
-import { resolve, join } from 'path';
-import { existsSync } from 'fs';
 
 import type { ResolvedConfig } from '../../config/types';
 import { VERSION } from '../../version';
@@ -52,6 +53,7 @@ function getPluginConfig(config: ResolvedConfig): PluginConfig {
     assetExts: config.resolver.assetExts.map((e) => (e.startsWith('.') ? e : `.${e}`)),
     rnPlatform: config.platform === 'android' ? 'android' : 'ios',
     sourceExts: config.resolver.sourceExts.map((e) => (e.startsWith('.') ? e : `.${e}`)),
+    babelTransformerPath: config.transformer.babelTransformerPath || undefined,
   };
 }
 
@@ -110,13 +112,26 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
 
     // resolve extensions: 플랫폼별 확장자 순서 (Metro/CLI 프리셋 호환)
     const nativeAndBase = [
-      '.native.ts', '.native.tsx', '.native.js', '.native.jsx',
-      '.ts', '.tsx', '.js', '.jsx', '.json',
+      '.native.ts',
+      '.native.tsx',
+      '.native.js',
+      '.native.jsx',
+      '.ts',
+      '.tsx',
+      '.js',
+      '.jsx',
+      '.json',
     ];
     if (rnPlatform === 'ios') {
       opts.resolveExtensions = ['.ios.ts', '.ios.tsx', '.ios.js', '.ios.jsx', ...nativeAndBase];
     } else if (rnPlatform === 'android') {
-      opts.resolveExtensions = ['.android.ts', '.android.tsx', '.android.js', '.android.jsx', ...nativeAndBase];
+      opts.resolveExtensions = [
+        '.android.ts',
+        '.android.tsx',
+        '.android.js',
+        '.android.jsx',
+        ...nativeAndBase,
+      ];
     } else {
       opts.resolveExtensions = ['.ts', '.tsx', '.js', '.jsx', '.json'];
     }
@@ -216,17 +231,15 @@ export async function buildWithNapi(
   const result: BuildResult = await build(opts);
 
   if (result.errors.length > 0) {
-    const errorMessages = result.errors.map((e) => e.location?.file ? `${e.location.file}: ${e.text}` : e.text).join('\n');
+    const errorMessages = result.errors
+      .map((e) => (e.location?.file ? `${e.location.file}: ${e.text}` : e.text))
+      .join('\n');
     throw new Error(`[zts] Build failed:\n${errorMessages}`);
   }
 
   // Extract code and sourcemap from output files
-  const mainOutput = result.outputFiles.find(
-    (f) => !f.path.endsWith('.map'),
-  );
-  const mapOutput = result.outputFiles.find(
-    (f) => f.path.endsWith('.map'),
-  );
+  const mainOutput = result.outputFiles.find((f) => !f.path.endsWith('.map'));
+  const mapOutput = result.outputFiles.find((f) => f.path.endsWith('.map'));
 
   return {
     code: mainOutput?.text ?? '',

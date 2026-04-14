@@ -264,9 +264,33 @@ export function generateAssetCode(
 
 // ===== Babel Plugin Detection & Transformer =====
 
-/** Known Babel plugin name patterns that require runtime transformation */
-// reanimated/worklet은 ZTS 네이티브 worklet 변환으로 대체 (#1082)
-const CUSTOM_PLUGIN_PATTERNS = ['nativewind'];
+/**
+ * Babel plugin patterns that ZTS handles natively — excluded from Babel pass-through.
+ * Everything NOT in this list is forwarded to Babel automatically.
+ */
+const ZTS_NATIVE_PLUGIN_PATTERNS = [
+  // ZTS ES5 매트릭스가 처리하는 변환
+  'optional-chaining',
+  'nullish-coalescing',
+  'class-properties',
+  'private-methods',
+  'private-property-in-object',
+  'flow-strip-types',
+  'transform-flow',
+  'transform-typescript',
+  'transform-react-jsx',
+  'transform-arrow-functions',
+  'transform-block-scoping',
+  'transform-shorthand-properties',
+  'transform-template-literals',
+  'transform-modules-commonjs',
+  // ZTS 네이티브 워크릿 변환 (#1082)
+  'react-native-worklets',
+  'react-native-reanimated/plugin',
+  'react-native-reanimated',
+  // RN 기본 프리셋 (ZTS가 전체 처리)
+  '@react-native/babel-preset',
+];
 
 /**
  * Detect whether the project has custom Babel plugins that require runtime transformation.
@@ -274,18 +298,23 @@ const CUSTOM_PLUGIN_PATTERNS = ['nativewind'];
  *
  * @param projectRoot  Project root directory containing babel.config.js
  */
+/**
+ * Check if a plugin name is handled natively by ZTS (should NOT be forwarded to Babel).
+ */
+function isZtsNativePlugin(name: string): boolean {
+  return ZTS_NATIVE_PLUGIN_PATTERNS.some((pattern) => name.includes(pattern));
+}
+
 export function detectCustomPlugins(projectRoot: string): boolean {
   try {
     const configPath = join(projectRoot, 'babel.config.js');
     if (!existsSync(configPath)) return false;
     const config = require(configPath);
     const plugins: unknown[] = config?.plugins || [];
+    // Any plugin NOT handled natively by ZTS → needs Babel
     return plugins.some((p) => {
       const name = typeof p === 'string' ? p : Array.isArray(p) ? p[0] : '';
-      return (
-        typeof name === 'string' &&
-        CUSTOM_PLUGIN_PATTERNS.some((pattern) => name.includes(pattern))
-      );
+      return typeof name === 'string' && !isZtsNativePlugin(name);
     });
   } catch {
     return false;
@@ -313,31 +342,43 @@ export function createBabelTransformer(
     const config = require(configPath);
     const plugins: unknown[] = config?.plugins || [];
 
-    const customPaths: string[] = [];
+    const customPlugins: unknown[] = [];
     for (const plugin of plugins) {
       const name = typeof plugin === 'string' ? plugin : Array.isArray(plugin) ? plugin[0] : '';
-      if (
-        typeof name === 'string' &&
-        CUSTOM_PLUGIN_PATTERNS.some((pattern) => name.includes(pattern))
-      ) {
-        try {
-          customPaths.push(require.resolve(name));
-        } catch {
-          customPaths.push(name as string);
+      if (typeof name === 'string' && !isZtsNativePlugin(name)) {
+        // Preserve plugin options: ['plugin-name', { opt: val }] or just 'plugin-name'
+        if (Array.isArray(plugin)) {
+          try {
+            customPlugins.push([
+              require.resolve(plugin[0] as string),
+              ...(plugin.slice(1) as unknown[]),
+            ]);
+          } catch {
+            customPlugins.push(plugin);
+          }
+        } else {
+          try {
+            customPlugins.push(require.resolve(name));
+          } catch {
+            customPlugins.push(name);
+          }
         }
       }
     }
 
     babelOptions = {
       presets: [['@babel/preset-typescript', { isTSX: true, allExtensions: true }]],
-      plugins: customPaths,
+      plugins: customPlugins,
       babelrc: false,
       configFile: false,
       compact: false,
       sourceMaps: false,
     };
 
-    process.stderr.write(`[bungae:babel] loaded: ${customPaths.join(', ')}\n`);
+    const pluginNames = customPlugins.map((p) =>
+      Array.isArray(p) ? (p[0] as string).split('/').pop() : String(p).split('/').pop(),
+    );
+    process.stderr.write(`[bungae:babel] loaded: ${pluginNames.join(', ')}\n`);
   }
 
   return (code: string, filename: string): string | null => {

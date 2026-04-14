@@ -40,6 +40,13 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SvgProps } from 'react-native-svg';
+
+// ~/  alias test (babel-plugin-root-import: ~/ → ./src)
+import { getGreeting, getVersion } from '~/utils/greeting';
+
+// SVG test (react-native-svg-transformer)
+import CheckIcon from '~/assets/check.svg';
 
 const testIcon = require('./src/assets/test-icon.png');
 
@@ -285,9 +292,13 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
     });
     console.log('Array test:', [1, 'two', { three: 3 }, [4, 5]]);
 
+    // babel-plugin-root-import (~/ alias) + lodash tree-shaking test
+    console.log('Root import test:', getGreeting('world'));
+    console.log('Version:', getVersion());
+
     setConsoleTest({
       status: 'success',
-      message: 'Sent 7 logs (5 levels + object + array) — check terminal',
+      message: 'Sent 9 logs (5 levels + object + array + alias + lodash) — check terminal',
     });
   }, []);
 
@@ -431,6 +442,30 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
           textColor={textColor}
           dimColor={dimColor}
         />
+
+        {/* Babel Plugin Tests */}
+        <View style={[styles.card, { backgroundColor: cardBg }]}>
+          <Text style={[styles.cardTitle, { color: textColor }]}>Babel Plugins</Text>
+          <Text style={[styles.cardDesc, { color: dimColor }]}>
+            root-import, lodash, SVG, decorators
+          </Text>
+          <View style={{ marginTop: 8, gap: 4 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <View style={{ backgroundColor: '#E8F5E9', borderRadius: 8, padding: 8 }}>
+                <CheckIcon width={32} height={32} stroke="#4CAF50" strokeWidth={3} />
+              </View>
+              <Text style={{ color: textColor, fontSize: 14, fontWeight: '600' }}>
+                SVG component loaded
+              </Text>
+            </View>
+            <Text style={{ color: textColor, fontSize: 13 }}>
+              ~/ alias: {getGreeting('dev')}
+            </Text>
+            <Text style={{ color: textColor, fontSize: 13 }}>
+              version: {getVersion()}
+            </Text>
+          </View>
+        </View>
       </View>
     </ScrollView>
   );
