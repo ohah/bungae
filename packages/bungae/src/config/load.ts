@@ -114,10 +114,14 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
         if (config instanceof Promise) {
           config = await config;
         }
-        // Handle function exports
+        // Handle function exports (e.g. Rozenite's withRozenite returns a function).
+        // Result may be a Promise — await it.
         if (typeof config === 'function') {
           const defaults = getDefaultConfig(dirname(configPath));
           config = config(defaults);
+          if (config instanceof Promise) {
+            config = await config;
+          }
         }
         return config as BungaeConfig;
       }
@@ -148,10 +152,14 @@ export async function loadConfig(options: LoadConfigOptions | string = {}): Prom
           if (config instanceof Promise) {
             config = await config;
           }
-          // Handle function exports
+          // Handle function exports (e.g. Rozenite's withRozenite returns a function).
+          // Result may be a Promise — await it.
           if (typeof config === 'function') {
             const defaults = getDefaultConfig(root);
             config = config(defaults);
+            if (config instanceof Promise) {
+              config = await config;
+            }
           }
           return config as BungaeConfig;
         }

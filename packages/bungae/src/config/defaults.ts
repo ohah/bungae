@@ -159,6 +159,8 @@ export const DEFAULT_SERVER: Required<ServerConfig> = {
   forwardClientLogs: true,
   verifyConnections: false,
   unstable_serverRoot: null,
+  // Metro 호환: identity wrapper. 사용자가 override하지 않으면 그대로 통과.
+  enhanceMiddleware: (middleware) => middleware,
 };
 
 /**

@@ -73,6 +73,7 @@ describe('mergeConfig', () => {
           forwardClientLogs: true,
           verifyConnections: false,
           unstable_serverRoot: null,
+          enhanceMiddleware: (m) => m,
         },
       },
       {},

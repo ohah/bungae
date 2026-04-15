@@ -503,8 +503,49 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     sendText(res, 404, 'Not Found');
   };
 
-  // Create HTTP server
-  const httpServer = createHttpServer(handleRequest);
+  // Wrap handleRequest as connect-style middleware so user-provided
+  // server.enhanceMiddleware (Metro 호환) can intercept routes.
+  // Plugins like @rozenite/metro use this to inject DevTools panels —
+  // they handle their own paths and delegate the rest by calling next().
+  const baseMiddleware = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: (err?: unknown) => void,
+  ): void => {
+    handleRequest(req, res).then(
+      () => {
+        if (!res.headersSent && !res.writableEnded) next();
+      },
+      (err) => next(err),
+    );
+  };
+
+  // Apply enhanceMiddleware. Second arg mirrors Metro's MetroServer slot —
+  // Bungae has no Metro-shaped server object, so plugins must treat it as opaque.
+  const enhancedMiddleware = server.enhanceMiddleware(baseMiddleware, {});
+
+  const httpServer = createHttpServer((req, res) => {
+    try {
+      enhancedMiddleware(req, res, (err?: unknown) => {
+        if (err) {
+          logError(`Middleware error: ${err instanceof Error ? err.message : String(err)}`);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('Internal Server Error');
+          }
+        } else if (!res.headersSent) {
+          res.statusCode = 404;
+          res.end('Not Found');
+        }
+      });
+    } catch (err) {
+      logError(`Middleware threw: ${err instanceof Error ? err.message : String(err)}`);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      }
+    }
+  });
 
   // WebSocket upgrades
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {

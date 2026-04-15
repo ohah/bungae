@@ -47,6 +47,7 @@
         "@react-native/gradle-plugin": "0.83.1",
         "@react-native/metro-config": "0.83.1",
         "@react-native/typescript-config": "0.83.1",
+        "@rozenite/metro": "^1.7.0",
         "@types/jest": "^29.5.13",
         "@types/react": "^19.2.0",
         "@types/react-test-renderer": "^19.1.0",
@@ -785,6 +786,16 @@
     "@react-native/typescript-config": ["@react-native/typescript-config@0.83.1", "", {}, "sha512-y83qd7fmlZG+EJoOyKEmAXifdjN1csNhcfpyxDvgaIUNO/pw2ws3MV/wp+ERQ8F6JIuAu1zcfyCy1/pEA7tC9g=="],
 
     "@react-native/virtualized-lists": ["@react-native/virtualized-lists@0.83.1", "", { "dependencies": { "invariant": "^2.2.4", "nullthrows": "^1.1.1" }, "peerDependencies": { "@types/react": "^19.2.0", "react": "*", "react-native": "*" }, "optionalPeers": ["@types/react"] }, "sha512-MdmoAbQUTOdicCocm5XAFDJWsswxk7hxa6ALnm6Y88p01HFML0W593hAn6qOt9q6IM1KbAcebtH6oOd4gcQy8w=="],
+
+    "@rozenite/agent-shared": ["@rozenite/agent-shared@1.7.0", "", { "dependencies": { "tslib": "^2.3.0" } }, "sha512-6NEBpY82aoFPe8lswaO28lWSnfcjM6r+Msmt7HEE0rBYFNH8FBZN9RgFof3Y13qEY/NerlP+6v+pz8HM5df1uQ=="],
+
+    "@rozenite/metro": ["@rozenite/metro@1.7.0", "", { "dependencies": { "@rozenite/middleware": "1.7.0", "@rozenite/tools": "1.7.0", "tslib": "^2.3.0" } }, "sha512-SCrbjH2Kel+4EBv82gEJvgpj0OPO6V50vb7pFdA06kkd/WEAWz+rJ0IFjY+AJ5R8RlayAdQUbym95GpkszIpMA=="],
+
+    "@rozenite/middleware": ["@rozenite/middleware@1.7.0", "", { "dependencies": { "@rozenite/agent-shared": "1.7.0", "@rozenite/runtime": "1.7.0", "@rozenite/tools": "1.7.0", "express": "^5.1.0", "semver": "^7.7.2", "tslib": "^2.3.0", "ws": "^8.18.3" } }, "sha512-uCMX1ULLM/+Fw9Gcir/hBJxthB7eLEZkxKo4PDJ+XK9A96xmZsQL5ZyRU+PnTLQ5D2OMA71vL98kaOIEDTx7gg=="],
+
+    "@rozenite/runtime": ["@rozenite/runtime@1.7.0", "", { "dependencies": { "tslib": "^2.3.0" } }, "sha512-3TzN480E6mkjpQo33TDYjFF4uy6MKk2XJ5N+1qmIYe//S9KwDPNtAk+4zMYOic0Gwt1KqmWQNC5mA/qq1Pw6zQ=="],
+
+    "@rozenite/tools": ["@rozenite/tools@1.7.0", "", {}, "sha512-WZ9NhzBV/6OgZutpwwHua3TsL0Zn6YZTgT6D6gef1EEhPtliozi4XUHrnQJ8SJ6nZvRVMK1gDwETi8FffXvUkQ=="],
 
     "@sideway/address": ["@sideway/address@4.1.5", "", { "dependencies": { "@hapi/hoek": "^9.0.0" } }, "sha512-IqO/DUQHUkPeixNQ8n0JA6102hT9CmaljNTPmQ1u8MEhBo/R4Q8eKLN/vGZxuebwOroDB4cbpjheD4+/sKFK4Q=="],
 
@@ -1931,6 +1942,8 @@
     "@react-native/dev-middleware/ws": ["ws@7.5.10", "", { "peerDependencies": { "bufferutil": "^4.0.1", "utf-8-validate": "^5.0.2" }, "optionalPeers": ["bufferutil", "utf-8-validate"] }, "sha512-+dbF1tHwZpXcbOJdVOkzLDxZP1ailvSxM6ZweXTegylPny803bFhA+vqBYw4s31NSAk4S2Qz+AKXK9a4wkdjcQ=="],
 
     "@react-native/metro-babel-transformer/hermes-parser": ["hermes-parser@0.32.0", "", { "dependencies": { "hermes-estree": "0.32.0" } }, "sha512-g4nBOWFpuiTqjR3LZdRxKUkij9iyveWeuks7INEsMX741f3r9xxrOe8TeQfUxtda0eXmiIFiMQzoeSQEno33Hw=="],
+
+    "@rozenite/middleware/semver": ["semver@7.7.3", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-SdsKMrI9TdgjdweUSR9MweHA4EJ8YxHn8DFaDisvhVlUOe4BF1tLD7GAj0lIqWVl+dPb/rExr0Btby5loQm20Q=="],
 
     "@svgr/core/cosmiconfig": ["cosmiconfig@8.3.6", "", { "dependencies": { "import-fresh": "^3.3.0", "js-yaml": "^4.1.0", "parse-json": "^5.2.0", "path-type": "^4.0.0" }, "peerDependencies": { "typescript": ">=4.9.5" }, "optionalPeers": ["typescript"] }, "sha512-kcZ6+W5QzcJ3P1Mt+83OUv/oHFqZHIx8DuxG6eZ5RGMERoLqp4BuGjhHLYGK+Kf5XVkQvqBSmAy/nGWN3qDgEA=="],
 

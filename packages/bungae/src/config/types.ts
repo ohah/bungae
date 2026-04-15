@@ -2,6 +2,18 @@
  * Bungae Configuration Types
  */
 
+import type { IncomingMessage, ServerResponse } from 'http';
+
+/**
+ * Connect-style middleware (Metro 호환).
+ * Express app도 이 시그니처를 따르므로 enhanceMiddleware의 반환 타입으로 사용 가능.
+ */
+export type ConnectMiddleware = (
+  req: IncomingMessage,
+  res: ServerResponse,
+  next: (err?: unknown) => void,
+) => void;
+
 export type Platform = 'ios' | 'android' | 'web';
 export type Mode = 'development' | 'production';
 export type BundleType = 'plain' | 'ram-indexed' | 'ram-file';
@@ -138,6 +150,22 @@ export interface ServerConfig {
   verifyConnections?: boolean;
   /** Unstable server root */
   unstable_serverRoot?: string | null;
+  /**
+   * Wrap the default dev server middleware (Metro 호환).
+   * Receives the default middleware and an opaque server reference, returns a
+   * new middleware (or Express app, which is connect-compatible).
+   *
+   * Used by tools like `@rozenite/metro` (`withRozenite`) to inject DevTools
+   * panels via custom routes — the wrapper handles its own paths and delegates
+   * the rest by calling `next()`.
+   *
+   * The second argument mirrors Metro's `MetroServer` slot. Bungae does not
+   * expose a Metro-shaped server object, so plugins should treat it as opaque.
+   */
+  enhanceMiddleware?: (
+    middleware: ConnectMiddleware,
+    server: unknown,
+  ) => ConnectMiddleware;
 }
 
 /**
