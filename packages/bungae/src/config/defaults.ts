@@ -8,6 +8,7 @@ import type {
   TransformerConfig,
   SerializerConfig,
   ServerConfig,
+  SymbolicatorConfig,
   ExperimentalConfig,
 } from './types';
 
@@ -78,6 +79,14 @@ export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
  */
 export const DEFAULT_EXPERIMENTAL: Required<ExperimentalConfig> = {
   treeShaking: false, // Disabled by default (experimental feature)
+};
+
+/**
+ * Default symbolicator configuration (Metro 호환).
+ * customizeFrame: noop returning undefined (no collapse).
+ */
+export const DEFAULT_SYMBOLICATOR: Required<SymbolicatorConfig> = {
+  customizeFrame: () => undefined,
 };
 
 /**
@@ -161,6 +170,8 @@ export const DEFAULT_SERVER: Required<ServerConfig> = {
   unstable_serverRoot: null,
   // Metro 호환: identity wrapper. 사용자가 override하지 않으면 그대로 통과.
   enhanceMiddleware: (middleware) => middleware,
+  // Metro 호환: identity. URL 재작성 안 함.
+  rewriteRequestUrl: (url) => url,
 };
 
 /**
@@ -200,6 +211,7 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     transformer: { ...DEFAULT_TRANSFORMER },
     serializer: { ...DEFAULT_SERIALIZER },
     server: { ...DEFAULT_SERVER },
+    symbolicator: { ...DEFAULT_SYMBOLICATOR },
     experimental: { ...DEFAULT_EXPERIMENTAL },
   };
 }

@@ -74,6 +74,10 @@ describe('mergeConfig', () => {
           verifyConnections: false,
           unstable_serverRoot: null,
           enhanceMiddleware: (m) => m,
+          rewriteRequestUrl: (u) => u,
+        },
+        symbolicator: {
+          customizeFrame: () => undefined,
         },
       },
       {},

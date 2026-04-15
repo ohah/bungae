@@ -129,6 +129,31 @@ export interface SerializerConfig {
 }
 
 /**
+ * Stack frame passed to symbolicator.customizeFrame (Metro 호환).
+ */
+export interface SymbolicatorFrame {
+  file?: string | null;
+  lineNumber?: number | null;
+  column?: number | null;
+  methodName?: string | null;
+}
+
+/**
+ * Symbolicator configuration (Metro 호환).
+ * Hooks for customizing stack frames sent back to the React Native LogBox.
+ */
+export interface SymbolicatorConfig {
+  /**
+   * Per-frame customization. Return `{ collapse: true }` to mark a frame as
+   * collapsible in DevTools (hidden by default, expandable on click).
+   * Used to hide framework / polyfill frames.
+   */
+  customizeFrame?: (
+    frame: SymbolicatorFrame,
+  ) => { collapse?: boolean } | null | undefined | Promise<{ collapse?: boolean } | null | undefined>;
+}
+
+/**
  * Server configuration
  */
 export interface ServerConfig {
@@ -166,6 +191,16 @@ export interface ServerConfig {
     middleware: ConnectMiddleware,
     server: unknown,
   ) => ConnectMiddleware;
+  /**
+   * Rewrite incoming request URLs before routing (Metro 호환).
+   * Called once per request at the start of handling, after jsc-safe URL
+   * normalization. Use to redirect legacy bundle paths, inject query params,
+   * or normalize platform-specific suffixes.
+   *
+   * @example
+   * rewriteRequestUrl: (url) => url.replace('/old.bundle', '/index.bundle')
+   */
+  rewriteRequestUrl?: (url: string) => string;
 }
 
 /**
@@ -239,6 +274,8 @@ export interface BungaeConfig {
   serializer?: SerializerConfig;
   /** Server configuration */
   server?: ServerConfig;
+  /** Symbolicator configuration (Metro 호환) */
+  symbolicator?: SymbolicatorConfig;
   /** Experimental configuration */
   experimental?: ExperimentalConfig;
 }
@@ -254,5 +291,6 @@ export interface ResolvedConfig extends Required<
   serializer: Required<Omit<SerializerConfig, 'shouldAddToIgnoreList'>> &
     Pick<SerializerConfig, 'shouldAddToIgnoreList'>;
   server: Required<ServerConfig>;
+  symbolicator: Required<SymbolicatorConfig>;
   experimental: Required<ExperimentalConfig>;
 }

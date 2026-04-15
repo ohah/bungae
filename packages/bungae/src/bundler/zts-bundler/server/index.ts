@@ -310,13 +310,27 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
   // HTTP request handler
   const handleRequest = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
+    // Metro 호환: jsc-safe URL → normalize → user rewrite → normalize 재적용.
+    // jscSafeUrl.toNormalUrl is idempotent for already-normal URLs, so the
+    // double application is safe and matches Server.js:_rewriteAndNormalizeUrl.
+    if (req.url) {
+      const normalized = jscSafeUrl.toNormalUrl(req.url);
+      const rewritten = server.rewriteRequestUrl(normalized);
+      req.url = jscSafeUrl.toNormalUrl(rewritten);
+    }
     const url = parseRequestUrl(req, hostname, port);
 
     // Symbolicate — dev middleware보다 먼저 처리 (RN LogBox 스택트레이스)
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
-      await handleSymbolicateRequest(req, res, config, state.sourceMap);
+      await handleSymbolicateRequest(
+        req,
+        res,
+        config,
+        state.sourceMap,
+        config.symbolicator.customizeFrame,
+      );
       return;
     }
 
@@ -454,7 +468,13 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
-      await handleSymbolicateRequest(req, res, config, state.sourceMap);
+      await handleSymbolicateRequest(
+        req,
+        res,
+        config,
+        state.sourceMap,
+        config.symbolicator.customizeFrame,
+      );
       return;
     }
 
@@ -707,6 +727,7 @@ async function handleSymbolicateRequest(
   res: ServerResponse,
   config: ResolvedConfig,
   sourceMap: string | null,
+  customizeFrame: ResolvedConfig['symbolicator']['customizeFrame'],
 ): Promise<void> {
   try {
     const body = await readJsonBody<{
@@ -738,34 +759,55 @@ async function handleSymbolicateRequest(
     const consumer = await new SourceMapConsumer(parsedMap);
 
     try {
-      const symbolicatedStack = stack.map((frame) => {
-        if (!frame.file || frame.lineNumber == null) return { ...frame };
-        try {
-          const pos = consumer.originalPositionFor({
-            line: frame.lineNumber,
-            column: frame.column ?? 0,
-          });
-          if (pos.source == null || pos.line == null) return { ...frame };
-
-          const { resolve } = require('path');
-          let sourcePath = pos.source;
-          if (sourcePath.startsWith('/')) {
-            // absolute path — keep as is
+      const symbolicatedStack = await Promise.all(
+        stack.map(async (frame) => {
+          let resolved: typeof frame & { collapse?: boolean };
+          if (!frame.file || frame.lineNumber == null) {
+            resolved = { ...frame };
           } else {
-            sourcePath = resolve(config.root, sourcePath);
+            try {
+              const pos = consumer.originalPositionFor({
+                line: frame.lineNumber,
+                column: frame.column ?? 0,
+              });
+              if (pos.source == null || pos.line == null) {
+                resolved = { ...frame };
+              } else {
+                const { resolve } = require('path');
+                let sourcePath = pos.source;
+                if (!sourcePath.startsWith('/')) {
+                  sourcePath = resolve(config.root, sourcePath);
+                }
+                resolved = {
+                  ...frame,
+                  file: sourcePath,
+                  lineNumber: pos.line,
+                  column: pos.column ?? 0,
+                  methodName: pos.name ?? frame.methodName,
+                };
+              }
+            } catch {
+              resolved = { ...frame };
+            }
           }
 
-          return {
-            ...frame,
-            file: sourcePath,
-            lineNumber: pos.line,
-            column: pos.column ?? 0,
-            methodName: pos.name ?? frame.methodName,
-          };
-        } catch {
-          return { ...frame };
-        }
-      });
+          // Apply user customizeFrame (Metro 호환). collapse: true → DevTools
+          // 에서 프레임 숨김 처리 (사용자가 펼쳐서 볼 수 있음).
+          try {
+            const customization = await customizeFrame({
+              file: resolved.file ?? null,
+              lineNumber: resolved.lineNumber ?? null,
+              column: resolved.column ?? null,
+              methodName: resolved.methodName ?? null,
+            });
+            if (customization?.collapse) resolved.collapse = true;
+          } catch {
+            // user customizeFrame errors are non-fatal
+          }
+
+          return resolved;
+        }),
+      );
 
       // Code frame for first non-internal frame
       let codeFrame: {

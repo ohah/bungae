@@ -61,6 +61,7 @@ export function mergeConfig(
       transformer: deepMerge(merged.transformer, userConfig.transformer || {}),
       serializer: deepMerge(merged.serializer, userConfig.serializer || {}),
       server: deepMerge(merged.server, userConfig.server || {}),
+      symbolicator: deepMerge(merged.symbolicator, userConfig.symbolicator || {}),
       experimental: deepMerge(merged.experimental, userConfig.experimental || {}),
     };
 
