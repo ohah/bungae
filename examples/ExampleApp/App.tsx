@@ -46,7 +46,12 @@ import { getGreeting, getVersion } from '~/utils/greeting';
 // SVG test (react-native-svg-transformer)
 import CheckIcon from '~/assets/check.svg';
 
+// ES5 다운레벨 스트레스 테스트 — 번들 출력 검증용. 런타임엔 호출 안 해도 됨.
+import { es5DownlevelCases } from './src/es5-downlevel-cases';
+
 const testIcon = require('./src/assets/test-icon.png');
+// tree-shake 방지 — 참조만 유지
+void es5DownlevelCases;
 
 // ---------------------------------------------------------------------------
 // Types
