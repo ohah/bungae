@@ -209,7 +209,7 @@ const { handle } = watchWithNapi(platformConfig, outputPath, {
 });
 ```
 
-⚠️ **`watchFolders` 미적용**: NAPI 옵션에 watch folder 추가 인터페이스가 없어, 그래프 외부 폴더 변경은 감지 안 됨. ZTS Zig 측 작업 필요.
+**`watchFolders` 지원**: `config.watchFolders`를 `napi-build.ts:buildNapiOptions` 에서 절대 경로로 변환하여 NAPI `watchFolders` 옵션으로 전달 (zts `b104b82`). 그래프 밖 디렉토리 변경도 rebuild 트리거.
 
 ### graph: file-watcher.ts
 

@@ -76,7 +76,7 @@ export default defineConfig({
   bundleEncoding?: BufferEncoding;
   resetCache?: boolean;
   maxWorkers?: number;
-  watchFolders?: string[];          // ⚠️ graph만 적용. ZTS는 NAPI 옵션 부재로 미적용
+  watchFolders?: string[];          // 그래프 밖 디렉토리 watch (ZTS / graph 모두 지원)
   sourceExts?: string[];
   transformOptions?: Record<string, string>;
   resolverOptions?: Record<string, string>;

@@ -473,6 +473,7 @@ React Native 공식 문서에서도 "If you are using Hermes, you should not nee
 | `server.rewriteRequestUrl` | 동일 | jsc-safe normalize → user rewrite → normalize. Metro `Server.js:_rewriteAndNormalizeUrl` 동일 |
 | `server.useGlobalHotkey` / `forwardClientLogs` / `port` / `host` | — | 기본 옵션 |
 | `symbolicator.customizeFrame` | `handleSymbolicateRequest` | 프레임당 호출. `{ collapse: true }` 반환 시 DevTools에서 프레임 숨김 |
+| `watchFolders` | `napi-build.ts:buildNapiOptions` | 그래프 밖 디렉토리도 watch 루트에 추가. ZTS NAPI `watchFolders` 옵션으로 전달 (zts b104b82) |
 | `serializer.getModulesRunBeforeMainModule` / `getPolyfills` | `config/defaults.ts` | RN `InitializeCore` 자동 포함 |
 | `serializer.inlineSourceMap` / `shouldAddToIgnoreList` | `serializer/` | x_google_ignoreList 커스터마이징 |
 | `transformer.babelTransformerPath` | NAPI babel plugin | Metro와 동일하게 chained transformer |
@@ -486,7 +487,6 @@ ZTS는 Zig 기반 번들러 바이너리를 통해 동작하므로, 다음 hook�
 | --- | --- |
 | `resolver.resolveRequest` | ZTS 자체 resolver가 Zig에서 컴파일됨. JS 콜백 호출 메커니즘 없음. 매번 호출 시 성능 손해 큼 |
 | `resolver.extraNodeModules` | NAPI BuildOptions에 옵션 자체가 없음 |
-| `watchFolders` | NAPI watch는 의존성 그래프 외부 폴더 추가 옵션 없음 (현재 `server/index.ts:225`에서 빈 배열 hardcoded) |
 | `transformer.getTransformOptions` / `assetPlugins` / `minifierPath` | transformation은 Zig 측 책임 |
 | `serializer.customSerializer` / `processModuleFilter` / `createModuleIdFactory` | 직렬화도 Zig 측 책임 |
 

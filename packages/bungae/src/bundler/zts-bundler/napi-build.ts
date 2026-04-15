@@ -87,6 +87,14 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     plugins,
   };
 
+  // Metro 호환 watchFolders — 그래프 밖 디렉토리도 watch 루트에 추가.
+  // ZTS는 dev mode(watch)에서만 의미있지만, 상수 비용이라 항상 전달.
+  if (config.watchFolders && config.watchFolders.length > 0) {
+    opts.watchFolders = config.watchFolders.map((p) =>
+      resolve(config.root, p),
+    );
+  }
+
   // React Native specific options (CLI --platform=react-native 프리셋과 동일)
   if (platform === 'react-native') {
     opts.target = 'es5';
