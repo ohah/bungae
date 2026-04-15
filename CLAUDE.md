@@ -461,6 +461,46 @@ React Native 공식 문서에서도 "If you are using Hermes, you should not nee
 
 ## Metro 호환성 및 제외된 기능
 
+### ZTS Metro Config Hook 매트릭스
+
+`bungae.config.ts`에서 Metro와 동일한 시그니처로 사용할 수 있는 hook 현황 (ZTS 번들러 기준).
+
+#### ✅ 지원 (Metro와 동일하게 그대로 사용 가능)
+
+| Hook | 위치 | 비고 |
+| --- | --- | --- |
+| `server.enhanceMiddleware` | `bundler/zts-bundler/server/index.ts` | dev server middleware wrapping. `withRozenite()` 같은 도구 그대로 사용 가능 |
+| `server.rewriteRequestUrl` | 동일 | jsc-safe normalize → user rewrite → normalize. Metro `Server.js:_rewriteAndNormalizeUrl` 동일 |
+| `server.useGlobalHotkey` / `forwardClientLogs` / `port` / `host` | — | 기본 옵션 |
+| `symbolicator.customizeFrame` | `handleSymbolicateRequest` | 프레임당 호출. `{ collapse: true }` 반환 시 DevTools에서 프레임 숨김 |
+| `serializer.getModulesRunBeforeMainModule` / `getPolyfills` | `config/defaults.ts` | RN `InitializeCore` 자동 포함 |
+| `serializer.inlineSourceMap` / `shouldAddToIgnoreList` | `serializer/` | x_google_ignoreList 커스터마이징 |
+| `transformer.babelTransformerPath` | NAPI babel plugin | Metro와 동일하게 chained transformer |
+| `resolver.sourceExts` / `assetExts` / `platforms` / `preferNativePlatform` | NAPI plugin config | 플랫폼 확장자 처리 |
+
+#### 🚧 미지원 (ZTS Zig 측 작업 필요 — 보류 중)
+
+ZTS는 Zig 기반 번들러 바이너리를 통해 동작하므로, 다음 hook들은 NAPI 인터페이스에 옵션 추가 + Zig 측 구현이 필요합니다. Bungae JS만으로는 구현 불가.
+
+| Hook | 차단 이유 |
+| --- | --- |
+| `resolver.resolveRequest` | ZTS 자체 resolver가 Zig에서 컴파일됨. JS 콜백 호출 메커니즘 없음. 매번 호출 시 성능 손해 큼 |
+| `resolver.extraNodeModules` | NAPI BuildOptions에 옵션 자체가 없음 |
+| `watchFolders` | NAPI watch는 의존성 그래프 외부 폴더 추가 옵션 없음 (현재 `server/index.ts:225`에서 빈 배열 hardcoded) |
+| `transformer.getTransformOptions` / `assetPlugins` / `minifierPath` | transformation은 Zig 측 책임 |
+| `serializer.customSerializer` / `processModuleFilter` / `createModuleIdFactory` | 직렬화도 Zig 측 책임 |
+
+#### ⏸ 보류 (낮은 우선순위 / 인터페이스 검토 필요)
+
+| Hook | 사유 |
+| --- | --- |
+| `reporter` | Metro의 `ReportableEvent` 인터페이스가 거대함 (20+ 종). ZTS는 `onReady`/`onRebuild` 두 콜백만 노출 → 1:1 매핑 어려움. 실사용 빈도 낮음 |
+| `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 케이스 커버. 필요 시 추가 |
+
+#### ❌ 의도적 제외
+
+아래 두 항목은 [구현하지 않는 Metro 기능](#구현하지-않는-metro-기능) 섹션 참고.
+
 ### 구현하지 않는 Metro 기능
 
 다음 기능들은 Metro에 있지만 Bungae에서는 구현하지 않습니다:
