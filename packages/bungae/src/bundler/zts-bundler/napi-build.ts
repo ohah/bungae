@@ -206,11 +206,11 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     }
     opts.loader = { ...assetLoaders, ...(opts.loader ?? {}) };
 
-    // 두 번째 AssetRegistry specifier alias — 최신 RN(`@react-native/assets-registry/registry`)도
-    // 동일 모듈로 해석되도록. ZTS가 generated code에서 첫 번째 경로만 require하므로
-    // 사용자 코드가 두 번째 경로를 직접 import해도 같은 인스턴스를 받게 된다.
+    // AssetRegistry alias 제거: `react-native/Libraries/Image/AssetRegistry`가
+    // `@react-native/assets-registry/registry`를 re-export하므로, alias로 두 경로를
+    // 같은 모듈로 해석하면 self-cycle re-export가 발생해 ZTS가 자기 참조 getter를
+    // 생성한다. 두 경로를 별개 모듈로 두면 named re-export 정상 처리.
     opts.alias = {
-      '@react-native/assets-registry/registry': 'react-native/Libraries/Image/AssetRegistry',
       ...(opts.alias ?? {}),
     };
 
