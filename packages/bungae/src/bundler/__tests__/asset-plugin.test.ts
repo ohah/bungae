@@ -7,7 +7,7 @@
 import { describe, test, expect } from 'bun:test';
 import { join } from 'path';
 
-import { computeHttpServerLocation } from '../zts-bundler/asset-plugin';
+import { computeHttpServerLocation } from '../zts-bundler/plugin-core';
 
 describe('computeHttpServerLocation', () => {
   const projectRoot = '/Users/dev/project';
