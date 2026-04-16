@@ -15,7 +15,7 @@ import type {
 /**
  * Default resolver configuration
  */
-export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
+export const DEFAULT_RESOLVER: Required<Omit<ResolverConfig, 'resolveRequest'>> = {
   sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
   assetExts: [
     // 이미지 (Metro defaults + 추가)
@@ -61,6 +61,7 @@ export const DEFAULT_RESOLVER: Required<ResolverConfig> = {
   preferNativePlatform: true,
   nodeModulesPaths: [],
   blockList: [],
+  extraNodeModules: {},
 };
 
 /**

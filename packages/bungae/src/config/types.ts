@@ -20,6 +20,40 @@ export type BundleType = 'plain' | 'ram-indexed' | 'ram-file';
 export type BundlerType = 'graph' | 'zts';
 
 /**
+ * Metro-compatible resolution result returned from `resolveRequest`.
+ * - `type: 'sourceFile'`: 일반 파일/모듈 해석 결과 (절대 경로)
+ * - `type: 'assetFiles'`: 에셋 파일 해석 결과 (배열, scale variant 묶음)
+ * - `type: 'empty'`: 빈 모듈로 매핑 (webpack `false` 의미)
+ */
+export type ResolutionResult =
+  | { type: 'sourceFile'; filePath: string }
+  | { type: 'assetFiles'; filePaths: readonly string[] }
+  | { type: 'empty' };
+
+/**
+ * Minimal resolution context passed to `resolveRequest`.
+ * Metro의 ResolutionContext를 단순화한 형태 — 가장 흔한 케이스(originModulePath,
+ * platform, default resolver fallback) 위주로 제공.
+ *
+ * `resolveRequest` 안에서 `context.resolveRequest(context, name, platform)`을
+ * 호출하면 기본 해석기로 위임된다 (Metro 동작과 동일).
+ */
+export interface CustomResolutionContext {
+  /** 요청한 모듈의 absolute path */
+  originModulePath: string;
+  /** 현재 빌드 플랫폼 */
+  platform: string | null;
+  /** 기본 해석기 (위임용). 무한 재귀 방지를 위해 호출 시 자기 자신은 제외됨 */
+  resolveRequest: CustomResolver;
+}
+
+export type CustomResolver = (
+  context: CustomResolutionContext,
+  moduleName: string,
+  platform: string | null,
+) => ResolutionResult;
+
+/**
  * Resolver configuration
  */
 export interface ResolverConfig {
@@ -35,6 +69,27 @@ export interface ResolverConfig {
   nodeModulesPaths?: string[];
   /** Block list patterns */
   blockList?: RegExp[];
+  /**
+   * Fallback module map (Metro 호환).
+   * 일반 해석이 실패했을 때만 적용 — 설치된 실제 패키지가 우선.
+   * Node 빌트인 폴리필 (`crypto: require.resolve('crypto-browserify')`) 같은 유스케이스용.
+   *
+   * @example
+   * extraNodeModules: {
+   *   crypto: require.resolve('crypto-browserify'),
+   *   stream: require.resolve('stream-browserify'),
+   * }
+   */
+  extraNodeModules?: Record<string, string>;
+  /**
+   * Custom request resolver (Metro 호환).
+   * 모든 import에 대해 호출되며 커스텀 해석 로직 반환. 기본 해석기로 위임하려면
+   * `context.resolveRequest(context, moduleName, platform)`을 호출.
+   *
+   * 주의: 모든 import마다 호출되므로 성능 민감. 가능하면 `extraNodeModules`나
+   * `blockList`로 해결 가능한지 먼저 검토.
+   */
+  resolveRequest?: CustomResolver;
 }
 
 /**
@@ -150,7 +205,11 @@ export interface SymbolicatorConfig {
    */
   customizeFrame?: (
     frame: SymbolicatorFrame,
-  ) => { collapse?: boolean } | null | undefined | Promise<{ collapse?: boolean } | null | undefined>;
+  ) =>
+    | { collapse?: boolean }
+    | null
+    | undefined
+    | Promise<{ collapse?: boolean } | null | undefined>;
 }
 
 /**
@@ -187,10 +246,7 @@ export interface ServerConfig {
    * The second argument mirrors Metro's `MetroServer` slot. Bungae does not
    * expose a Metro-shaped server object, so plugins should treat it as opaque.
    */
-  enhanceMiddleware?: (
-    middleware: ConnectMiddleware,
-    server: unknown,
-  ) => ConnectMiddleware;
+  enhanceMiddleware?: (middleware: ConnectMiddleware, server: unknown) => ConnectMiddleware;
   /**
    * Rewrite incoming request URLs before routing (Metro 호환).
    * Called once per request at the start of handling, after jsc-safe URL
@@ -286,7 +342,8 @@ export interface BungaeConfig {
 export interface ResolvedConfig extends Required<
   Omit<BungaeConfig, 'resolver' | 'transformer' | 'serializer' | 'server' | 'experimental'>
 > {
-  resolver: Required<ResolverConfig>;
+  resolver: Required<Omit<ResolverConfig, 'resolveRequest'>> &
+    Pick<ResolverConfig, 'resolveRequest'>;
   transformer: Required<TransformerConfig>;
   serializer: Required<Omit<SerializerConfig, 'shouldAddToIgnoreList'>> &
     Pick<SerializerConfig, 'shouldAddToIgnoreList'>;
