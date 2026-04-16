@@ -199,23 +199,6 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     // main fields: RN → browser → module → main
     opts.mainFields = ['react-native', 'browser', 'module', 'main'];
 
-    // ZTS native asset handling — file loader + AssetRegistry 래핑.
-    // 번개 createAssetPlugin의 onLoad 처리를 ZTS 코어로 위임 (NAPI 왕복 제거).
-    // assetRegistry는 RN 프리셋이 자동 설정하므로 별도 지정 불필요.
-    const assetLoaders: Record<string, string> = {};
-    for (const ext of config.resolver.assetExts) {
-      assetLoaders[ext.startsWith('.') ? ext : `.${ext}`] = 'file';
-    }
-    opts.loader = { ...assetLoaders, ...(opts.loader ?? {}) };
-
-    // 두 번째 AssetRegistry specifier alias — 최신 RN(`@react-native/assets-registry/registry`)도
-    // 동일 모듈로 해석되도록. ZTS가 generated code에서 첫 번째 경로만 require하므로
-    // 사용자 코드가 두 번째 경로를 직접 import해도 같은 인스턴스를 받게 된다.
-    opts.alias = {
-      '@react-native/assets-registry/registry': 'react-native/Libraries/Image/AssetRegistry',
-      ...(opts.alias ?? {}),
-    };
-
     // global -> __BUNGAE_GLOBAL__ substitution (preserve native Hermes global)
     define['global'] = '__BUNGAE_GLOBAL__';
 

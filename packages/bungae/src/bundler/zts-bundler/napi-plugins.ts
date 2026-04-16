@@ -8,8 +8,11 @@
 import type { ZtsPlugin } from '@zts/core';
 
 import {
+  ASSET_REGISTRY_CODE,
+  ASSET_REGISTRY_SPECIFIERS,
   ZTS_HMR_CLIENT_CODE,
   HMR_CLIENT_SUFFIX,
+  generateAssetCode,
   detectCustomPlugins,
   createBabelTransformer,
   escapeRegex,
@@ -25,30 +28,46 @@ export interface PluginConfig {
 }
 
 /**
- * React Native runtime injection plugin for NAPI build.
+ * React Native asset plugin for NAPI build.
  *
- * 다음만 처리 (Node.js API 또는 Metro 정확 호환이 필요한 케이스):
- * - HMRClient.js 교체 — Metro의 HMRClient를 ZTS HMR 클라이언트로 (Node fs 인젝션)
- * - babelTransformerPath — react-native-svg-transformer 등 커스텀 transformer (Node require)
- *
- * 에셋 처리(AssetRegistry redirect, registerAsset 코드 생성)는 ZTS 코어가 직접 처리.
- * `napi-build.ts`에서 `assetRegistry` + `loader` + `alias` 옵션으로 위임.
+ * Handles:
+ * - AssetRegistry import redirection to virtual module
+ * - HMRClient.js replacement with ZTS HMR client
+ * - Asset files (.png, .jpg, etc.) -> registerAsset() code generation
  */
 export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
   return {
-    name: 'bungae:react-native-runtime',
+    name: 'bungae:react-native-asset',
     setup(build) {
-      // HMRClient.js 교체 — ZTS HMR 코드를 직접 인젝트.
-      // Node fs로 런타임 코드를 읽어 인라인하므로 ZTS 코어로 옮길 수 없음.
+      // onResolve: redirect AssetRegistry imports to virtual module
+      // Both specifiers point to the same virtual module (single assets array)
+      const registryPattern = new RegExp(
+        ASSET_REGISTRY_SPECIFIERS.map((s) => escapeRegex(s)).join('|'),
+      );
+      build.onResolve({ filter: registryPattern }, () => ({
+        path: '\0bungae:asset-registry',
+      }));
+
+      // onLoad: virtual modules (asset-registry, hmr-client)
+      build.onLoad({ filter: /\0bungae:/ }, (args) => {
+        if (args.path === '\0bungae:asset-registry') {
+          return { contents: ASSET_REGISTRY_CODE };
+        }
+        if (args.path === '\0bungae:hmr-client') {
+          return { contents: ZTS_HMR_CLIENT_CODE };
+        }
+        return null;
+      });
+
+      // onLoad: HMRClient.js replacement — intercept Metro's HMRClient with ZTS version
       const hmrClientPattern = new RegExp(escapeRegex(HMR_CLIENT_SUFFIX) + '$');
       build.onLoad({ filter: hmrClientPattern }, () => ({
         contents: ZTS_HMR_CLIENT_CODE,
       }));
 
-      // 커스텀 babelTransformerPath (Metro 호환).
-      // Metro transformer는 `transform({ src, filename, options })` 시그니처로 호출하고
-      // `{ ast }` 또는 `{ code }`를 받음. AST면 babel로 generate하여 코드로 변환.
-      // Node require + babel이 필요하므로 ZTS 코어로 옮길 수 없음.
+      // onLoad: custom babelTransformerPath (Metro-compatible)
+      // Metro transformers return { ast } (not code), so we generate code from AST via Babel.
+      // The transform() call is async, so onLoad must be async too.
       if (config.babelTransformerPath) {
         let customTransformer: any = null;
         let babel: any = null;
@@ -78,6 +97,7 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
                 filename: args.path,
                 options: { platform: config.rnPlatform, dev: true },
               });
+              // Metro transformers return { ast } or { code }
               if (result?.code) return { contents: result.code };
               if (result?.ast) {
                 const generated = babel.transformFromAstSync(result.ast, undefined, {
@@ -96,6 +116,17 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
           });
         }
       }
+
+      // onLoad: asset files (.png, .jpg, etc.) -> Metro-compatible registerAsset() code
+      const extPatterns = config.assetExts.map((e) => e.replace(/^\./, '')).join('|');
+      const assetPattern = new RegExp(`\\.(${extPatterns})$`);
+
+      build.onLoad({ filter: assetPattern }, (args) => ({
+        contents: generateAssetCode(args.path, {
+          projectRoot: config.projectRoot,
+          platform: config.rnPlatform,
+        }),
+      }));
     },
   };
 }
