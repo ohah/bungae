@@ -132,17 +132,15 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
             );
             if (result.type === 'sourceFile') return { path: result.filePath };
             if (result.type === 'assetFiles') return { path: result.filePaths[0] ?? args.path };
-            if (result.type === 'empty') return { path: '\0bungae:empty', namespace: 'empty' };
+            // Metro `{ type: 'empty' }` → ZTS `disabled` flag (빈 모듈로 처리).
+            // ZTS가 자동으로 module.exports = {} 출력 — 별도 onLoad 불필요.
+            if (result.type === 'empty') return { disabled: true };
           } catch (err) {
             if ((err as Error).message === '__BUNGAE_DELEGATE_TO_DEFAULT__') return null;
             throw err;
           }
           return null;
         });
-        // empty 모듈 namespace — 빈 객체 export.
-        build.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({
-          contents: 'module.exports = {};',
-        }));
       },
     });
   }
