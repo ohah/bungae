@@ -476,8 +476,11 @@ React Native 공식 문서에서도 "If you are using Hermes, you should not nee
 | `watchFolders` | `napi-build.ts:buildNapiOptions` | 그래프 밖 디렉토리도 watch 루트에 추가. ZTS NAPI `watchFolders` 옵션으로 전달 (zts b104b82) |
 | `serializer.getModulesRunBeforeMainModule` / `getPolyfills` | `config/defaults.ts` | RN `InitializeCore` 자동 포함 |
 | `serializer.inlineSourceMap` / `shouldAddToIgnoreList` | `serializer/` | x_google_ignoreList 커스터마이징 |
-| `transformer.babelTransformerPath` | NAPI babel plugin | Metro와 동일하게 chained transformer |
+| `transformer.babelTransformerPath` | NAPI babel plugin | Metro와 동일하게 chained transformer. `assetPlugins` 유스케이스(react-native-svg-transformer 등)도 이걸로 |
 | `resolver.sourceExts` / `assetExts` / `platforms` / `preferNativePlatform` | NAPI plugin config | 플랫폼 확장자 처리 |
+| `resolver.blockList` | `napi-build.ts:buildNapiOptions` | RegExp 배열 그대로 ZTS에 전달. ZTS가 정규식 매칭으로 해석 차단 (zts #1419) |
+| `resolver.extraNodeModules` | `napi-build.ts:buildNapiOptions` | ZTS `fallback` 옵션으로 매핑. 일반 해석 실패 시에만 적용 (zts #1416) |
+| `resolver.resolveRequest` | `napi-build.ts:buildNapiOptions` | Metro 시그니처(`context, moduleName, platform`) 그대로. 내부적으로 ZTS `onResolve` 플러그인 콜백으로 래핑. 위임 시 `context.resolveRequest()` 호출 |
 
 #### 🚧 미지원 (ZTS Zig 측 작업 필요 — 보류 중)
 
@@ -485,10 +488,8 @@ ZTS는 Zig 기반 번들러 바이너리를 통해 동작하므로, 다음 hook�
 
 | Hook | 차단 이유 |
 | --- | --- |
-| `resolver.resolveRequest` | ZTS 자체 resolver가 Zig에서 컴파일됨. JS 콜백 호출 메커니즘 없음. 매번 호출 시 성능 손해 큼 |
-| `resolver.extraNodeModules` | NAPI BuildOptions에 옵션 자체가 없음 |
-| `transformer.getTransformOptions` / `assetPlugins` / `minifierPath` | transformation은 Zig 측 책임 |
-| `serializer.customSerializer` / `processModuleFilter` / `createModuleIdFactory` | 직렬화도 Zig 측 책임 |
+| `transformer.getTransformOptions` (inlineRequires 등) | per-file async 옵션 결정. Zig transform pass 추가 필요 (특히 inlineRequires는 콜드 스타트 최적화 효과 있음) |
+| `transformer.minifierPath` | ZTS 내장 minifier만 사용. 외부 minifier 교체는 사용자 수요 낮아 보류 |
 
 #### ⏸ 보류 (낮은 우선순위 / 인터페이스 검토 필요)
 
@@ -498,6 +499,13 @@ ZTS는 Zig 기반 번들러 바이너리를 통해 동작하므로, 다음 hook�
 | `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 케이스 커버. 필요 시 추가 |
 
 #### ❌ 의도적 제외
+
+| Hook | 사유 |
+| --- | --- |
+| `serializer.customSerializer` | 번들 출력 포맷 통째 교체. RAM bundle 등이 주 유스케이스인데 Hermes로 거의 obsolete. 구현 안 함 |
+| `serializer.processModuleFilter` | 번들 포함 모듈 필터링. `resolver.blockList` 또는 `onResolve` 플러그인으로 우회 가능 |
+| `serializer.createModuleIdFactory` | Module ID 생성 커스터마이즈. ZTS는 경로 hash 기반 stable ID — CodePush/Expo Updates 작동에 충분. 별도 옵션 불필요 |
+| `transformer.assetPlugins` | per-asset 변환 (SVG → Component 등). `transformer.babelTransformerPath`로 동등 효과 (react-native-svg-transformer가 같은 메커니즘 사용) |
 
 아래 두 항목은 [구현하지 않는 Metro 기능](#구현하지-않는-metro-기능) 섹션 참고.
 

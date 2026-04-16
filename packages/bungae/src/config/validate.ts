@@ -123,6 +123,26 @@ export function validateConfig(config: BungaeConfig): void {
         `Invalid config: \`resolver.blockList\` must be an array, but received ${typeof config.resolver.blockList}`,
       );
     }
+
+    if (
+      config.resolver.extraNodeModules !== undefined &&
+      (typeof config.resolver.extraNodeModules !== 'object' ||
+        config.resolver.extraNodeModules === null ||
+        Array.isArray(config.resolver.extraNodeModules))
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`resolver.extraNodeModules\` must be an object, but received ${typeof config.resolver.extraNodeModules}`,
+      );
+    }
+
+    if (
+      config.resolver.resolveRequest !== undefined &&
+      typeof config.resolver.resolveRequest !== 'function'
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`resolver.resolveRequest\` must be a function, but received ${typeof config.resolver.resolveRequest}`,
+      );
+    }
   }
 
   // Validate transformer

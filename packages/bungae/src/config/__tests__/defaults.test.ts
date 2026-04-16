@@ -29,6 +29,8 @@ describe('Config Defaults', () => {
     expect(config.resolver.assetExts).toEqual(DEFAULT_RESOLVER.assetExts);
     expect(config.resolver.platforms).toEqual(DEFAULT_RESOLVER.platforms);
     expect(config.resolver.preferNativePlatform).toBe(true);
+    expect(config.resolver.extraNodeModules).toEqual({});
+    expect(config.resolver.resolveRequest).toBeUndefined();
   });
 
   test('should have default transformer config', () => {

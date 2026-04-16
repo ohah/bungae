@@ -90,9 +90,61 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
   // Metro 호환 watchFolders — 그래프 밖 디렉토리도 watch 루트에 추가.
   // ZTS는 dev mode(watch)에서만 의미있지만, 상수 비용이라 항상 전달.
   if (config.watchFolders && config.watchFolders.length > 0) {
-    opts.watchFolders = config.watchFolders.map((p) =>
-      resolve(config.root, p),
-    );
+    opts.watchFolders = config.watchFolders.map((p) => resolve(config.root, p));
+  }
+
+  // Metro resolver.blockList → ZTS blockList. RegExp는 .source로 변환됨 (@zts/core 어댑터에서).
+  if (config.resolver.blockList && config.resolver.blockList.length > 0) {
+    opts.blockList = config.resolver.blockList;
+  }
+
+  // Metro resolver.extraNodeModules → ZTS fallback. 일반 해석 실패 시에만 적용.
+  // Metro는 string 값만 (절대경로), ZTS fallback은 string | false 지원.
+  if (
+    config.resolver.extraNodeModules &&
+    Object.keys(config.resolver.extraNodeModules).length > 0
+  ) {
+    opts.fallback = { ...config.resolver.extraNodeModules };
+  }
+
+  // Metro resolver.resolveRequest → ZTS onResolve 플러그인 콜백.
+  // Metro 시그니처(context, moduleName, platform) 그대로 호출. 위임 시 throw로 ZTS 기본 해석기 사용.
+  if (config.resolver.resolveRequest) {
+    const userResolveRequest = config.resolver.resolveRequest;
+    plugins.push({
+      name: 'bungae:metro-resolve-request',
+      setup(build) {
+        build.onResolve({ filter: /.*/ }, (args) => {
+          // ZTS 기본 해석기로 위임하는 함수 — Metro는 context.resolveRequest 호출로 표현.
+          // throw하면 ZTS가 기본 해석 진행 (return null과 동일).
+          const fallbackResolver = () => {
+            throw new Error('__BUNGAE_DELEGATE_TO_DEFAULT__');
+          };
+          try {
+            const result = userResolveRequest(
+              {
+                originModulePath: args.importer ?? '',
+                platform: config.platform === 'web' ? null : config.platform,
+                resolveRequest: fallbackResolver as never,
+              },
+              args.path,
+              config.platform === 'web' ? null : config.platform,
+            );
+            if (result.type === 'sourceFile') return { path: result.filePath };
+            if (result.type === 'assetFiles') return { path: result.filePaths[0] ?? args.path };
+            if (result.type === 'empty') return { path: '\0bungae:empty', namespace: 'empty' };
+          } catch (err) {
+            if ((err as Error).message === '__BUNGAE_DELEGATE_TO_DEFAULT__') return null;
+            throw err;
+          }
+          return null;
+        });
+        // empty 모듈 namespace — 빈 객체 export.
+        build.onLoad({ filter: /.*/, namespace: 'empty' }, () => ({
+          contents: 'module.exports = {};',
+        }));
+      },
+    });
   }
 
   // React Native specific options (CLI --platform=react-native 프리셋과 동일)

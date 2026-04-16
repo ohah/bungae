@@ -45,10 +45,12 @@ describe('mergeConfig', () => {
           preferNativePlatform: true,
           nodeModulesPaths: [],
           blockList: [],
+          extraNodeModules: {},
         },
         transformer: {
           minifier: 'bun',
           inlineRequires: false,
+          babelTransformerPath: '',
           babel: { presets: [], plugins: [] },
         },
         experimental: {
