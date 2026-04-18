@@ -234,14 +234,13 @@ export function createCodegenTransformer(
       throw e;
     }
 
-    // parserOpts: Flow 제네릭(<T>) 파싱 허용 — RN NativeComponent 파일은 Flow 사용.
-    // Flow 타입 스트리핑은 ZTS가 후속 단계에서 처리하므로 preset-flow 불필요.
+    // Parser 플러그인은 파일 확장자에 따라 per-call로 결정 (아래 transform에서).
+    // Flow/TS 타입 스트리핑은 ZTS가 후속 단계에서 처리하므로 preset 불필요.
     babelOptions = {
       babelrc: false,
       configFile: false,
       compact: false,
       sourceMaps: false,
-      parserOpts: { plugins: ['flow'] },
       plugins: [codegenPlugin],
     };
   }
@@ -250,9 +249,19 @@ export function createCodegenTransformer(
     if (!CODEGEN_FILENAME_PATTERN.test(filename)) return null;
     if (!code.includes(CODEGEN_NATIVE_COMPONENT_MARKER)) return null;
 
+    // RN NativeComponent 파일은 확장자로 언어 구분:
+    // - .js → Flow 제네릭(<T>)
+    // - .ts → TypeScript 제네릭(<T>), interface, as 등
+    // babel-plugin-codegen 내부 parseFile()도 같은 확장자 기준으로 분기.
+    const parserPlugins = filename.endsWith('.ts') ? ['typescript'] : ['flow'];
+
     try {
       ensureBabel();
-      const result = babel.transformSync(code, { ...babelOptions, filename });
+      const result = babel.transformSync(code, {
+        ...babelOptions,
+        filename,
+        parserOpts: { plugins: parserPlugins },
+      });
       if (result?.code && result.code !== code) {
         process.stderr.write(
           `[bungae:codegen] ${filename.split('/').pop()}: view config inlined\n`,
