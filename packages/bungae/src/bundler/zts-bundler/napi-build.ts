@@ -21,7 +21,12 @@ import {
 
 import type { ResolvedConfig } from '../../config/types';
 import { VERSION } from '../../version';
-import { createAssetPlugin, createBabelPlugin, type PluginConfig } from './napi-plugins';
+import {
+  createAssetPlugin,
+  createBabelPlugin,
+  createCodegenPlugin,
+  type PluginConfig,
+} from './napi-plugins';
 import { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills } from './rn-constants';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
@@ -77,6 +82,7 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
   // Build plugins from config
   const pluginConfig = getPluginConfig(config);
   plugins.push(createAssetPlugin(pluginConfig));
+  plugins.push(createCodegenPlugin(pluginConfig));
   plugins.push(createBabelPlugin(pluginConfig));
 
   const opts: BuildOptions = {

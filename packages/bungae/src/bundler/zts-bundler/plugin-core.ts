@@ -185,3 +185,86 @@ export function createBabelTransformer(
     }
   };
 }
+
+// ===== RN Codegen Transformer (babel-plugin-codegen 래핑) =====
+
+/**
+ * `codegenNativeComponent<Props>('Name')` 호출을 static view config로 치환하는 워크어라운드.
+ *
+ * ZTS가 `@react-native/babel-preset`을 자체 처리하지만 그 안의 `@react-native/babel-plugin-codegen`은
+ * 미구현. RN 0.85+ New Arch에서 Fabric이 `DebuggingOverlay` 등을 자동 등록하면서 JS view config 부재가
+ * 크래시로 이어짐 (View config not found for component `DebuggingOverlay`). 이 워크어라운드로 해당
+ * 플러그인만 Babel 파이프라인으로 실행해서 번들에 view config를 직접 박음.
+ *
+ * ZTS 네이티브 구현은 ohah/zts#1589 (Metro 호환성 meta) A-1 항목.
+ */
+export const CODEGEN_NATIVE_COMPONENT_MARKER = 'codegenNativeComponent';
+
+/** .js/.ts 파일만 처리 (플러그인이 .jsx/.tsx 미지원) */
+const CODEGEN_FILENAME_PATTERN = /\.(js|ts)$/;
+
+export function createCodegenTransformer(
+  projectRoot: string,
+): (code: string, filename: string) => string | null {
+  let babel: any = null;
+  let codegenPlugin: any = null;
+  let babelOptions: any = null;
+
+  function ensureBabel() {
+    if (babel) return;
+    babel = require('@babel/core');
+
+    // Resolve from projectRoot first, fall back to bungae's own location.
+    // Bun의 deep-linked node_modules에서 일부 패키지가 workspace root에 symlink되지 않을 수 있음.
+    try {
+      const codegenPath = (() => {
+        try {
+          return require.resolve('@react-native/babel-plugin-codegen', {
+            paths: [projectRoot, __dirname],
+          });
+        } catch {
+          return require.resolve('@react-native/babel-plugin-codegen');
+        }
+      })();
+      codegenPlugin = require(codegenPath);
+    } catch (e: any) {
+      process.stderr.write(
+        `[bungae:codegen] @react-native/babel-plugin-codegen not found (${e.message?.slice(0, 80)}) — view config inlining disabled\n`,
+      );
+      throw e;
+    }
+
+    // parserOpts: Flow 제네릭(<T>) 파싱 허용 — RN NativeComponent 파일은 Flow 사용.
+    // Flow 타입 스트리핑은 ZTS가 후속 단계에서 처리하므로 preset-flow 불필요.
+    babelOptions = {
+      babelrc: false,
+      configFile: false,
+      compact: false,
+      sourceMaps: false,
+      parserOpts: { plugins: ['flow'] },
+      plugins: [codegenPlugin],
+    };
+  }
+
+  return (code: string, filename: string): string | null => {
+    if (!CODEGEN_FILENAME_PATTERN.test(filename)) return null;
+    if (!code.includes(CODEGEN_NATIVE_COMPONENT_MARKER)) return null;
+
+    try {
+      ensureBabel();
+      const result = babel.transformSync(code, { ...babelOptions, filename });
+      if (result?.code && result.code !== code) {
+        process.stderr.write(
+          `[bungae:codegen] ${filename.split('/').pop()}: view config inlined\n`,
+        );
+        return result.code;
+      }
+      return null;
+    } catch (err: any) {
+      process.stderr.write(
+        `[bungae:codegen] ${filename.split('/').pop()} failed: ${err.message?.slice(0, 120)}\n`,
+      );
+      return null;
+    }
+  };
+}

@@ -12,6 +12,7 @@ import {
   HMR_CLIENT_SUFFIX,
   detectCustomPlugins,
   createBabelTransformer,
+  createCodegenTransformer,
   escapeRegex,
 } from './plugin-core';
 
@@ -128,6 +129,37 @@ export function createBabelPlugin(config: PluginConfig): ZtsPlugin {
           return result ? { code: result } : null;
         } catch {
           // Babel errors are logged by the transformer; don't break the build
+          return null;
+        }
+      });
+    },
+  };
+}
+
+/**
+ * RN codegen view config 인라인 플러그인 — `@react-native/babel-plugin-codegen` 래핑.
+ *
+ * ZTS가 `@react-native/babel-preset`을 네이티브 처리하지만 내부의 codegen 플러그인은 미구현이라,
+ * `codegenNativeComponent<Props>('Name')` 호출이 런타임에 그대로 실행됨. RN 0.85+ New Arch에서
+ * Fabric의 자동 컴포넌트 등록이 늘어나면서 View config not found 크래시 유발 (DebuggingOverlay 등).
+ *
+ * 이 플러그인은 node_modules 포함 모든 `.js`/`.ts` 파일에서 `codegenNativeComponent` 마커를 가진
+ * 파일만 Babel로 한번 더 돌려서 view config를 static 객체로 치환.
+ *
+ * ZTS 네이티브 구현은 ohah/zts#1589 참고.
+ */
+export function createCodegenPlugin(config: PluginConfig): ZtsPlugin {
+  return {
+    name: 'bungae:codegen-view-config',
+    setup(build) {
+      const transformer = createCodegenTransformer(config.projectRoot);
+
+      // .js, .ts 만 (플러그인이 .jsx/.tsx 미지원 — RN NativeComponent 파일은 항상 .js)
+      build.onTransform({ filter: /\.(js|ts)$/ }, (args) => {
+        try {
+          const result = transformer(args.code, args.path);
+          return result ? { code: result } : null;
+        } catch {
           return null;
         }
       });
