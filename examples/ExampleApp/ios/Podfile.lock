@@ -2341,13 +2341,13 @@ SPEC CHECKSUMS:
   React-utils: aaf9b3d810f6fbc359ff6a6fb0dd6ea739f0b9f8
   React-webperformancenativemodule: 349b21612ebbbc42316cc849d1942af519eef9b1
   ReactAppDependencyProvider: 52da2413bc956c40a4de19ad32a92b87248f7ce8
-  ReactCodegen: 3a55d7d122a0f72b17d1817a186769375a648cc6
+  ReactCodegen: 0c25c1a635c84925ae47edea52477247cf3ef0bc
   ReactCommon: 66763e5bd1b778828ff6cb82d771b7162a5215c2
   ReactNativeDependencies: dfa8c3732f5324b52574eccd0afd4b47ab6e83ea
   RNGestureHandler: 187c5c7936abf427bc4d22d6c3b1ac80ad1f63c0
-  RNReanimated: 59315fff3bf79bf14965d2fa4fa353eda3af29c4
+  RNReanimated: b13533152e11ac1b840462361a8c59a55faca614
   RNSVG: 04044c3abcf177fd674a1a3d13097efa1adebcbe
-  RNWorklets: 04f6a309d740dd9013a1af2a700337a9b8b316d6
+  RNWorklets: ad97acdfb33fcf04b51c17243815aa441c2c870a
   Yoga: b1085f68c014785350a2afdc95eaef0d49f23ccb
 
 PODFILE CHECKSUM: 8f126e9cdec663d1576ce604c342f551cffaca7f
