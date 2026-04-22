@@ -92,6 +92,10 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     sourcemap: config.sourceMap || config.dev,
     minify: config.minify,
     plugins,
+    // dev watch 세션은 lazy sourcemap 라우트 (`/bundle.js.map`, `/__zts_hmr_map/:id`) 로
+    // serve 하므로 rebuild 경로의 `.map` 디스크 I/O 를 제거. production/one-shot 빌드는
+    // 기본 true 유지 (디스크 산출물 필요).
+    emitDiskSourcemap: !config.dev,
   };
 
   // Metro 호환 watchFolders — 그래프 밖 디렉토리도 watch 루트에 추가.

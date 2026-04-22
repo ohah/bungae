@@ -174,10 +174,22 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     outputPath: string;
     sourceMapPath: string;
     bundle: string | null;
-    sourceMap: string | null;
+    /// postProcess 적용된 bundle sourcemap JSON. lazy 생성을 build 단위로 memoize.
+    /// rebuild 마다 `onRebuild` 에서 null 로 invalidate. 같은 빌드 안에서 여러 symbolicate /
+    /// `.map` 요청이 오면 재사용 (Metro 의 serializer 캐시와 유사).
+    sourceMapCache: string | null;
     buildError: string | null;
     fileCount: number;
     lastRebuildTime: number;
+  }
+
+  /// build 단위 sourcemap cache 접근자. cache miss 시 lazy getter 호출 + postProcess.
+  function getCachedSourceMap(state: PlatformState): string | null {
+    if (state.sourceMapCache) return state.sourceMapCache;
+    const raw = state.handle.getBundleSourceMap();
+    if (!raw) return null;
+    state.sourceMapCache = postProcessSourceMap(raw, config.root);
+    return state.sourceMapCache;
   }
 
   const platforms = new Map<string, PlatformState>();
@@ -204,12 +216,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             /\/\/# sourceMappingURL=[^\n]*/g,
             '',
           );
-          if (existsSync(sourceMapPath)) {
-            state!.sourceMap = postProcessSourceMap(
-              readFileSync(sourceMapPath, 'utf-8'),
-              config.root,
-            );
-          }
+          // Lazy sourcemap (ZTS #1727): `.map` 은 디스크에 없음 — `/index.map` 요청 시
+          // `state.handle.getBundleSourceMap()` 를 lazy 호출.
           const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
           const buildTime = Date.now() - buildStart;
           logInfo(
@@ -233,17 +241,13 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         }
 
         state!.buildError = null;
+        // rebuild 마다 lazy sourcemap cache invalidate — 다음 요청에서 getter 가 최신 swap 을 사용.
+        state!.sourceMapCache = null;
         if (existsSync(outputPath)) {
           state!.bundle = readFileSync(outputPath, 'utf-8').replace(
             /\/\/# sourceMappingURL=[^\n]*/g,
             '',
           );
-          if (existsSync(sourceMapPath)) {
-            state!.sourceMap = postProcessSourceMap(
-              readFileSync(sourceMapPath, 'utf-8'),
-              config.root,
-            );
-          }
         }
 
         const changedCount = event.changed?.length ?? 0;
@@ -277,7 +281,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       outputPath,
       sourceMapPath,
       bundle: null,
-      sourceMap: null,
+      sourceMapCache: null,
       buildError: null,
       fileCount: 1,
       lastRebuildTime: Date.now(),
@@ -416,13 +420,12 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
-      await handleSymbolicateRequest(
-        req,
-        res,
-        config,
-        state.sourceMap,
-        config.symbolicator.customizeFrame,
-      );
+      // Lazy sourcemap (ZTS #1727). `getCachedSourceMap` 은 first-hit 에서 NAPI 로 10MB
+      // JSON 을 sync 생성하며 event loop 을 수 ms~수십 ms block — 만약 request body 가
+      // 완전히 도착하기 전에 호출되면 `readJsonBody` 의 `req.on('data')` 등록이 늦어
+      // Node http (Bun 호환 포함) stream flow 가 꼬일 수 있다. 해소책: body 를 먼저
+      // 읽은 뒤에 cache 조회.
+      await handleSymbolicateRequest(req, res, config, state, config.symbolicator.customizeFrame);
       return;
     }
 
@@ -535,24 +538,51 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       return;
     }
 
-    // Source map (Metro 호환: /index.map, /index.bundle.map 등)
+    // HMR per-module sourcemap (ZTS #1727 Phase B lazy 라우트).
+    // `/__zts_hmr_map/<encoded moduleId>` — eval 된 per-module code 의
+    // `//# sourceMappingURL=` 주석이 가리키는 엔드포인트. ZTS handle 의 builder 를
+    // 요청 시점에 JSON 직렬화.
+    if (url.pathname.startsWith('/__zts_hmr_map/')) {
+      const platform = url.searchParams.get('platform') || defaultPlatform;
+      const state = platforms.get(platform) || defaultState;
+      const moduleId = decodeURIComponent(url.pathname.slice('/__zts_hmr_map/'.length));
+      const json = state.handle.getHmrSourceMap(moduleId);
+      if (!json) {
+        sendText(res, 404, 'HMR source map not found');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(json),
+        'Access-Control-Allow-Origin': 'devtools://devtools',
+        'X-Content-Type-Options': 'nosniff',
+        'Cache-Control': 'no-cache',
+      });
+      res.end(json);
+      return;
+    }
+
+    // Source map (Metro 호환: /index.map, /index.bundle.map). Lazy 전용 (ZTS #1727) —
+    // Metro `_processSourceMapRequest` 패턴. dev watch 세션에서만 동작하며 디스크
+    // fallback 은 두지 않는다. production 번들은 별도 `bundle` 명령을 쓴다.
     if (url.pathname.endsWith('.map') || url.pathname.endsWith('.bundle.map')) {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
 
-      if (!state.sourceMap) {
+      const json = getCachedSourceMap(state);
+      if (!json) {
         sendText(res, 404, 'Source map not available');
         return;
       }
 
       res.writeHead(200, {
         'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(state.sourceMap),
+        'Content-Length': Buffer.byteLength(json),
         'Access-Control-Allow-Origin': 'devtools://devtools',
         'X-Content-Type-Options': 'nosniff',
         'Cache-Control': 'no-cache',
       });
-      res.end(state.sourceMap);
+      res.end(json);
       return;
     }
 
@@ -560,13 +590,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
-      await handleSymbolicateRequest(
-        req,
-        res,
-        config,
-        state.sourceMap,
-        config.symbolicator.customizeFrame,
-      );
+      await handleSymbolicateRequest(req, res, config, state, config.symbolicator.customizeFrame);
       return;
     }
 
@@ -707,9 +731,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       enabled: true,
       hmrClients,
       onClearCache: () => {
+        // sourceMap 은 lazy — handle 이 rebuild 마다 새로 캐시해 별도 invalidate 불필요.
         for (const state of platforms.values()) {
           state.bundle = null;
-          state.sourceMap = null;
           state.buildError = null;
         }
       },
@@ -818,7 +842,7 @@ async function handleSymbolicateRequest(
   req: IncomingMessage,
   res: ServerResponse,
   config: ResolvedConfig,
-  sourceMap: string | null,
+  state: { handle: WatchHandle; sourceMapCache: string | null },
   customizeFrame: ResolvedConfig['symbolicator']['customizeFrame'],
 ): Promise<void> {
   try {
@@ -832,6 +856,15 @@ async function handleSymbolicateRequest(
     }>(req);
 
     const stack = body.stack || [];
+
+    // 2) body 읽기 완료 후에 lazy sourcemap 조회 (build 단위 cache).
+    const sourceMap = ((): string | null => {
+      if (state.sourceMapCache) return state.sourceMapCache;
+      const raw = state.handle.getBundleSourceMap();
+      if (!raw) return null;
+      state.sourceMapCache = postProcessSourceMap(raw, config.root);
+      return state.sourceMapCache;
+    })();
 
     if (!sourceMap) {
       sendJson(res, 200, { stack, codeFrame: null });
