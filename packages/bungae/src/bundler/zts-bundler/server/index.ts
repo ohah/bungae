@@ -161,29 +161,43 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
 
         // HMR phase breakdown — `BUNGAE_HMR_PROFILE=1` 활성 시 로그에 덧붙임.
         // 기본 phase (항상 측정): detect / graph / link / shake / emit / delta / total.
-        // Sub-phase (`ZTS_PROFILE=<cat>` 활성 시): scan / parse / resolve / semantic /
-        // transform / codegen / metadata — 값이 하나라도 있으면 파이프 뒤에 함께 출력.
+        // Sub-phase (`ZTS_PROFILE=<cat>` 활성 시):
+        //   - 파이프라인: scan / parse / resolve / semantic / transform / codegen / metadata
+        //   - Graph 내부: graphBuild / graphWorker
+        //   - Emit 내부: emitPolyfill / emitRefresh / emitOutput / emitMetafile / emitCss
+        // sub 값 하나라도 있으면 멀티라인 포맷으로 확장 (한 줄은 읽기 어려움).
         const pd = event.phaseDurations;
         const reparsed = event.reparsedModules;
         const hasSub =
-          pd &&
-          (pd.scan ||
-            pd.parse ||
-            pd.resolve ||
-            pd.semantic ||
-            pd.transform ||
-            pd.codegen ||
-            pd.metadata);
-        const breakdown =
-          process.env.BUNGAE_HMR_PROFILE === '1' && pd
-            ? ` [detect=${pd.detect}ms graph=${pd.graph}ms link=${pd.link}ms shake=${pd.shake}ms emit=${pd.emit}ms delta=${pd.delta}ms${
-                reparsed !== undefined ? ` reparsed=${reparsed}` : ''
-              }${
-                hasSub
-                  ? ` | scan=${pd.scan}ms parse=${pd.parse}ms resolve=${pd.resolve}ms semantic=${pd.semantic}ms transform=${pd.transform}ms codegen=${pd.codegen}ms metadata=${pd.metadata}ms`
-                  : ''
-              }]`
-            : '';
+          pd !== undefined &&
+          (pd.scan > 0 ||
+            pd.parse > 0 ||
+            pd.resolve > 0 ||
+            pd.semantic > 0 ||
+            pd.transform > 0 ||
+            pd.codegen > 0 ||
+            pd.metadata > 0 ||
+            pd.graphBuild > 0 ||
+            pd.graphWorker > 0 ||
+            pd.emitPolyfill > 0 ||
+            pd.emitRefresh > 0 ||
+            pd.emitOutput > 0 ||
+            pd.emitMetafile > 0 ||
+            pd.emitCss > 0);
+        const showBreakdown = process.env.BUNGAE_HMR_PROFILE === '1' && pd !== undefined;
+        const baseLine = showBreakdown
+          ? `detect=${pd.detect}ms graph=${pd.graph}ms link=${pd.link}ms shake=${pd.shake}ms emit=${pd.emit}ms delta=${pd.delta}ms${
+              reparsed !== undefined ? ` reparsed=${reparsed}` : ''
+            }`
+          : '';
+        const breakdown = !showBreakdown
+          ? ''
+          : !hasSub
+            ? ` [${baseLine}]`
+            : ` [${baseLine}]` +
+              `\n    ├─ pipeline  scan=${pd.scan}ms parse=${pd.parse}ms resolve=${pd.resolve}ms semantic=${pd.semantic}ms transform=${pd.transform}ms codegen=${pd.codegen}ms metadata=${pd.metadata}ms` +
+              `\n    ├─ graph     build=${pd.graphBuild}ms worker=${pd.graphWorker}ms` +
+              `\n    └─ emit      polyfill=${pd.emitPolyfill}ms refresh=${pd.emitRefresh}ms output=${pd.emitOutput}ms metafile=${pd.emitMetafile}ms css=${pd.emitCss}ms`;
 
         if (event.graphChanged) {
           logInfo(
