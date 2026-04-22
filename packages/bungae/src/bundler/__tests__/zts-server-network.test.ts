@@ -153,6 +153,37 @@ describe('ZTS Server Network', () => {
     TIMEOUT,
   );
 
+  // ====== Lazy sourcemap routes (ZTS #1727 Phase B) ======
+
+  test(
+    'GET /__zts_hmr_map/:moduleId — 미존재 모듈은 404',
+    async () => {
+      if (!proc) return;
+      const res = await fetch(
+        `${BASE}/__zts_hmr_map/${encodeURIComponent('definitely/not/a/module.ts')}?platform=ios`,
+      );
+      expect(res.status).toBe(404);
+    },
+    TIMEOUT,
+  );
+
+  test(
+    'GET /index.map — lazy 반복 호출에서 build 단위 cache 재사용 (동일 JSON)',
+    async () => {
+      if (!proc) return;
+      const r1 = await fetch(`${BASE}/index.map?platform=ios`);
+      expect(r1.status).toBe(200);
+      const b1 = await r1.text();
+      const r2 = await fetch(`${BASE}/index.map?platform=ios`);
+      expect(r2.status).toBe(200);
+      const b2 = await r2.text();
+      // build 가 바뀌지 않았으므로 byte-identical — cache hit 확인.
+      expect(b1.length).toBe(b2.length);
+      expect(b1).toBe(b2);
+    },
+    TIMEOUT,
+  );
+
   // ====== Symbolicate ======
 
   test(
