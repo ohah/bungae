@@ -264,8 +264,16 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           logInfo(
             `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${breakdown}${colors.reset}`,
           );
+          // 각 모듈 eval 코드 끝에 `sourceMappingURL` 주석을 추가해 DevTools 가 원본
+          // sourcemap 을 lazy 라우트로 fetch 하게 한다. `sourceURL` 은 ZTS 가 emitter 에서
+          // `//# sourceURL=<mod_id>` 로 이미 주입 — dev server 는 라우트 knowledge 가
+          // 필요한 `sourceMappingURL` 만 담당 (관심사 분리).
+          const annotatedModules = event.updates.map((u) => {
+            const sourceMappingURL = `/__zts_hmr_map/${encodeURIComponent(u.id)}?platform=${platform}`;
+            return { ...u, code: `${u.code}\n//# sourceMappingURL=${sourceMappingURL}\n` };
+          });
           sendToClients({ type: 'hmr:update-start' });
-          sendToClients({ type: 'hmr:update', modules: event.updates });
+          sendToClients({ type: 'hmr:update', modules: annotatedModules });
           sendToClients({ type: 'hmr:update-done' });
         } else if (changedCount > 0) {
           logInfo(

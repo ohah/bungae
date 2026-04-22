@@ -53,7 +53,7 @@ describe('readJsonBody', () => {
       asReq(fake),
     );
     expect(body.stack).toHaveLength(1);
-    expect(body.stack[0].file).toBe('x');
+    expect(body.stack[0]!.file).toBe('x');
   });
 
   test('drain + raw-body-middleware 가 저장한 string 파싱', async () => {
