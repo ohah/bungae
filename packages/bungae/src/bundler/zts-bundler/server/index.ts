@@ -159,21 +159,47 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         const changedCount = event.changed?.length ?? 0;
         const updatesCount = event.updates?.length ?? 0;
 
+        // HMR phase breakdown — `BUNGAE_HMR_PROFILE=1` 활성 시 로그에 덧붙임.
+        // 기본 phase (항상 측정): detect / graph / link / shake / emit / delta / total.
+        // Sub-phase (`ZTS_PROFILE=<cat>` 활성 시): scan / parse / resolve / semantic /
+        // transform / codegen / metadata — 값이 하나라도 있으면 파이프 뒤에 함께 출력.
+        const pd = (event as any).phaseDurations;
+        const reparsed = (event as any).reparsedModules;
+        const hasSub =
+          pd &&
+          (pd.scan ||
+            pd.parse ||
+            pd.resolve ||
+            pd.semantic ||
+            pd.transform ||
+            pd.codegen ||
+            pd.metadata);
+        const breakdown =
+          process.env.BUNGAE_HMR_PROFILE === '1' && pd
+            ? ` [detect=${pd.detect}ms graph=${pd.graph}ms link=${pd.link}ms shake=${pd.shake}ms emit=${pd.emit}ms delta=${pd.delta}ms${
+                reparsed !== undefined ? ` reparsed=${reparsed}` : ''
+              }${
+                hasSub
+                  ? ` | scan=${pd.scan}ms parse=${pd.parse}ms resolve=${pd.resolve}ms semantic=${pd.semantic}ms transform=${pd.transform}ms codegen=${pd.codegen}ms metadata=${pd.metadata}ms`
+                  : ''
+              }]`
+            : '';
+
         if (event.graphChanged) {
           logInfo(
-            `Graph changed ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms)${colors.reset}, full reload`,
+            `Graph changed ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms)${breakdown}${colors.reset}, full reload`,
           );
           sendToClients({ type: 'hmr:reload' });
         } else if (event.updates && event.updates.length > 0) {
           logInfo(
-            `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${colors.reset}`,
+            `HMR update ${colors.dim}[${platform}] ${updatesCount} module(s) (${duration}ms)${breakdown}${colors.reset}`,
           );
           sendToClients({ type: 'hmr:update-start' });
           sendToClients({ type: 'hmr:update', modules: event.updates });
           sendToClients({ type: 'hmr:update-done' });
         } else if (changedCount > 0) {
           logInfo(
-            `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${colors.reset}`,
+            `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${breakdown}${colors.reset}`,
           );
         }
       },

@@ -54,7 +54,7 @@
     "build": "bun cli/build.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "postinstall": "cd ../../zts && zig build napi && cd packages/core && bun build index.ts --outdir dist --format esm --target bun"
+    "postinstall": "cd ../.. && git submodule update --init --remote zts && cd zts/packages/core && bun run build"
   },
   "dependencies": {
     "@zts/core": "file:../../zts/packages/core",

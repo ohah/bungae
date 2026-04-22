@@ -17,6 +17,7 @@ import {
   type WatchHandle,
   type WatchReadyEvent,
   type WatchRebuildEvent,
+  type ZtsPlugin,
 } from '@zts/core';
 
 import type { ResolvedConfig } from '../../config/types';
@@ -74,7 +75,7 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
 
   const define: Record<string, string> = {};
-  const plugins = [];
+  const plugins: ZtsPlugin[] = [];
   const polyfills: string[] = [];
   const runBeforeMain: string[] = [];
   const globalIdentifiers: string[] = [];
