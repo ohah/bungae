@@ -68,6 +68,78 @@ function postProcessSourceMap(rawJson: string, projectRoot: string): string {
 }
 
 /**
+ * ZTS `phaseDurations` 에서 트리 그룹 하나를 `label  k=Vms k=Vms ...` 한 줄로.
+ */
+function formatPhaseGroup(
+  pd: NonNullable<WatchRebuildEvent['phaseDurations']>,
+  label: string,
+  keys: readonly (keyof NonNullable<WatchRebuildEvent['phaseDurations']>)[],
+): string {
+  return `${label}  ${keys.map((k) => `${k}=${pd[k]}ms`).join(' ')}`;
+}
+
+/**
+ * HMR breakdown 로그 한 줄(또는 멀티라인) 생성.
+ *
+ * `BUNGAE_HMR_PROFILE=1` 비활성 시 빈 문자열. 활성 시 기본 phase 한 줄 `[...]`,
+ * `ZTS_PROFILE=<cat>` 활성으로 sub 값이 하나라도 있으면 pipeline/graph/emit
+ * 3 그룹 트리 구조 추가. `SUB_KEYS` 는 ZTS 의 sub-phase 스키마 변경 시 한 곳만 수정.
+ */
+function formatHmrBreakdown(event: WatchRebuildEvent): string {
+  if (process.env.BUNGAE_HMR_PROFILE !== '1') return '';
+  const pd = event.phaseDurations;
+  if (!pd) return '';
+
+  const reparsed = event.reparsedModules;
+  const baseLine =
+    `detect=${pd.detect}ms graph=${pd.graph}ms link=${pd.link}ms shake=${pd.shake}ms ` +
+    `emit=${pd.emit}ms delta=${pd.delta}ms${reparsed !== undefined ? ` reparsed=${reparsed}` : ''}`;
+
+  const SUB_KEYS = [
+    'scan',
+    'parse',
+    'resolve',
+    'semantic',
+    'transform',
+    'codegen',
+    'metadata',
+    'graphBuild',
+    'graphWorker',
+    'emitPolyfill',
+    'emitRefresh',
+    'emitOutput',
+    'emitMetafile',
+    'emitCss',
+  ] as const;
+  const hasSub = SUB_KEYS.some((k) => (pd[k] ?? 0) > 0);
+  if (!hasSub) return ` [${baseLine}]`;
+
+  return (
+    ` [${baseLine}]` +
+    '\n    ├─ ' +
+    formatPhaseGroup(pd, 'pipeline', [
+      'scan',
+      'parse',
+      'resolve',
+      'semantic',
+      'transform',
+      'codegen',
+      'metadata',
+    ]) +
+    '\n    ├─ ' +
+    formatPhaseGroup(pd, 'graph   ', ['graphBuild', 'graphWorker']) +
+    '\n    └─ ' +
+    formatPhaseGroup(pd, 'emit    ', [
+      'emitPolyfill',
+      'emitRefresh',
+      'emitOutput',
+      'emitMetafile',
+      'emitCss',
+    ])
+  );
+}
+
+/**
  * Start dev server with zts bundler backend
  */
 export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
@@ -159,45 +231,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         const changedCount = event.changed?.length ?? 0;
         const updatesCount = event.updates?.length ?? 0;
 
-        // HMR phase breakdown — `BUNGAE_HMR_PROFILE=1` 활성 시 로그에 덧붙임.
-        // 기본 phase (항상 측정): detect / graph / link / shake / emit / delta / total.
-        // Sub-phase (`ZTS_PROFILE=<cat>` 활성 시):
-        //   - 파이프라인: scan / parse / resolve / semantic / transform / codegen / metadata
-        //   - Graph 내부: graphBuild / graphWorker
-        //   - Emit 내부: emitPolyfill / emitRefresh / emitOutput / emitMetafile / emitCss
-        // sub 값 하나라도 있으면 멀티라인 포맷으로 확장 (한 줄은 읽기 어려움).
-        const pd = event.phaseDurations;
-        const reparsed = event.reparsedModules;
-        const hasSub =
-          pd !== undefined &&
-          (pd.scan > 0 ||
-            pd.parse > 0 ||
-            pd.resolve > 0 ||
-            pd.semantic > 0 ||
-            pd.transform > 0 ||
-            pd.codegen > 0 ||
-            pd.metadata > 0 ||
-            pd.graphBuild > 0 ||
-            pd.graphWorker > 0 ||
-            pd.emitPolyfill > 0 ||
-            pd.emitRefresh > 0 ||
-            pd.emitOutput > 0 ||
-            pd.emitMetafile > 0 ||
-            pd.emitCss > 0);
-        const showBreakdown = process.env.BUNGAE_HMR_PROFILE === '1' && pd !== undefined;
-        const baseLine = showBreakdown
-          ? `detect=${pd.detect}ms graph=${pd.graph}ms link=${pd.link}ms shake=${pd.shake}ms emit=${pd.emit}ms delta=${pd.delta}ms${
-              reparsed !== undefined ? ` reparsed=${reparsed}` : ''
-            }`
-          : '';
-        const breakdown = !showBreakdown
-          ? ''
-          : !hasSub
-            ? ` [${baseLine}]`
-            : ` [${baseLine}]` +
-              `\n    ├─ pipeline  scan=${pd.scan}ms parse=${pd.parse}ms resolve=${pd.resolve}ms semantic=${pd.semantic}ms transform=${pd.transform}ms codegen=${pd.codegen}ms metadata=${pd.metadata}ms` +
-              `\n    ├─ graph     build=${pd.graphBuild}ms worker=${pd.graphWorker}ms` +
-              `\n    └─ emit      polyfill=${pd.emitPolyfill}ms refresh=${pd.emitRefresh}ms output=${pd.emitOutput}ms metafile=${pd.emitMetafile}ms css=${pd.emitCss}ms`;
+        const breakdown = formatHmrBreakdown(event);
 
         if (event.graphChanged) {
           logInfo(
