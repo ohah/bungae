@@ -14,7 +14,7 @@ import { join } from 'path';
 import type { Duplex } from 'stream';
 
 import { createDevServerMiddleware } from '@react-native-community/cli-server-api';
-import type { WatchHandle } from '@zts/core';
+import type { WatchHandle, WatchRebuildEvent } from '@zts/core';
 import * as jscSafeUrl from 'jsc-safe-url';
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -130,9 +130,9 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           logError(`${state!.buildError} [${platform}]`);
         }
       },
-      onRebuild(event) {
+      onRebuild(event: WatchRebuildEvent) {
         const duration =
-          (event as any).phaseDurations?.total ?? Date.now() - state!.lastRebuildTime;
+          event.phaseDurations?.total ?? Date.now() - state!.lastRebuildTime;
         state!.lastRebuildTime = Date.now();
 
         if (!event.success) {
@@ -163,8 +163,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         // 기본 phase (항상 측정): detect / graph / link / shake / emit / delta / total.
         // Sub-phase (`ZTS_PROFILE=<cat>` 활성 시): scan / parse / resolve / semantic /
         // transform / codegen / metadata — 값이 하나라도 있으면 파이프 뒤에 함께 출력.
-        const pd = (event as any).phaseDurations;
-        const reparsed = (event as any).reparsedModules;
+        const pd = event.phaseDurations;
+        const reparsed = event.reparsedModules;
         const hasSub =
           pd &&
           (pd.scan ||
