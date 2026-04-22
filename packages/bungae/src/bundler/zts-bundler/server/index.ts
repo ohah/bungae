@@ -105,11 +105,17 @@ function formatHmrBreakdown(event: WatchRebuildEvent): string {
     'metadata',
     'graphBuild',
     'graphWorker',
+    'graphDiscover',
+    'graphFinalize',
     'emitPolyfill',
     'emitRefresh',
     'emitOutput',
     'emitMetafile',
     'emitCss',
+    'emitPrelude',
+    'emitModulePass',
+    'emitConcat',
+    'emitSourcemapFinalize',
   ] as const;
   const hasSub = SUB_KEYS.some((k) => (pd[k] ?? 0) > 0);
   if (!hasSub) return ` [${baseLine}]`;
@@ -127,14 +133,26 @@ function formatHmrBreakdown(event: WatchRebuildEvent): string {
       'metadata',
     ]) +
     '\n    ├─ ' +
-    formatPhaseGroup(pd, 'graph   ', ['graphBuild', 'graphWorker']) +
-    '\n    └─ ' +
+    formatPhaseGroup(pd, 'graph   ', [
+      'graphBuild',
+      'graphWorker',
+      'graphDiscover',
+      'graphFinalize',
+    ]) +
+    '\n    ├─ ' +
     formatPhaseGroup(pd, 'emit    ', [
       'emitPolyfill',
       'emitRefresh',
       'emitOutput',
       'emitMetafile',
       'emitCss',
+    ]) +
+    '\n    └─ ' +
+    formatPhaseGroup(pd, 'emit_out', [
+      'emitPrelude',
+      'emitModulePass',
+      'emitConcat',
+      'emitSourcemapFinalize',
     ])
   );
 }
