@@ -1,3 +1,4 @@
 [submodule "zts"]
 	path = zts
 	url = https://github.com/ohah/zts.git
+	branch = main
