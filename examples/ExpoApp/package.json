@@ -4,6 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start",
+    "start:bungae": "bungae serve",
+    "start:bungae:debug": "BUNGAE_HMR_PROFILE=1 ZTS_PROFILE=all ZTS_PROFILE_LEVEL=detailed bungae serve",
+    "build:bungae": "bungae build",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "ios": "expo run:ios",
@@ -39,6 +42,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.10",
+    "bungae": "workspace:*",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~55.0.0",
     "typescript": "~5.9.2"
