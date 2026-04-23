@@ -158,6 +158,58 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     },
   });
 
+  // babel-preset-expo 의 expo-router-plugin 을 expo-router 파일에만 적용.
+  // `EXPO_ROUTER_APP_ROOT` 는 filename 에 의존 (per-file 상대경로 계산) 이라 전역 define 으로
+  // 처리 불가. upstream plugin 을 직접 호출해 Expo SDK 버전 변화 (ex. v54→v55 Bun hoisting
+  // fix) 에 자동 대응. filter 가 좁아 overhead 는 expo-router 내부 ~10파일에 한정.
+  plugins.push({
+    name: 'bungae:expo-router-env',
+    setup(build) {
+      let plugin: unknown = null;
+      let babel: any = null;
+      const routerAbsoluteRoot = resolve(config.root, './app');
+
+      build.onTransform({ filter: /expo-router\/.*\.(js|tsx?)$/ }, (args) => {
+        // fast-path: env 치환 대상 토큰이 없으면 통과
+        if (!args.code.includes('process.env.EXPO_')) return null;
+
+        try {
+          if (!plugin) {
+            const pluginPath = require.resolve(
+              'babel-preset-expo/build/expo-router-plugin',
+              { paths: [config.root] },
+            );
+            const mod = require(pluginPath);
+            plugin = mod.expoRouterBabelPlugin;
+          }
+          if (!babel) {
+            babel = require('@babel/core');
+          }
+          const result = babel.transformSync(args.code, {
+            filename: args.path,
+            babelrc: false,
+            configFile: false,
+            plugins: [plugin],
+            caller: {
+              name: 'bungae',
+              projectRoot: config.root,
+              routerRoot: routerAbsoluteRoot,
+              isDev: config.dev,
+            },
+            compact: false,
+            sourceMaps: false,
+          });
+          return result?.code ? { code: result.code } : null;
+        } catch (e: any) {
+          process.stderr.write(
+            `[bungae:expo-router-env] ${args.path.split('/').pop()}: ${e.message?.slice(0, 100)}\n`,
+          );
+          return null;
+        }
+      });
+    },
+  });
+
   // Metro resolver.resolveRequest → ZTS onResolve 플러그인 콜백.
   // Metro 시그니처(context, moduleName, platform) 그대로 호출. 위임 시 throw로 ZTS 기본 해석기 사용.
   if (config.resolver.resolveRequest) {
@@ -297,11 +349,11 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     define['__DEV__'] = String(config.dev);
     define['process.env.NODE_ENV'] = `"${config.dev ? 'development' : 'production'}"`;
 
-    // Expo Router env (`_ctx.{ios,android,web}.tsx` 의 require.context 인자에 사용).
-    // ZTS Phase 2.6 의 import_scanner evaluator 가 이 값들을 보고 require.context 의
-    // process.env.X 인자를 정적 평가. (#1579 / #1582 Tier 2)
-    define['process.env.EXPO_ROUTER_APP_ROOT'] = '"./app"';
-    define['process.env.EXPO_ROUTER_IMPORT_MODE'] = '"sync"';
+    // Expo Router env — per-file substitution via babel-preset-expo/expo-router-plugin.
+    // Processed by `bungae:expo-router-env` plugin (below) rather than static define,
+    // because `EXPO_ROUTER_APP_ROOT` depends on importer path and upstream may update
+    // the visitor logic across Expo SDKs (e.g. v54→v55 Bun hoisting fix).
+    // `EXPO_OS` is kept as static define since it's not handled by expo-router-plugin.
     define['process.env.EXPO_OS'] = `"${config.platform === 'web' ? 'web' : config.platform === 'android' ? 'android' : 'ios'}"`;
 
     // Polyfills: console.js, error-guard.js — IIFE-wrapped, executed at bundle start
