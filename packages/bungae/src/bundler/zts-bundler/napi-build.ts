@@ -5,8 +5,8 @@
  * Converts ResolvedConfig to BuildOptions and manages plugins in-process.
  */
 
-import { existsSync } from 'fs';
-import { resolve, join } from 'path';
+import { existsSync, readdirSync } from 'fs';
+import { resolve, join, dirname, relative } from 'path';
 
 import {
   init,
@@ -117,6 +117,46 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
   ) {
     opts.fallback = { ...config.resolver.extraNodeModules };
   }
+
+  // require.context (#1579) — ZTS 가 인지/메타만, 매칭은 host (Bun JSC RegExp) 책임.
+  // ZTS Phase 2.5 의 onResolveContext hook.
+  plugins.push({
+    name: 'bungae:require-context',
+    setup(build) {
+      build.onResolveContext({ filter: /.*/ }, (args) => {
+        const { dir, recursive, filter, flags, importer } = args;
+        const absDir = resolve(dirname(importer), dir);
+
+        // FS scan
+        let entries: string[];
+        try {
+          if (recursive) {
+            entries = readdirSync(absDir, { recursive: true, withFileTypes: true })
+              .filter((d) => d.isFile())
+              .map((d) => {
+                const parent = (d as unknown as { parentPath?: string }).parentPath ?? absDir;
+                return relative(absDir, join(parent, d.name));
+              });
+          } else {
+            entries = readdirSync(absDir, { withFileTypes: true })
+              .filter((d) => d.isFile())
+              .map((d) => d.name);
+          }
+        } catch {
+          return { context: [] }; // 디렉토리 없음 → empty (graph 가 invalid 처리하지 않도록 응답)
+        }
+
+        // Filter regex (Bun JSC RegExp). 기본은 Metro/webpack 의 `^\\./.*$`.
+        const re = filter ? new RegExp(filter, flags ?? '') : /^\.\/.*$/;
+        const matched = entries
+          .map((f) => './' + f.replace(/\\/g, '/'))
+          .filter((p) => re.test(p))
+          .sort(); // 결정적 순서
+
+        return { context: matched };
+      });
+    },
+  });
 
   // Metro resolver.resolveRequest → ZTS onResolve 플러그인 콜백.
   // Metro 시그니처(context, moduleName, platform) 그대로 호출. 위임 시 throw로 ZTS 기본 해석기 사용.
@@ -256,6 +296,13 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     // Compile-time defines (override ZTS auto-define)
     define['__DEV__'] = String(config.dev);
     define['process.env.NODE_ENV'] = `"${config.dev ? 'development' : 'production'}"`;
+
+    // Expo Router env (`_ctx.{ios,android,web}.tsx` 의 require.context 인자에 사용).
+    // ZTS Phase 2.6 의 import_scanner evaluator 가 이 값들을 보고 require.context 의
+    // process.env.X 인자를 정적 평가. (#1579 / #1582 Tier 2)
+    define['process.env.EXPO_ROUTER_APP_ROOT'] = '"./app"';
+    define['process.env.EXPO_ROUTER_IMPORT_MODE'] = '"sync"';
+    define['process.env.EXPO_OS'] = `"${config.platform === 'web' ? 'web' : config.platform === 'android' ? 'android' : 'ios'}"`;
 
     // Polyfills: console.js, error-guard.js — IIFE-wrapped, executed at bundle start
     for (const polyfillPath of resolveRnPolyfills(config.root)) {
