@@ -185,6 +185,7 @@
     },
   },
   "patchedDependencies": {
+    "@expo/metro-runtime@55.0.9": "patches/@expo%2Fmetro-runtime@55.0.9.patch",
     "expo@55.0.15": "patches/expo@55.0.15.patch",
   },
   "packages": {

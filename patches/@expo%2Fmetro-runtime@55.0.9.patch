@@ -1,0 +1,68 @@
+diff --git a/src/location/Location.native.ts b/src/location/Location.native.ts
+index b3fe1ebf79f3dc614135fdfb0f6a58ede56a3841..fbcaf137b2911e7ebff918441fbf6d78776c19af 100644
+--- a/src/location/Location.native.ts
++++ b/src/location/Location.native.ts
+@@ -192,19 +192,49 @@ export function setLocationHref(href: string) {
+ }
+ 
+ export function install() {
+-  Object.defineProperty(global, 'Location', {
+-    value: Location,
+-    configurable: true,
+-    writable: true,
+-  });
++  // bungae patch: iOS 26.4+ 등 일부 native runtime 이 `Location` global 을
++  // `{ configurable: false, writable: true, value: undefined }` placeholder 로
++  // 미리 등록한다. defineProperty 가 throw → 부팅 실패 (`property is not configurable`).
++  // diagnostic: install() 호출 시점의 `globalThis.Location` descriptor 출력 후
++  // try/catch 로 throw 회피. 진짜 root cause 추적용 임시 진단 patch.
++  try {
++    const desc = Object.getOwnPropertyDescriptor(global, 'Location');
++    console.warn(
++      '[bungae:LOC_DIAG] install() called. globalThis.Location descriptor =',
++      desc
++        ? JSON.stringify({
++            value: desc.value === undefined ? 'undefined' : 'defined',
++            writable: desc.writable,
++            configurable: desc.configurable,
++            enumerable: desc.enumerable,
++            hasGet: typeof desc.get === 'function',
++            hasSet: typeof desc.set === 'function',
++          })
++        : 'no descriptor (Location absent)'
++    );
++  } catch {}
++
++  try {
++    Object.defineProperty(global, 'Location', {
++      value: Location,
++      configurable: true,
++      writable: true,
++    });
++  } catch (e: any) {
++    console.warn('[bungae:LOC_DIAG] defineProperty(Location) failed:', e?.message);
++  }
+ 
+-  Object.defineProperty(window, 'location', {
+-    get() {
+-      return location;
+-    },
+-    set() {
+-      throw new DOMException(`Cannot set "location".`, 'NotSupportedError');
+-    },
+-    enumerable: true,
+-  });
++  try {
++    Object.defineProperty(window, 'location', {
++      get() {
++        return location;
++      },
++      set() {
++        throw new DOMException(`Cannot set "location".`, 'NotSupportedError');
++      },
++      enumerable: true,
++    });
++  } catch (e: any) {
++    console.warn('[bungae:LOC_DIAG] defineProperty(location) failed:', e?.message);
++  }
+ }
