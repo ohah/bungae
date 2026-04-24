@@ -5,9 +5,25 @@
  */
 'use strict';
 
+// Metro HMRClient 와 동일한 'Refreshing...' 배너 동작을 위해 NativeModules.DevLoadingView 접근.
+// RN global 이 채워지기 전/환경 부재 상황 (web, 테스트) 에선 조용히 no-op.
+function getDevLoadingView() {
+  try {
+    var nm =
+      (typeof global !== 'undefined' && global.NativeModules) ||
+      (typeof window !== 'undefined' && window.NativeModules) ||
+      null;
+    return nm && nm.DevLoadingView ? nm.DevLoadingView : null;
+  } catch (_e) {
+    return null;
+  }
+}
+
 var HMRClient = {
   _socket: null,
   _enabled: true,
+  // Metro 처럼 중첩 update 를 카운트 — 마지막 update-done 에서만 배너 hide.
+  _pendingUpdates: 0,
 
   enable: function () {
     this._enabled = true;
@@ -100,6 +116,17 @@ var HMRClient = {
         }
         switch (msg.type) {
           case 'hmr:update-start':
+            self._pendingUpdates++;
+            if (self._enabled) {
+              var dlvStart = getDevLoadingView();
+              if (dlvStart && typeof dlvStart.showMessage === 'function') {
+                try {
+                  dlvStart.showMessage('Refreshing...', 'refresh');
+                } catch (_e) {
+                  // DevLoadingView 호출 실패는 HMR 동작과 무관 — 무시
+                }
+              }
+            }
             break;
           case 'hmr:update':
             console.log(
@@ -129,6 +156,17 @@ var HMRClient = {
             }
             break;
           case 'hmr:update-done':
+            if (self._pendingUpdates > 0) self._pendingUpdates--;
+            if (self._pendingUpdates === 0) {
+              var dlvDone = getDevLoadingView();
+              if (dlvDone && typeof dlvDone.hide === 'function') {
+                try {
+                  dlvDone.hide();
+                } catch (_e) {
+                  // 무시
+                }
+              }
+            }
             break;
           case 'hmr:reload':
             // Reuse __zts_reload() from ZTS HMR runtime (injected via --dev mode)
