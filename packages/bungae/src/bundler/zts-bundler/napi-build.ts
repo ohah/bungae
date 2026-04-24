@@ -5,8 +5,8 @@
  * Converts ResolvedConfig to BuildOptions and manages plugins in-process.
  */
 
-import { existsSync, readdirSync } from 'fs';
-import { resolve, join, dirname, relative } from 'path';
+import { existsSync } from 'fs';
+import { resolve, join } from 'path';
 
 import {
   init,
@@ -26,6 +26,8 @@ import {
   createAssetPlugin,
   createBabelPlugin,
   createCodegenPlugin,
+  createMetroResolveRequestPlugin,
+  createRequireContextPlugin,
   type PluginConfig,
 } from './napi-plugins';
 import { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills } from './rn-constants';
@@ -118,82 +120,17 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     opts.fallback = { ...config.resolver.extraNodeModules };
   }
 
-  // require.context (#1579) — ZTS 가 인지/메타만, 매칭은 host (Bun JSC RegExp) 책임.
-  // ZTS Phase 2.5 의 onResolveContext hook.
-  plugins.push({
-    name: 'bungae:require-context',
-    setup(build) {
-      build.onResolveContext({ filter: /.*/ }, (args) => {
-        const { dir, recursive, filter, flags, importer } = args;
-        const absDir = resolve(dirname(importer), dir);
+  // require.context (#1579) — ZTS Phase 2.5 onResolveContext hook.
+  plugins.push(createRequireContextPlugin());
 
-        // FS scan
-        let entries: string[];
-        try {
-          if (recursive) {
-            entries = readdirSync(absDir, { recursive: true, withFileTypes: true })
-              .filter((d) => d.isFile())
-              .map((d) => {
-                const parent = (d as unknown as { parentPath?: string }).parentPath ?? absDir;
-                return relative(absDir, join(parent, d.name));
-              });
-          } else {
-            entries = readdirSync(absDir, { withFileTypes: true })
-              .filter((d) => d.isFile())
-              .map((d) => d.name);
-          }
-        } catch {
-          return { context: [] }; // 디렉토리 없음 → empty (graph 가 invalid 처리하지 않도록 응답)
-        }
-
-        // Filter regex (Bun JSC RegExp). 기본은 Metro/webpack 의 `^\\./.*$`.
-        const re = filter ? new RegExp(filter, flags ?? '') : /^\.\/.*$/;
-        const matched = entries
-          .map((f) => './' + f.replace(/\\/g, '/'))
-          .filter((p) => re.test(p))
-          .sort(); // 결정적 순서
-
-        return { context: matched };
-      });
-    },
-  });
-
-  // Metro resolver.resolveRequest → ZTS onResolve 플러그인 콜백.
-  // Metro 시그니처(context, moduleName, platform) 그대로 호출. 위임 시 throw로 ZTS 기본 해석기 사용.
+  // Metro resolver.resolveRequest — 사용자 정의 해석기를 ZTS onResolve 로 래핑.
   if (config.resolver.resolveRequest) {
-    const userResolveRequest = config.resolver.resolveRequest;
-    plugins.push({
-      name: 'bungae:metro-resolve-request',
-      setup(build) {
-        build.onResolve({ filter: /.*/ }, (args) => {
-          // ZTS 기본 해석기로 위임하는 함수 — Metro는 context.resolveRequest 호출로 표현.
-          // throw하면 ZTS가 기본 해석 진행 (return null과 동일).
-          const fallbackResolver = () => {
-            throw new Error('__BUNGAE_DELEGATE_TO_DEFAULT__');
-          };
-          try {
-            const result = userResolveRequest(
-              {
-                originModulePath: args.importer ?? '',
-                platform: config.platform === 'web' ? null : config.platform,
-                resolveRequest: fallbackResolver as never,
-              },
-              args.path,
-              config.platform === 'web' ? null : config.platform,
-            );
-            if (result.type === 'sourceFile') return { path: result.filePath };
-            if (result.type === 'assetFiles') return { path: result.filePaths[0] ?? args.path };
-            // Metro `{ type: 'empty' }` → ZTS `disabled` flag (빈 모듈로 처리).
-            // ZTS가 자동으로 module.exports = {} 출력 — 별도 onLoad 불필요.
-            if (result.type === 'empty') return { disabled: true };
-          } catch (err) {
-            if ((err as Error).message === '__BUNGAE_DELEGATE_TO_DEFAULT__') return null;
-            throw err;
-          }
-          return null;
-        });
-      },
-    });
+    plugins.push(
+      createMetroResolveRequestPlugin({
+        resolveRequest: config.resolver.resolveRequest,
+        platform: config.platform,
+      }),
+    );
   }
 
   // React Native specific options (CLI --platform=react-native 프리셋과 동일)

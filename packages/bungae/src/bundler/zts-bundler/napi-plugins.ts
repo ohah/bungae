@@ -5,8 +5,12 @@
  * Uses shared logic from plugin-core.ts (no IPC, no subprocess).
  */
 
+import { readdirSync } from 'fs';
+import { dirname, join, relative, resolve } from 'path';
+
 import type { ZtsPlugin } from '@zts/core';
 
+import type { CustomResolver, Platform } from '../../config/types';
 import {
   ZTS_HMR_CLIENT_CODE,
   HMR_CLIENT_SUFFIX,
@@ -131,6 +135,104 @@ export function createBabelPlugin(config: PluginConfig): ZtsPlugin {
           // Babel errors are logged by the transformer; don't break the build
           return null;
         }
+      });
+    },
+  };
+}
+
+/**
+ * require.context (#1579) — ZTS 가 인지/메타만, 매칭은 host (Bun JSC RegExp) 책임.
+ * ZTS Phase 2.5 의 onResolveContext hook.
+ *
+ * 디렉토리 FS scan → filter regex 매칭 → 결정적 정렬된 상대경로 리스트 반환.
+ * projectRoot 등 config 의존성 없음 — importer 기준 상대 경로만 사용.
+ */
+export function createRequireContextPlugin(): ZtsPlugin {
+  return {
+    name: 'bungae:require-context',
+    setup(build) {
+      build.onResolveContext({ filter: /.*/ }, (args) => {
+        const { dir, recursive, filter, flags, importer } = args;
+        const absDir = resolve(dirname(importer), dir);
+
+        let entries: string[];
+        try {
+          if (recursive) {
+            entries = readdirSync(absDir, { recursive: true, withFileTypes: true })
+              .filter((d) => d.isFile())
+              .map((d) => {
+                const parent = (d as unknown as { parentPath?: string }).parentPath ?? absDir;
+                return relative(absDir, join(parent, d.name));
+              });
+          } else {
+            entries = readdirSync(absDir, { withFileTypes: true })
+              .filter((d) => d.isFile())
+              .map((d) => d.name);
+          }
+        } catch {
+          // 디렉토리 없음 → empty (graph 가 invalid 처리하지 않도록 응답)
+          return { context: [] };
+        }
+
+        // Filter regex (Bun JSC RegExp). 기본은 Metro/webpack 의 `^\\./.*$`.
+        const re = filter ? new RegExp(filter, flags ?? '') : /^\.\/.*$/;
+        const matched = entries
+          .map((f) => './' + f.replace(/\\/g, '/'))
+          .filter((p) => re.test(p))
+          .sort(); // 결정적 순서
+
+        return { context: matched };
+      });
+    },
+  };
+}
+
+/**
+ * Metro resolver.resolveRequest → ZTS onResolve 플러그인 콜백.
+ *
+ * Metro 시그니처(context, moduleName, platform) 그대로 호출.
+ * 위임 시 throw 로 ZTS 기본 해석기 사용 (Metro 의 `context.resolveRequest()` 호출과 동등).
+ */
+export interface MetroResolveRequestOptions {
+  resolveRequest: CustomResolver;
+  platform: Platform;
+}
+
+export function createMetroResolveRequestPlugin(
+  opts: MetroResolveRequestOptions,
+): ZtsPlugin {
+  const { resolveRequest, platform } = opts;
+  const metroPlatform = platform === 'web' ? null : platform;
+
+  return {
+    name: 'bungae:metro-resolve-request',
+    setup(build) {
+      build.onResolve({ filter: /.*/ }, (args) => {
+        // ZTS 기본 해석기로 위임하는 함수 — Metro 는 context.resolveRequest 호출로 표현.
+        // throw 하면 ZTS 가 기본 해석 진행 (return null 과 동일).
+        const fallbackResolver = () => {
+          throw new Error('__BUNGAE_DELEGATE_TO_DEFAULT__');
+        };
+        try {
+          const result = resolveRequest(
+            {
+              originModulePath: args.importer ?? '',
+              platform: metroPlatform,
+              resolveRequest: fallbackResolver as never,
+            },
+            args.path,
+            metroPlatform,
+          );
+          if (result.type === 'sourceFile') return { path: result.filePath };
+          if (result.type === 'assetFiles') return { path: result.filePaths[0] ?? args.path };
+          // Metro `{ type: 'empty' }` → ZTS `disabled` flag (빈 모듈로 처리).
+          // ZTS 가 자동으로 module.exports = {} 출력 — 별도 onLoad 불필요.
+          if (result.type === 'empty') return { disabled: true };
+        } catch (err) {
+          if ((err as Error).message === '__BUNGAE_DELEGATE_TO_DEFAULT__') return null;
+          throw err;
+        }
+        return null;
       });
     },
   };
