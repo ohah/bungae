@@ -213,17 +213,9 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
       opts.reactRefresh = true;
       opts.collectModuleCodes = true;
 
-      // DevLoadingView hide — "Downloading 100%" 바 잔존 방지.
-      // 한 번의 setTimeout(0) 으로는 다음 두 상황에서 불충분:
-      //   1. iOS RCTDevLoadingView.hide 의 MIN_PRESENTED_TIME (0.6s) — 첫 hide 가 delayed
-      //      animation 로 예약된 사이 네이티브 쪽 multipart progress 가 showProgressMessage 를
-      //      한 번 더 호출하면 바가 다시 표시됨.
-      //   2. InitializeCore 이후 추가 native path (오프라인 배너 등) 가 progress 를 갱신하면
-      //      최초 hide 이후 다시 뜰 수 있음.
-      // 0ms / 500ms / 1500ms 3회 재시도로 어느 path 에서 재표시돼도 결국 사라지게 만듦.
-      // `_hiding` 중이면 내부에서 no-op, 끝나면 다음 setTimeout 이 확실히 지움.
+      // DevLoadingView hide workaround
       const hideLoadingView =
-        '(function(){var h=function(){try{NativeModules.DevLoadingView.hide()}catch(e){}};setTimeout(h,0);setTimeout(h,500);setTimeout(h,1500);})();';
+        'setTimeout(function(){try{NativeModules.DevLoadingView.hide()}catch(e){}},0);';
       opts.footer = hideLoadingView;
     }
 
