@@ -24,18 +24,42 @@ export const colors = {
 };
 
 /**
- * Metro-style log badges
+ * Metro-compatible log badges.
+ * Labels upper-cased and length-aligned to match `metro/src/lib/reporting.js`
+ * (` INFO ` / ` WARN ` / ` ERROR `, cyan/yellow/red on inverse bold).
  */
 export function logInfo(...args: unknown[]): void {
-  console.log(`${colors.inverse}${colors.bold}${colors.cyan} info ${colors.reset}`, ...args);
+  console.log(`${colors.inverse}${colors.bold}${colors.cyan} INFO ${colors.reset}`, ...args);
 }
 
 export function logWarn(...args: unknown[]): void {
-  console.warn(`${colors.inverse}${colors.bold}${colors.yellow} warn ${colors.reset}`, ...args);
+  console.warn(`${colors.inverse}${colors.bold}${colors.yellow} WARN ${colors.reset}`, ...args);
 }
 
 export function logError(...args: unknown[]): void {
-  console.error(`${colors.inverse}${colors.bold}${colors.red} error ${colors.reset}`, ...args);
+  console.error(`${colors.inverse}${colors.bold}${colors.red} ERROR ${colors.reset}`, ...args);
+}
+
+/**
+ * Metro-style BUNDLE status line — emitted at build completion and per request.
+ * Matches `TerminalReporter._getBundleStatusMessage` color scheme:
+ * - `done`    → green inverse bold
+ * - `failed`  → red
+ * - `request` → yellow (in-flight color, reused for "cached bundle served")
+ *
+ * @param subject  Right-hand content — entry path (done/failed) or URL (request).
+ * @param detail   Optional dim trailing metadata (e.g. `(350 files, 123 KB, 1234ms)`).
+ */
+export function logBundle(
+  phase: 'done' | 'failed' | 'request',
+  platform: string,
+  subject: string,
+  detail?: string,
+): void {
+  const color = phase === 'done' ? colors.green : phase === 'failed' ? colors.red : colors.yellow;
+  const badge = `${color}${colors.inverse}${colors.bold} BUNDLE ${colors.reset}`;
+  const tail = detail ? ` ${colors.dim}${detail}${colors.reset}` : '';
+  console.log(`${badge} ${colors.dim}[${platform}]${colors.reset} ${subject}${tail}`);
 }
 
 /**

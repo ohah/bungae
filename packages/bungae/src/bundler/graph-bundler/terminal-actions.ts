@@ -7,7 +7,7 @@ import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
 
-import { logInfo, logWarn, logError } from './utils';
+import { colors, logInfo, logWarn, logError } from './utils';
 
 export interface TerminalActionsOptions {
   /** Enable global hotkey support */
@@ -128,10 +128,27 @@ export function setupTerminalActions(options: TerminalActionsOptions): () => voi
         handleClearCache();
         break;
 
+      case '?':
+        // Metro-compatible: print the full shortcut list on demand.
+        showShortcuts();
+        break;
+
       default:
         // Ignore other keys
         break;
     }
+  };
+
+  const showShortcuts = () => {
+    console.log('');
+    logInfo('Available shortcuts:');
+    console.log(
+      `     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`,
+    );
+    console.log(
+      `     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`,
+    );
+    console.log('');
   };
 
   const handleReload = () => {

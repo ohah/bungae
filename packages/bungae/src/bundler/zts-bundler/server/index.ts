@@ -31,7 +31,7 @@ import {
   sendText,
 } from '../../graph-bundler/server/utils';
 import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { colors, logInfo, logError, printBanner } from '../../graph-bundler/utils';
+import { colors, logBundle, logInfo, logError, printBanner } from '../../graph-bundler/utils';
 import { watchWithNapi } from '../napi-build';
 
 /**
@@ -220,12 +220,15 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           // `state.handle.getBundleSourceMap()` 를 lazy 호출.
           const sizeKB = (Buffer.byteLength(state!.bundle) / 1024).toFixed(1);
           const buildTime = Date.now() - buildStart;
-          logInfo(
-            `Build complete ${colors.dim}[${platform}]${colors.reset} ${colors.dim}(${sizeKB} KB, ${buildTime}ms)${colors.reset}`,
+          logBundle(
+            'done',
+            platform,
+            `./${config.entry}`,
+            `(${state!.fileCount} files, ${sizeKB} KB, ${buildTime}ms)`,
           );
         } else {
           state!.buildError = 'Build produced no output';
-          logError(`${state!.buildError} [${platform}]`);
+          logBundle('failed', platform, `./${config.entry}`, state!.buildError);
         }
       },
       onRebuild(event: WatchRebuildEvent) {
@@ -463,6 +466,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
       // Detect platform from URL query param (?platform=ios)
       const platform = url.searchParams.get('platform') || defaultPlatform;
+      // Metro-style request line — yellow BUNDLE badge + platform + URL.
+      logBundle('request', platform, `${url.pathname}${url.search}`);
       const state = getOrCreatePlatform(platform);
 
       // Wait for build if still in progress (new platform spawned on demand)
@@ -750,13 +755,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       broadcast: (method: string, params?: Record<string, any>) => broadcast(method, params ?? {}),
     });
     console.log('');
-    logInfo('Keyboard shortcuts:');
-    console.log(
-      `     ${colors.bold}r${colors.reset} - Reload    ${colors.bold}d${colors.reset} - Dev Menu    ${colors.bold}j${colors.reset} - DevTools`,
-    );
-    console.log(
-      `     ${colors.bold}i${colors.reset} - iOS Sim   ${colors.bold}a${colors.reset} - Android     ${colors.bold}c${colors.reset} - Clear cache`,
-    );
+    logInfo(`Press ${colors.bold}?${colors.reset} to show keyboard shortcuts`);
     console.log('');
   }
 
