@@ -117,7 +117,10 @@ var HMRClient = {
         switch (msg.type) {
           case 'hmr:update-start':
             self._pendingUpdates++;
-            if (self._enabled) {
+            // Initial update sequence (서버가 connect 시 전송해 로딩바 dismiss 용) 는
+            // 실제 코드 변경이 아니므로 "Refreshing..." 배너 노출 skip.
+            // Metro HMRClient 동일 동작 (isInitialUpdate flag 검사).
+            if (self._enabled && !msg.isInitialUpdate) {
               var dlvStart = getDevLoadingView();
               if (dlvStart && typeof dlvStart.showMessage === 'function') {
                 try {

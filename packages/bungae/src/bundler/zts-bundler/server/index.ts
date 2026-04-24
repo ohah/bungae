@@ -349,6 +349,14 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     };
     hmrClients.add(client);
 
+    // Initial empty update sequence — Metro sends this on every HMR connect so
+    // RN HMRClient.js fires `DevLoadingView.hide()` in its `update-done` handler,
+    // dismissing the "Downloading 100%" bar. Without this the bar stays up on
+    // reload/async-bundle paths where no file has changed yet.
+    // `isInitialUpdate: true` tells the client to skip the "Refreshing..." banner.
+    client.send(JSON.stringify({ type: 'hmr:update-start', isInitialUpdate: true }));
+    client.send(JSON.stringify({ type: 'hmr:update-done' }));
+
     ws.on('message', (message: Buffer | ArrayBuffer | Buffer[]) => {
       try {
         const msg = JSON.parse(message.toString());
