@@ -62,5 +62,8 @@
   },
   "engines": {
     "bun": ">=1.0.0"
+  },
+  "patchedDependencies": {
+    "expo@55.0.15": "patches/expo@55.0.15.patch"
   }
 }
