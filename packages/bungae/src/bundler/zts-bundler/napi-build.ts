@@ -237,7 +237,11 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     // Expo Router env (`_ctx.{ios,android,web}.tsx` 의 require.context 인자에 사용).
     // ZTS Phase 2.6 의 import_scanner evaluator 가 이 값들을 보고 require.context 의
     // process.env.X 인자를 정적 평가. (#1579 / #1582 Tier 2)
-    define['process.env.EXPO_ROUTER_APP_ROOT'] = '"./app"';
+    // 절대 경로로 전달 — `_ctx.ios.js` 가 `node_modules/.bun/expo-router/...` 안에 있어
+    // importer 기준 `"./app"` 은 잘못된 경로를 가리킴 (Metro 도 importer 기준 user
+    // app 경로로 치환). onResolveContext 의 `resolve(dirname(importer), dir)` 는
+    // dir 가 절대 경로면 그대로 사용.
+    define['process.env.EXPO_ROUTER_APP_ROOT'] = JSON.stringify(resolve(config.root, 'app'));
     define['process.env.EXPO_ROUTER_IMPORT_MODE'] = '"sync"';
     define['process.env.EXPO_OS'] = `"${config.platform === 'web' ? 'web' : config.platform === 'android' ? 'android' : 'ios'}"`;
 
