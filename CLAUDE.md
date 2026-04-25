@@ -67,9 +67,72 @@ bundler/
 ### CLI 명령어
 
 ```bash
-bungae bundle   # 프로덕션 번들 빌드 (= build)
-bungae start    # 개발 서버 시작 (= serve)
+bungae init              # 스타터 bungae.config.ts 생성 (Expo 자동 감지)
+bungae init --js         # JS config 변종
+bungae init --force      # 기존 파일 덮어쓰기
+bungae bundle            # 프로덕션 번들 빌드 (= build)
+bungae start             # 개발 서버 시작 (= serve)
 ```
+
+## Expo 통합
+
+Bungae는 Metro의 `@expo/metro-config` 패턴을 따라 명시적 wrapper로 Expo를 지원합니다.
+
+### 사용법
+
+**Vanilla React Native:**
+
+```ts
+// bungae.config.ts
+import { defineConfig } from 'bungae';
+export default defineConfig({ root: __dirname, entry: 'index.js', bundler: 'zts' });
+```
+
+**Expo:**
+
+```ts
+// bungae.config.ts
+import { defineConfig, withExpo } from 'bungae';
+export default withExpo(defineConfig({
+  root: __dirname,
+  entry: 'index.js',
+  bundler: 'zts',
+}));
+```
+
+**Zero config (`bungae.config.*` 파일 없음):**
+
+`package.json` 의 직접 의존성을 보고 자동 적용:
+
+| 자기 `package.json` deps | 동작 | 첫 빌드 로그 |
+| --- | --- | --- |
+| `expo` 또는 `expo-router` | 자동으로 `withExpo()` 적용 | `[bungae] expo: auto (detected expo@x.y)` |
+| 그 외 | vanilla 모드 | `[bungae] expo: off (no expo dependency in package.json)` |
+
+자동 감지는 **자기 `package.json`만** 봅니다 — 모노레포에서 다른 워크스페이스 패키지의 hoisted `expo`는 false-positive를 만들지 않습니다. 명시적 config 파일이 있으면 자동 감지는 끄고 사용자 config가 단일 진실의 원천.
+
+### `withExpo()`가 채우는 것
+
+`@expo/metro-config`의 `getDefaultConfig` 매핑을 따라:
+
+| 영역 | 추가 |
+| --- | --- |
+| `serializer.runBeforeMainModule` | `expo/winter/index`, `@expo/metro-runtime` |
+| `resolver.assetExts` | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
+| `resolver.blockList` | `/\.expo[\\/]types/` (generated `.d.ts`) |
+| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning |
+
+`@expo/metro-runtime`은 `expo-router`의 `dirname` 기준으로 resolve — expo-router가 require하는 동일 인스턴스 보장(monorepo hoisting 시 instance 분기 방지).
+
+### 구현 위치
+
+- Wrapper: `packages/bungae/src/bundler/zts-bundler/withExpo.ts` — `withExpo()` + `detectExpo()` 헬퍼 (zero config 자동 감지에 사용)
+- CLI: `packages/bungae/cli/init.ts` — `bungae init` 명령
+- Zero-config 분기: `packages/bungae/cli/main.ts` 의 `detectExpo` 호출 블록
+
+### Bungae 본체는 Expo를 모름
+
+`napi-build.ts`의 expo 자동 감지/분기는 의도적으로 제거됨. expo 관련 옵션은 모두 `withExpo()` (또는 zero-config 자동 감지가 호출하는 동일 wrapper) 안에만 있음. RN 핵심 동작(`InitializeCore` runBeforeMain, polyfills, RN_GLOBAL_IDENTIFIERS 등)은 본체 유지.
 
 ## 번들링 프로세스
 

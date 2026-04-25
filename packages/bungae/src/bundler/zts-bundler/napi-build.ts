@@ -6,7 +6,7 @@
  */
 
 import { existsSync } from 'fs';
-import { resolve, join, dirname } from 'path';
+import { resolve, join } from 'path';
 
 import {
   init,
@@ -269,52 +269,23 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
       polyfills.push(polyfillPath);
     }
 
-    // runBeforeMainModule — `@expo/metro-config` 의 `getModulesRunBeforeMainModule`
-    // 와 정확히 동등 순서. Metro 의 entry trigger (`__r(N)` 별 outer guardedLoadModule
-    // 호출) 가 이 순서대로 emit. 각 path 가 별 outer 라 한 layer throw (예: iOS 26.4
-    // `Location` placeholder) 가 다음 layer 영향 없이 평가 진행 → entry 도달 → main 등록.
-    //
-    // 1. InitializeCore — RN runtime 초기화 (MUST be first)
-    // 2. expo/winter — WinterCG polyfill (TextEncoderStream, URL 등)
-    // 3. @expo/metro-runtime — Location.install, fetch polyfill 등 (placeholder 충돌 가능)
+    // runBeforeMainModule — Metro entry trigger 순서:
+    //   1. InitializeCore (RN core, MUST be first)
+    //   2. ...config.serializer.runBeforeMainModule (사용자 / withExpo() 등 통합이 채움)
+    // 각 path는 ZTS의 별 outer guardedLoadModule layer로 emit되므로 한 layer
+    // throw (예: iOS 26.4 `Location` placeholder)가 다음 layer 평가를 막지 않음.
     const initCorePath = tryResolve('react-native/Libraries/Core/InitializeCore', config.root);
     if (initCorePath) {
       runBeforeMain.push(initCorePath);
     }
-    // 같은 인스턴스 보장 — expo-router 가 require 하는 view 에서 resolve.
-    // Top-level `node_modules/@expo/metro-runtime` 는 다른 instance 라 chain (require 등)
-    // 깨질 수 있음. expo-router 의 dirname 기준으로 require.resolve 하면 expo-router 의
-    // 자체 dependency 인 같은 hash 인스턴스가 잡힘.
-    const expoPkgPath = tryResolve('expo/package.json', config.root);
-    const expoDir = expoPkgPath ? dirname(expoPkgPath) : config.root;
-    const expoRouterPkgPath = tryResolve('expo-router/package.json', config.root);
-    const expoRouterDir = expoRouterPkgPath
-      ? dirname(expoRouterPkgPath)
-      : config.root;
-
-    const winterPath =
-      tryResolve('expo/src/winter/index.ts', expoDir) ||
-      tryResolve('expo/src/winter/index', expoDir) ||
-      tryResolve('expo/build/winter/index.js', expoDir);
-    if (winterPath) {
-      runBeforeMain.push(winterPath);
-    }
-    // expo-router 의 view — entry-classic.js 가 require 한 동일 인스턴스 보장
-    const expoMetroRuntimePath = tryResolve('@expo/metro-runtime', expoRouterDir);
-    if (expoMetroRuntimePath) {
-      runBeforeMain.push(expoMetroRuntimePath);
+    if (config.serializer.runBeforeMainModule.length > 0) {
+      runBeforeMain.push(...config.serializer.runBeforeMainModule);
     }
 
-    // expo winter polyfill 워닝 silent — `expo/src/winter/installGlobal.ts:96` 가 iOS host
-    // 의 immutable spec global (Location/TextEncoderStream/TextDecoderStream, 관측 환경:
-    // iPad iOS 26.4 + Expo SDK 55) 위에 redefine 시도 시 출력하는 console.error 차단.
-    // RN core 의 `polyfillObjectProperty` 도 동일 메시지 형식이지만 polyfill 대상 (Promise/
-    // setTimeout 등) 이 native immutable 과 안 겹쳐 vanilla RN 에선 trigger 안 됨 — 따라서
-    // expo 감지될 때만 주입. ZTS 측 mechanism (`silentConsoleErrorPatterns`) 은 generic.
-    if (expoPkgPath) {
-      opts.silentConsoleErrorPatterns = [
-        '^Failed to set polyfill\\.\\s+\\w+\\s+is not configurable\\.?$',
-      ];
+    // Server-level dev console suppression (Metro에 없는 Bungae 자체 mechanism).
+    // `withExpo()`가 winter polyfill warning 패턴을 채워 넣음.
+    if (config.server.silentConsoleErrorPatterns.length > 0) {
+      opts.silentConsoleErrorPatterns = [...config.server.silentConsoleErrorPatterns];
     }
 
     // Reserved global identifiers — prevent scope hoisting collisions

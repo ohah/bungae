@@ -210,6 +210,24 @@ export function createCodegenTransformer(
   let codegenPlugin: any = null;
   let babelOptions: any = null;
 
+  // Diagnostic timer (BUNGAE_CODEGEN_PROFILE=1 to enable per-file logs)
+  const profile = process.env.BUNGAE_CODEGEN_PROFILE === '1';
+  let totalMs = 0;
+  let inlinedCount = 0;
+  let failedCount = 0;
+  let skippedCount = 0;
+  const flush = () => {
+    process.stderr.write(
+      `[bungae:codegen] total=${totalMs.toFixed(1)}ms (inlined=${inlinedCount}, failed=${failedCount}, no-op=${skippedCount})\n`,
+    );
+  };
+  // print summary on exit
+  process.once('beforeExit', flush);
+  process.once('SIGINT', () => {
+    flush();
+    process.exit(130);
+  });
+
   function ensureBabel() {
     if (babel) return;
     babel = require('@babel/core');
@@ -255,6 +273,7 @@ export function createCodegenTransformer(
     // babel-plugin-codegen 내부 parseFile()도 같은 확장자 기준으로 분기.
     const parserPlugins = filename.endsWith('.ts') ? ['typescript'] : ['flow'];
 
+    const t0 = performance.now();
     try {
       ensureBabel();
       const result = babel.transformSync(code, {
@@ -262,14 +281,26 @@ export function createCodegenTransformer(
         filename,
         parserOpts: { plugins: parserPlugins },
       });
+      const dt = performance.now() - t0;
+      totalMs += dt;
       if (result?.code && result.code !== code) {
-        process.stderr.write(
-          `[bungae:codegen] ${filename.split('/').pop()}: view config inlined\n`,
-        );
+        inlinedCount++;
+        if (profile) {
+          process.stderr.write(
+            `[bungae:codegen] ${filename.split('/').pop()}: view config inlined (${dt.toFixed(1)}ms)\n`,
+          );
+        } else {
+          process.stderr.write(
+            `[bungae:codegen] ${filename.split('/').pop()}: view config inlined\n`,
+          );
+        }
         return result.code;
       }
+      skippedCount++;
       return null;
     } catch (err: any) {
+      totalMs += performance.now() - t0;
+      failedCount++;
       process.stderr.write(
         `[bungae:codegen] ${filename.split('/').pop()} failed: ${err.message?.slice(0, 120)}\n`,
       );

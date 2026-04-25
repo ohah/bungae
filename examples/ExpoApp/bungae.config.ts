@@ -1,13 +1,13 @@
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import { defineConfig } from 'bungae';
+import { defineConfig, withExpo } from 'bungae';
 import type { BungaeConfig } from 'bungae';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default defineConfig({
+export default withExpo(defineConfig({
   root: __dirname,
   entry: 'index.js',
   dev: true,
@@ -46,4 +46,4 @@ export default defineConfig({
     port: 8081,
     verifyConnections: false,
   },
-} satisfies BungaeConfig);
+} satisfies BungaeConfig));

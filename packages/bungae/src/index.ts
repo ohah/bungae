@@ -86,3 +86,6 @@ export {
 // Export build and serve separately to avoid bunup duplicate export issues
 export { build } from './build';
 export { serve } from './serve';
+
+// Expo integration (opt-in wrapper, mirrors @expo/metro-config getDefaultConfig pattern)
+export { withExpo, detectExpo } from './bundler/zts-bundler/withExpo';

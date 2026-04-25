@@ -170,6 +170,15 @@ export interface SerializerConfig {
     entryFilePath: string,
     options?: { projectRoot: string; nodeModulesPaths: string[] },
   ) => string[];
+  /**
+   * Static list of modules to evaluate before the entry module.
+   * Resolved paths only — bundler does not re-resolve. Stacked on top of any
+   * `getModulesRunBeforeMainModule()` result.
+   *
+   * Used by integrations like `withExpo()` to inject `expo/winter` and
+   * `@expo/metro-runtime` without forcing users to write a hook.
+   */
+  runBeforeMainModule?: string[];
   /** Get polyfills (Metro-compatible) */
   getPolyfills?: (options: { platform: string | null }) => string[];
   /** Inline source map in bundle (base64 encoded) */
@@ -247,6 +256,12 @@ export interface ServerConfig {
    * expose a Metro-shaped server object, so plugins should treat it as opaque.
    */
   enhanceMiddleware?: (middleware: ConnectMiddleware, server: unknown) => ConnectMiddleware;
+  /**
+   * Suppress dev-server console.error messages whose text matches any of the
+   * given regexp source strings. Used by integrations like `withExpo()` to
+   * silence the Expo winter polyfill warning on iOS 26.4 hosts.
+   */
+  silentConsoleErrorPatterns?: string[];
   /**
    * Rewrite incoming request URLs before routing (Metro 호환).
    * Called once per request at the start of handling, after jsc-safe URL

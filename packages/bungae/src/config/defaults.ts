@@ -153,6 +153,7 @@ export const DEFAULT_SERIALIZER: Required<Omit<SerializerConfig, 'shouldAddToIgn
     return modules;
   },
   getPolyfills: () => [],
+  runBeforeMainModule: [],
   inlineSourceMap: false,
 };
 
@@ -173,6 +174,7 @@ export const DEFAULT_SERVER: Required<ServerConfig> = {
   enhanceMiddleware: (middleware) => middleware,
   // Metro 호환: identity. URL 재작성 안 함.
   rewriteRequestUrl: (url) => url,
+  silentConsoleErrorPatterns: [],
 };
 
 /**

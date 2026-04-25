@@ -11,7 +11,7 @@
 
 import { parseArgs as nodeParseArgs } from 'util';
 
-export type Command = 'bundle' | 'build' | 'serve' | 'start' | 'dependencies';
+export type Command = 'bundle' | 'build' | 'serve' | 'start' | 'dependencies' | 'init';
 
 export interface ParsedArgs {
   command: Command | undefined;
@@ -151,6 +151,10 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       output: { type: 'string' },
       verbose: { type: 'boolean' },
       'entry-file': { type: 'string' },
+
+      // --- Init command ---
+      js: { type: 'boolean' },
+      force: { type: 'boolean' },
     },
     allowPositionals: true,
     strict: false,

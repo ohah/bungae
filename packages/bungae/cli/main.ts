@@ -11,8 +11,9 @@ import { resolve, dirname } from 'path';
 
 import { loadConfig, resolveConfig } from '../src/config';
 import type { BungaeConfig } from '../src/config/types';
-import { VERSION, build, serve } from '../src/index.ts';
+import { VERSION, build, serve, withExpo, detectExpo } from '../src/index.ts';
 import { buildConfigFromArgs } from './build-config';
+import { runInit } from './init';
 import { parseCliArgs } from './parse-args';
 
 const parsed = parseCliArgs(process.argv.slice(2));
@@ -25,11 +26,16 @@ Usage:
   bungae <command> [options]
 
 Commands:
+  init           Generate a starter bungae.config.{ts,js} (auto-detects Expo)
   bundle         Build the React Native bundle
   build          Alias for bundle
   start          Start the development server
   serve          Alias for start
   dependencies   List all module dependencies
+
+Init Options:
+  --js                             Emit JavaScript config instead of TypeScript
+  --force                          Overwrite existing bungae.config.{ts,js}
 
 Common Options:
   -h, --help                       Show this help message
@@ -108,16 +114,42 @@ async function main() {
       ? resolve(dirname(parsed.config))
       : process.cwd();
 
+  // `bungae init` — does not load existing config; generates one.
+  if (parsed.command === 'init') {
+    runInit({
+      cwd: projectRoot,
+      js: !!(parsed as any).js,
+      force: !!(parsed as any).force,
+    });
+    return;
+  }
+
   // Load config from file (Metro-compatible API)
   let fileConfig: BungaeConfig = {};
+  let userProvidedConfig = false;
   try {
     if (parsed.config) {
       fileConfig = await loadConfig({ config: parsed.config, cwd: projectRoot });
+      userProvidedConfig = true;
     } else {
       fileConfig = await loadConfig({ cwd: projectRoot });
+      // loadConfig() returns {} when no bungae.config.* file is found.
+      userProvidedConfig = Object.keys(fileConfig).length > 0;
     }
   } catch (error) {
     console.warn(`Warning: Failed to load config file: ${error}`);
+  }
+
+  // Zero-config mode: no user config file → auto-detect integrations from package.json.
+  // Single source of truth: if user wrote a config, we never touch it.
+  if (!userProvidedConfig) {
+    const expo = detectExpo(projectRoot);
+    if (expo) {
+      console.log(`[bungae] expo: auto (detected ${expo.name}@${expo.version})`);
+      fileConfig = withExpo({ ...fileConfig, root: projectRoot });
+    } else {
+      console.log('[bungae] expo: off (no expo dependency in package.json)');
+    }
   }
 
   // Build CLI config from parsed args
