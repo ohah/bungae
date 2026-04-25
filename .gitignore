@@ -42,6 +42,7 @@ coverage/
 .cache/
 *.tsbuildinfo
 
-# Reference
-reference/
+# Reference (root-level metro/repack/rolldown source mirrors only — not nested
+# `reference/` dirs like documents/src/content/docs/reference/)
+/reference/
 .claude/worktrees/
