@@ -6,7 +6,7 @@
  */
 
 import { existsSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, dirname } from 'path';
 
 import {
   init,
@@ -140,6 +140,7 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     opts.jsxInJs = true;
     opts.configurableExports = true;
     opts.strictExecutionOrder = true;
+    opts.entryErrorGuard = true;
     opts.workletTransform = true;
 
     // Reanimated runtime의 jsVersion과 대조를 위해 사용자 설치 worklets 패키지 버전을 주입.
@@ -214,20 +215,38 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
       opts.collectModuleCodes = true;
 
       // DevLoadingView hide workaround
-      const hideLoadingView =
-        'setTimeout(function(){try{NativeModules.DevLoadingView.hide()}catch(e){}},0);';
-      opts.footer = hideLoadingView;
+      // + __BUNGAE_BUNDLER__ / __BUNGAE_VERSION__
+      //
+      // **중요**: iOS 26.4+ Hermes 는 top-level `globalThis.X = ...` 구문을 감지하면
+      // spec global (`Location`, `TextEncoderStream` 등) placeholder 를 lazy 등록한다.
+      // placeholder 가 `configurable: false` 이므로 그 후 expo-metro-runtime 의
+      // `Location.install()` 이 `Object.defineProperty(global, 'Location', ...)` 시도 →
+      // throw → 부팅 실패. Metro bundle 은 모든 globalThis assignment 를 module factory
+      // 안(nested) 에 두기 때문에 이 trigger 를 피함.
+      //
+      // ZTS 도 같은 mechanism — bungae 식별자는 IIFE 로 wrap 해서 *local var* 에
+      // assignment 하는 형태로 emit. 사용자 앱은 동일하게 `globalThis.__BUNGAE_BUNDLER__`
+      // 로 read 가능 (실제로는 globalThis 위에 올라감).
+      const footer = [
+        `(function(g){g.__BUNGAE_BUNDLER__=true;g.__BUNGAE_VERSION__=${JSON.stringify(VERSION)};})(typeof globalThis!=='undefined'?globalThis:typeof global!=='undefined'?global:typeof window!=='undefined'?window:this);`,
+        'setTimeout(function(){try{NativeModules.DevLoadingView.hide()}catch(e){}},0);',
+      ].join('');
+      opts.footer = footer;
     }
 
-    // RN prelude (Metro prelude equivalent)
-    const prelude = [
-      `var __BUNDLE_START_TIME__=this.nativePerformanceNow?nativePerformanceNow():Date.now();`,
-      `var __DEV__=${config.dev};`,
-      `var __BUNGAE_GLOBAL__=typeof globalThis!=='undefined'?globalThis:typeof global!=='undefined'?global:typeof window!=='undefined'?window:this;`,
-      `if(typeof global==='undefined')var global=__BUNGAE_GLOBAL__;`,
-      `var process=__BUNGAE_GLOBAL__.process||{};process.env=process.env||{};process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";`,
-      `globalThis.__BUNGAE_BUNDLER__=true;globalThis.__BUNGAE_VERSION__=${JSON.stringify(VERSION)};`,
-    ].join('');
+    // RN prelude — Metro prelude 와 문법적으로 정확히 동등하게. Metro 는:
+    //   `var __BUNDLE_START_TIME__=globalThis.nativePerformanceNow?...,__DEV__=true,process=globalThis.process||{},...`
+    // (comma-separated 단일 var statement, `globalThis.X` access) 형태.
+    // ZTS 도 같은 문법으로 — Hermes 의 parse 시점 static analysis 가 spec global
+    // placeholder 등록을 trigger 하는 어떤 pattern 을 피할 가능성. 검증 중.
+    const prelude =
+      `var __BUNDLE_START_TIME__=globalThis.nativePerformanceNow?nativePerformanceNow():Date.now(),` +
+      `__DEV__=${config.dev},` +
+      `process=globalThis.process||{};` +
+      `process.env=process.env||{};` +
+      `process.env.NODE_ENV=process.env.NODE_ENV||"${config.dev ? 'development' : 'production'}";` +
+      `var __BUNGAE_GLOBAL__=typeof globalThis!=='undefined'?globalThis:typeof global!=='undefined'?global:typeof window!=='undefined'?window:this;` +
+      `if(typeof global==='undefined')var global=__BUNGAE_GLOBAL__;`;
     opts.banner = prelude;
 
     // Compile-time defines (override ZTS auto-define)
@@ -250,10 +269,40 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
       polyfills.push(polyfillPath);
     }
 
-    // InitializeCore: runs before entry module (Metro runBeforeMainModule)
+    // runBeforeMainModule — `@expo/metro-config` 의 `getModulesRunBeforeMainModule`
+    // 와 정확히 동등 순서. Metro 의 entry trigger (`__r(N)` 별 outer guardedLoadModule
+    // 호출) 가 이 순서대로 emit. 각 path 가 별 outer 라 한 layer throw (예: iOS 26.4
+    // `Location` placeholder) 가 다음 layer 영향 없이 평가 진행 → entry 도달 → main 등록.
+    //
+    // 1. InitializeCore — RN runtime 초기화 (MUST be first)
+    // 2. expo/winter — WinterCG polyfill (TextEncoderStream, URL 등)
+    // 3. @expo/metro-runtime — Location.install, fetch polyfill 등 (placeholder 충돌 가능)
     const initCorePath = tryResolve('react-native/Libraries/Core/InitializeCore', config.root);
     if (initCorePath) {
       runBeforeMain.push(initCorePath);
+    }
+    // 같은 인스턴스 보장 — expo-router 가 require 하는 view 에서 resolve.
+    // Top-level `node_modules/@expo/metro-runtime` 는 다른 instance 라 chain (require 등)
+    // 깨질 수 있음. expo-router 의 dirname 기준으로 require.resolve 하면 expo-router 의
+    // 자체 dependency 인 같은 hash 인스턴스가 잡힘.
+    const expoPkgPath = tryResolve('expo/package.json', config.root);
+    const expoDir = expoPkgPath ? dirname(expoPkgPath) : config.root;
+    const expoRouterPkgPath = tryResolve('expo-router/package.json', config.root);
+    const expoRouterDir = expoRouterPkgPath
+      ? dirname(expoRouterPkgPath)
+      : config.root;
+
+    const winterPath =
+      tryResolve('expo/src/winter/index.ts', expoDir) ||
+      tryResolve('expo/src/winter/index', expoDir) ||
+      tryResolve('expo/build/winter/index.js', expoDir);
+    if (winterPath) {
+      runBeforeMain.push(winterPath);
+    }
+    // expo-router 의 view — entry-classic.js 가 require 한 동일 인스턴스 보장
+    const expoMetroRuntimePath = tryResolve('@expo/metro-runtime', expoRouterDir);
+    if (expoMetroRuntimePath) {
+      runBeforeMain.push(expoMetroRuntimePath);
     }
 
     // Reserved global identifiers — prevent scope hoisting collisions
