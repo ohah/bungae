@@ -305,6 +305,18 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
       runBeforeMain.push(expoMetroRuntimePath);
     }
 
+    // expo winter polyfill 워닝 silent — `expo/src/winter/installGlobal.ts:96` 가 iOS host
+    // 의 immutable spec global (Location/TextEncoderStream/TextDecoderStream, 관측 환경:
+    // iPad iOS 26.4 + Expo SDK 55) 위에 redefine 시도 시 출력하는 console.error 차단.
+    // RN core 의 `polyfillObjectProperty` 도 동일 메시지 형식이지만 polyfill 대상 (Promise/
+    // setTimeout 등) 이 native immutable 과 안 겹쳐 vanilla RN 에선 trigger 안 됨 — 따라서
+    // expo 감지될 때만 주입. ZTS 측 mechanism (`silentConsoleErrorPatterns`) 은 generic.
+    if (expoPkgPath) {
+      opts.silentConsoleErrorPatterns = [
+        '^Failed to set polyfill\\.\\s+\\w+\\s+is not configurable\\.?$',
+      ];
+    }
+
     // Reserved global identifiers — prevent scope hoisting collisions
     for (const name of RN_GLOBAL_IDENTIFIERS) {
       globalIdentifiers.push(name);
