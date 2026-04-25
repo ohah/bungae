@@ -1,0 +1,149 @@
+---
+title: Bungae
+description: Metro 호환 React Native 번들러 — Zig 코어 + Bun 런타임으로 5x 빠른 번들
+template: splash
+head:
+  - tag: style
+    content: |
+      main > .content-panel:first-child { display: none !important; }
+      main > .content-panel { padding: 0 !important; border-top: 0 !important; }
+      main > .content-panel > .sl-container { max-width: 100% !important; margin-inline: 0 !important; }
+      main > .content-panel > .sl-container > .sl-markdown-content { max-width: 100% !important; }
+      section.not-content .mx-auto { margin-inline: auto !important; }
+      section.not-content .mt-2 { margin-top: .5rem !important; }
+      section.not-content .mt-6 { margin-top: 1.5rem !important; }
+      section.not-content .mb-2 { margin-bottom: .5rem !important; }
+      section.not-content .mb-3 { margin-bottom: .75rem !important; }
+      section.not-content .mb-8 { margin-bottom: 2rem !important; }
+      section.not-content .mb-12 { margin-bottom: 3rem !important; }
+      section.not-content .ml-2 { margin-left: .5rem !important; }
+---
+
+import Hero from "../../components/landing/Hero.astro";
+import StatsStrip from "../../components/landing/StatsStrip.astro";
+import FeatureGrid from "../../components/landing/FeatureGrid.astro";
+import Section from "../../components/landing/Section.astro";
+import CtaCard from "../../components/landing/CtaCard.astro";
+import { Tabs, TabItem } from "@astrojs/starlight/components";
+
+<Hero
+  eyebrow="⚡ Metro Compatible · Zig Core · Bun Runtime"
+  title={`5x 빠른\nReact Native 번들러`}
+  subtitle="Bungae는 Metro 호환 React Native 번들러입니다. Zig 기반 ZTS 트랜스파일러를 NAPI로 in-process 호출하고 Bun 런타임 위에서 동작합니다. Metro 대비 빌드 시간 5x 단축, 같은 설정 그대로 마이그레이션."
+  actions={[
+    { text: "시작하기 →", href: "/bungae/guides/introduction/", primary: true },
+    { text: "왜 빠른가", href: "/bungae/guides/why-fast/" },
+    { text: "GitHub", href: "https://github.com/ohah/bungae" },
+  ]}
+  codeFilename="bungae.config.ts"
+  codeLang="ts"
+  codeExample={`import { defineConfig, withExpo } from 'bungae';
+
+export default withExpo(defineConfig({
+  root: __dirname,
+  entry: 'index.js',
+  bundler: 'zts',
+}));`}
+/>
+
+<StatsStrip
+  stats={[
+    { value: "2.2", unit: "s", label: "프로덕션 번들", caption: "1595 files · iOS minified" },
+    { value: "5.2", unit: "×", label: "faster", caption: "vs Metro (11.5s)" },
+    { value: "0", unit: "", label: "config 마이그레이션", caption: "Metro에서 한 줄도 안 바꿈" },
+    { value: "100", unit: "%", label: "Metro HMR 호환", caption: "기본 HMRClient 그대로" },
+  ]}
+  note="ExampleApp · darwin arm64 · RN 0.85 · production minified"
+/>
+
+<FeatureGrid
+  heading="왜 Bungae 인가"
+  subheading="Metro 호환을 깨지 않으면서 Zig 코어로 빌드 시간을 절단."
+  features={[
+    {
+      icon: "⚡",
+      title: "Zig 네이티브 트랜스파일러",
+      body: "TypeScript · JSX · Flow를 Zig로 작성된 ZTS가 처리. Babel/SWC 대비 콜드 스타트 없음. NAPI로 in-process 호출.",
+    },
+    {
+      icon: "🔌",
+      title: "Metro HMR 프로토콜 호환",
+      body: "React Native 내장 HMRClient를 그대로 사용. Fast Refresh, console forwarding, 에러 오버레이까지 동일. RN 업그레이드도 자동 추격.",
+    },
+    {
+      icon: "🚀",
+      title: "Bun 런타임",
+      body: "Bun.serve(HTTP+WS), Bun.file(I/O) 직접 활용. dev server cold start ~ms 수준. 워커 스레드 / 캐시 / 빌드 파이프라인 모두 Bun 내장 사용.",
+    },
+    {
+      icon: "🟢",
+      title: "Expo 1급 지원",
+      body: "withExpo() 한 줄로 winter polyfill, @expo/metro-runtime, expo-image/sqlite asset extension까지 자동. monorepo hoisting false-positive 없음.",
+    },
+  ]}
+/>
+
+<Section>
+  <div class="mb-8 flex flex-col gap-3">
+    <h2 class="text-3xl font-bold tracking-tight sm:text-4xl">사용 예시</h2>
+    <p class="max-w-2xl text-base text-[color:var(--sl-color-gray-2)]">
+      Metro에서 이관하든 새로 시작하든, 한 줄로 끝납니다.
+    </p>
+  </div>
+
+  <Tabs>
+    <TabItem label="Zero Config">
+      ```bash
+      # 기존 RN 프로젝트에서 — config 파일 없이 바로 동작
+      bun add bungae
+      bun bungae start
+      # → [bungae] expo: auto (detected expo@55.0.0)  (Expo 프로젝트면)
+      # → [bungae] expo: off (no expo dependency)     (vanilla면)
+      ```
+    </TabItem>
+
+    <TabItem label="bungae init">
+      ```bash
+      # 명시적 config 파일 생성 — package.json 보고 Expo 자동 감지
+      bun bungae init
+      # ✓ wrote bungae.config.ts
+      #   detected expo@55.0.0 → wrapped with withExpo()
+      # ✓ added "start:bungae" to package.json scripts
+      # ✓ added "build:bungae" to package.json scripts
+      ```
+    </TabItem>
+
+    <TabItem label="수동 작성 (vanilla)">
+      ```ts
+      // bungae.config.ts
+      import { defineConfig } from 'bungae';
+
+      export default defineConfig({
+        root: __dirname,
+        entry: 'index.js',
+        bundler: 'zts',
+      });
+      ```
+    </TabItem>
+
+    <TabItem label="수동 작성 (Expo)">
+      ```ts
+      // bungae.config.ts
+      import { defineConfig, withExpo } from 'bungae';
+
+      export default withExpo(defineConfig({
+        root: __dirname,
+        entry: 'index.js',
+        bundler: 'zts',
+      }));
+      ```
+    </TabItem>
+  </Tabs>
+</Section>
+
+<CtaCard
+  heading="지금 바로 시작하세요"
+  description="기존 Metro 프로젝트에서 5분이면 첫 번들이 나옵니다. config 한 줄도 안 바꿔도 됩니다."
+  primary={{ text: "설치 가이드 →", href: "/bungae/guides/installation/" }}
+  secondary={{ text: "왜 빠른가 →", href: "/bungae/guides/why-fast/" }}
+/>
