@@ -46,3 +46,11 @@ coverage/
 # `reference/` dirs like documents/src/content/docs/reference/)
 /reference/
 .claude/worktrees/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+
+# Local-only scratch / debug scripts (CDP sniffers etc.)
+/scripts/
+
+# RN CLI bundle output emitted by `bungae bundle --platform ios`
+examples/*/ios/assets/
