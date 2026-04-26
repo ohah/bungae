@@ -48,7 +48,7 @@ Common Options:
   --entry-file <path>              Entry file path (RN CLI compat)
   -c, --config <path>              Path to config file
   --root <path>                    Project root directory
-  --bundler <string>               Bundler type (graph, bun, oxc)
+  --bundler <string>               Bundler type (zts, graph; default: zts)
   -j, --max-workers <number>       Maximum number of worker threads
   --reset-cache                    Clear bundler cache before building
 

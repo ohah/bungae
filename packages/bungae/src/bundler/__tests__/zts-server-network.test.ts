@@ -6,31 +6,47 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join, resolve } from 'path';
 
 import { spawn, type Subprocess } from 'bun';
 
 const EXAMPLE_APP_DIR = resolve(__dirname, '../../../../../examples/ExampleApp');
+const BUNGAE_CLI = resolve(__dirname, '../../..', 'cli/main.ts');
 const TIMEOUT = 90_000;
 const PORT = 18765;
 const BASE = `http://localhost:${PORT}`;
 
+function shellQuote(value: string) {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 describe('ZTS Server Network', () => {
   let proc: Subprocess | null = null;
+  let stdoutPath = '';
+  let stderrPath = '';
 
   beforeAll(async () => {
     if (!existsSync(resolve(EXAMPLE_APP_DIR, 'index.js'))) {
-      console.warn('ExampleApp not found, skipping');
-      return;
+      throw new Error(`ExampleApp not found: ${EXAMPLE_APP_DIR}`);
     }
 
-    // bunx bungae start --bundler zts
+    const logDir = mkdtempSync(join(tmpdir(), 'bungae-zts-server-test-'));
+    stdoutPath = join(logDir, 'stdout.log');
+    stderrPath = join(logDir, 'stderr.log');
+
+    // Run the local source CLI so this test validates the current checkout
+    // without depending on a prebuilt dist package or bunx resolution.
+    const command = ['bun', BUNGAE_CLI, 'start', '--bundler', 'zts', '--port', String(PORT)]
+      .map(shellQuote)
+      .join(' ');
     proc = spawn({
-      cmd: ['bunx', 'bungae', 'start', '--bundler', 'zts', '--port', String(PORT)],
+      cmd: ['sh', '-c', `${command} > ${shellQuote(stdoutPath)} 2> ${shellQuote(stderrPath)}`],
       cwd: EXAMPLE_APP_DIR,
-      stdout: 'pipe',
-      stderr: 'pipe',
+      env: { ...process.env, NODE_ENV: 'development' },
+      stdout: 'ignore',
+      stderr: 'ignore',
     });
 
     // 서버 시작 + 빌드 완료 대기
@@ -53,9 +69,19 @@ describe('ZTS Server Network', () => {
       await new Promise((r) => setTimeout(r, 2000));
     }
     if (!ready) {
-      console.error('[test] ZTS server failed to start');
+      const stdout = existsSync(stdoutPath) ? readFileSync(stdoutPath, 'utf8') : '';
+      const stderr = existsSync(stderrPath) ? readFileSync(stderrPath, 'utf8') : '';
       proc?.kill('SIGKILL');
       proc = null;
+      throw new Error(
+        [
+          '[test] ZTS server failed to start',
+          stdout ? `stdout:\n${stdout.slice(-4000)}` : '',
+          stderr ? `stderr:\n${stderr.slice(-4000)}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n'),
+      );
     } else {
       console.log(
         `[test] ZTS server ready (${((Date.now() - (deadline - 60_000)) / 1000).toFixed(1)}s)`,

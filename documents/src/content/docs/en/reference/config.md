@@ -16,7 +16,7 @@ Use inside `bungae.config.ts` or under the `bungae` key in `package.json`.
 | `minify` | `boolean` | `false` | Minify output |
 | `mode` | `'development' \| 'production'` | `'production'` | Metro-compatible alias |
 | `outDir` | `string` | `'dist'` | Output directory |
-| `bundler` | `'zts' \| 'graph'` | `'graph'` | **Use `'zts'` for production** |
+| `bundler` | `'zts' \| 'graph'` | `'zts'` | `zts` is the default. `graph` is a legacy fallback |
 
 ### Build Output (CLI-compatible)
 

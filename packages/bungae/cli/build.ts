@@ -182,14 +182,14 @@ async function build() {
     console.log('  ✓ Runtime (zts-hmr-client.js) copied');
   }
 
-  // Copy ZTS asset plugin (standalone subprocess — must not be bundled)
+  // Copy ZTS asset plugin (standalone plugin file — must not be bundled)
   const assetPluginSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'asset-plugin.ts');
   if (existsSync(assetPluginSrc)) {
     copyFileSync(assetPluginSrc, join(DIST, 'asset-plugin.ts'));
     console.log('  ✓ ZTS asset plugin copied');
   }
 
-  // Copy ZTS babel plugin (standalone subprocess for custom Babel transforms)
+  // Copy ZTS babel plugin (standalone plugin file for custom Babel transforms)
   const babelPluginSrc = join(ROOT, 'src', 'bundler', 'zts-bundler', 'babel-plugin.ts');
   if (existsSync(babelPluginSrc)) {
     copyFileSync(babelPluginSrc, join(DIST, 'babel-plugin.ts'));

@@ -189,7 +189,7 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     minify: false,
     outDir: 'dist',
     mode: 'production',
-    bundler: 'graph', // Default: Babel-based bundler (Metro-compatible, stable)
+    bundler: 'zts',
 
     // Build output options (all optional at CLI level, but required in ResolvedConfig)
     bundleOutput: '',

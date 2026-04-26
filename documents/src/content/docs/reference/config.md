@@ -16,7 +16,7 @@ description: BungaeConfig 전체 필드
 | `minify` | `boolean` | `false` | 미니파이 |
 | `mode` | `'development' \| 'production'` | `'production'` | Metro 호환 |
 | `outDir` | `string` | `'dist'` | 출력 디렉토리 |
-| `bundler` | `'zts' \| 'graph'` | `'graph'` | **배포에는 `'zts'`만 사용** |
+| `bundler` | `'zts' \| 'graph'` | `'zts'` | `zts`가 기본값. `graph`는 레거시 fallback |
 
 ### 빌드 출력 (CLI 호환)
 

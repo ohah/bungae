@@ -294,9 +294,9 @@ export interface BungaeConfig {
   mode?: Mode;
   /**
    * Bundler type to use
-   * - 'graph': Babel-based bundler (Metro-compatible, stable)
-   * - 'zts': Zig-based transpiler/bundler (fast, subprocess)
-   * @default 'graph'
+   * - 'zts': Zig/NAPI-based bundler (default)
+   * - 'graph': legacy Babel-based bundler
+   * @default 'zts'
    */
   bundler?: BundlerType;
 

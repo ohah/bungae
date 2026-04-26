@@ -1,8 +1,8 @@
 /**
  * Bundler module - Exports bundling functions
  *
- * graph-bundler: Babel-based, Metro-compatible, stable
- * zts-bundler: Zig-based transpiler/bundler, fast (subprocess)
+ * zts-bundler: Zig/NAPI-based React Native bundler (default)
+ * graph-bundler: legacy Babel-based bundler
  *
  * Select bundler via config.bundler: 'graph' | 'zts'
  */
@@ -12,10 +12,10 @@ import type { ResolvedConfig } from '../config/types';
 // Re-export types from graph-bundler
 export type { BuildResult, GraphModule, BuildOptions } from './graph-bundler';
 
-// Graph bundler with Metro __d()/__r() module system (default, stable)
+// Graph bundler with Metro __d()/__r() module system (legacy fallback)
 export { buildWithGraph, serveWithGraph } from './graph-bundler';
 
-// ZTS bundler (Zig-based, subprocess)
+// ZTS bundler (Zig-based, NAPI in-process)
 export { buildWithZts, serveWithZts } from './zts-bundler';
 
 /**

@@ -65,7 +65,7 @@ bungae start                        # 멀티 플랫폼 동시 서빙
 | `-e, --entry <path>` / `--entry-file <path>` | 엔트리 파일 |
 | `-c, --config <path>` | 설정 파일 경로 |
 | `--root <path>` | 프로젝트 루트 |
-| `--bundler <zts\|graph>` | 번들러 선택 (배포에는 `zts`만 사용) |
+| `--bundler <zts\|graph>` | 번들러 선택 (기본: `zts`, `graph`는 레거시 fallback) |
 | `-j, --max-workers <number>` | 워커 스레드 수 |
 | `--reset-cache` | 캐시 무효화 |
 

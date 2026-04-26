@@ -65,7 +65,7 @@ bungae start                        # serve all platforms simultaneously
 | `-e, --entry <path>` / `--entry-file <path>` | Entry file |
 | `-c, --config <path>` | Config file path |
 | `--root <path>` | Project root |
-| `--bundler <zts\|graph>` | Bundler selection (use `zts` for production) |
+| `--bundler <zts\|graph>` | Bundler selection (default: `zts`, `graph` is a legacy fallback) |
 | `-j, --max-workers <number>` | Worker thread count |
 | `--reset-cache` | Invalidate cache |
 

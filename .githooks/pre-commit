@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+
+format_staged() {
+  pattern="$1"
+  shift
+
+  git diff --cached --name-only --diff-filter=ACMR |
+    grep -E "$pattern" |
+    while IFS= read -r file; do
+      [ -f "$file" ] || continue
+      "$@" "$file"
+      git add "$file"
+    done
+}
+
+format_staged '(^|/)[^/]+\.(cjs|cts|js|json|jsx|mjs|mts|ts|tsx)$' bunx oxfmt
+format_staged '(^|/)[^/]+\.zig$' zig fmt
