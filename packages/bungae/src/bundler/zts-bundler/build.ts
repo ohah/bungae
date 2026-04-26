@@ -6,10 +6,10 @@ import { mkdirSync, copyFileSync, readdirSync } from 'fs';
 import { join, dirname, extname, basename, relative } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
-import type { BuildResult } from '../graph-bundler';
-import { logInfo, logWarn } from '../graph-bundler/utils';
 import { buildWithNapi } from './napi-build';
 import { SCALE_REGEX, IOS_SCALES } from './plugin-core';
+import type { BuildResult } from './types';
+import { logInfo, logWarn } from './utils';
 
 /**
  * 에셋 파일을 플랫폼별 출력 디렉토리에 복사.

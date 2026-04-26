@@ -20,19 +20,14 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { VERSION } from '../../../index';
-import { loadDevMiddleware, type DevMiddleware } from '../../graph-bundler/server/dev-middleware';
-import { handleAssetRequest } from '../../graph-bundler/server/handlers/asset-handler';
-import { sendIndexPage } from '../../graph-bundler/server/handlers/index-handler';
-import { handleOpenUrl } from '../../graph-bundler/server/handlers/open-url-handler';
-import {
-  parseRequestUrl,
-  readJsonBody,
-  sendJson,
-  sendText,
-} from '../../graph-bundler/server/utils';
-import { setupTerminalActions } from '../../graph-bundler/terminal-actions';
-import { colors, logBundle, logInfo, logError, printBanner } from '../../graph-bundler/utils';
 import { watchWithNapi } from '../napi-build';
+import { setupTerminalActions } from '../terminal-actions';
+import { colors, logBundle, logInfo, logError, printBanner } from '../utils';
+import { loadDevMiddleware, type DevMiddleware } from './dev-middleware';
+import { handleAssetRequest } from './handlers/asset-handler';
+import { sendIndexPage } from './handlers/index-handler';
+import { handleOpenUrl } from './handlers/open-url-handler';
+import { parseRequestUrl, readJsonBody, sendJson, sendText } from './utils';
 
 /**
  * zts 소스맵 후처리: x_google_ignoreList 확장.
@@ -232,8 +227,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         }
       },
       onRebuild(event: WatchRebuildEvent) {
-        const duration =
-          event.phaseDurations?.total ?? Date.now() - state!.lastRebuildTime;
+        const duration = event.phaseDurations?.total ?? Date.now() - state!.lastRebuildTime;
         state!.lastRebuildTime = Date.now();
 
         if (!event.success) {

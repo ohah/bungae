@@ -34,6 +34,11 @@ import { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills } from './rn-cons
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
 
+type BungaeZtsBuildOptions = BuildOptions & {
+  entryErrorGuard?: boolean;
+  silentConsoleErrorPatterns?: string[];
+};
+
 /**
  * 프로젝트 루트 기준으로 zts.node 경로를 탐색한다.
  * 번개 dist에서 실행될 때 @zts/core의 findAddon()이 경로를 못 찾으므로 직접 탐색.
@@ -71,7 +76,7 @@ function getPluginConfig(config: ResolvedConfig): PluginConfig {
  * Maps the same options that buildZtsArgs() in process.ts produces as CLI flags,
  * but as a structured object for the NAPI build() / watch() API.
  */
-function buildNapiOptions(config: ResolvedConfig): BuildOptions {
+function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   const platform = config.platform === 'web' ? 'browser' : 'react-native';
   const rnPlatform =
     config.platform === 'ios' ? 'ios' : config.platform === 'android' ? 'android' : 'ios';
@@ -88,7 +93,7 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
   plugins.push(createCodegenPlugin(pluginConfig));
   plugins.push(createBabelPlugin(pluginConfig));
 
-  const opts: BuildOptions = {
+  const opts: BungaeZtsBuildOptions = {
     entryPoints: [resolve(config.root, config.entry)],
     platform,
     sourcemap: config.sourceMap || config.dev,
@@ -262,7 +267,8 @@ function buildNapiOptions(config: ResolvedConfig): BuildOptions {
     // dir 가 절대 경로면 그대로 사용.
     define['process.env.EXPO_ROUTER_APP_ROOT'] = JSON.stringify(resolve(config.root, 'app'));
     define['process.env.EXPO_ROUTER_IMPORT_MODE'] = '"sync"';
-    define['process.env.EXPO_OS'] = `"${config.platform === 'web' ? 'web' : config.platform === 'android' ? 'android' : 'ios'}"`;
+    define['process.env.EXPO_OS'] =
+      `"${config.platform === 'web' ? 'web' : config.platform === 'android' ? 'android' : 'ios'}"`;
 
     // Polyfills: console.js, error-guard.js — IIFE-wrapped, executed at bundle start
     for (const polyfillPath of resolveRnPolyfills(config.root)) {

@@ -26,5 +26,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["node_modules", "dist", "build", "examples", "reference"]
+  "include": ["packages/**/*"],
+  "exclude": ["node_modules", "dist", "build", "examples", "reference", "zts"]
 }

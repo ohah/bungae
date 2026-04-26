@@ -15,8 +15,8 @@
  * workspace packages cannot leak Expo into a vanilla RN config.
  */
 
-import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
+import { dirname, join } from 'path';
 
 import type { BungaeConfig } from '../../config/types';
 import { tryResolve } from './rn-constants';
@@ -31,16 +31,13 @@ export function detectExpo(
   projectRoot: string,
 ): { name: 'expo' | 'expo-router'; version: string } | undefined {
   try {
-    const pkg = JSON.parse(
-      readFileSync(join(projectRoot, 'package.json'), 'utf8'),
-    ) as {
+    const pkg = JSON.parse(readFileSync(join(projectRoot, 'package.json'), 'utf8')) as {
       dependencies?: Record<string, string>;
       devDependencies?: Record<string, string>;
     };
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
     if (deps.expo) return { name: 'expo', version: deps.expo };
-    if (deps['expo-router'])
-      return { name: 'expo-router', version: deps['expo-router'] };
+    if (deps['expo-router']) return { name: 'expo-router', version: deps['expo-router'] };
   } catch {
     // Missing or malformed package.json — treat as non-Expo project.
   }
@@ -64,14 +61,15 @@ function resolveExpoModules(root: string): {
   const winter =
     tryResolve('expo/src/winter/index.ts', root) ??
     tryResolve('expo/src/winter/index', root) ??
-    tryResolve('expo/build/winter/index.js', root);
+    tryResolve('expo/build/winter/index.js', root) ??
+    undefined;
 
   // expo-router가 끌어오는 동일 인스턴스 보장 — top-level 패키지가 hoisted된
   // 경우 instance가 갈라져 require chain이 깨질 수 있어 expo-router의 dirname
   // 기준으로 resolve.
   const expoRouterPkg = tryResolve('expo-router/package.json', root);
   const metroRuntimeBase = expoRouterPkg ? dirname(expoRouterPkg) : root;
-  const metroRuntime = tryResolve('@expo/metro-runtime', metroRuntimeBase);
+  const metroRuntime = tryResolve('@expo/metro-runtime', metroRuntimeBase) ?? undefined;
 
   return { winter, metroRuntime };
 }
@@ -91,19 +89,13 @@ export function withExpo<T extends BungaeConfig>(config: T): T {
       assetExts: (() => {
         const existing = config.resolver?.assetExts ?? [];
         const existingNormalized = new Set(existing.map(normalizeExt));
-        return [
-          ...existing,
-          ...EXPO_ASSET_EXTS.filter((ext) => !existingNormalized.has(ext)),
-        ];
+        return [...existing, ...EXPO_ASSET_EXTS.filter((ext) => !existingNormalized.has(ext))];
       })(),
       blockList: [...(config.resolver?.blockList ?? []), ...EXPO_BLOCK_LIST],
     },
     serializer: {
       ...config.serializer,
-      runBeforeMainModule: [
-        ...(config.serializer?.runBeforeMainModule ?? []),
-        ...expoModules,
-      ],
+      runBeforeMainModule: [...(config.serializer?.runBeforeMainModule ?? []), ...expoModules],
     },
     server: {
       ...config.server,

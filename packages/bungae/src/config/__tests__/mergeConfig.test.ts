@@ -63,6 +63,7 @@ describe('mergeConfig', () => {
           extraVars: {},
           getModulesRunBeforeMainModule: () => [],
           getPolyfills: () => [],
+          runBeforeMainModule: [],
           inlineSourceMap: false,
         },
         server: {
@@ -76,6 +77,7 @@ describe('mergeConfig', () => {
           verifyConnections: false,
           unstable_serverRoot: null,
           enhanceMiddleware: (m) => m,
+          silentConsoleErrorPatterns: [],
           rewriteRequestUrl: (u) => u,
         },
         symbolicator: {
