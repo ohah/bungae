@@ -2,84 +2,102 @@
  * ZTS one-shot build
  */
 
-import { mkdirSync, copyFileSync, readdirSync } from 'fs';
-import { join, dirname, extname, basename, relative } from 'path';
+import { existsSync } from 'fs';
+import { join } from 'path';
 
 import type { ResolvedConfig } from '../../config/types';
 import { buildWithNapi } from './napi-build';
-import { SCALE_REGEX, IOS_SCALES } from './plugin-core';
-import type { BuildResult } from './types';
-import { logInfo, logWarn } from './utils';
+import type { AssetInfo, BuildResult } from './types';
+import { logInfo } from './utils';
 
 /**
- * 에셋 파일을 플랫폼별 출력 디렉토리에 복사.
- * Metro의 saveAssets 동작 호환.
+ * Extract Metro-compatible asset metadata from the ZTS-emitted registerAsset calls.
+ *
+ * ZTS core owns AssetRegistry module generation, while Bungae's release copy step
+ * expects BuildResult.assets. The generated object includes fileSystemLocation, so
+ * we can bridge that metadata without scanning unrelated project files.
  */
-function copyAssets(config: ResolvedConfig, outputDir: string): void {
-  const assetExts = new Set(
-    (config.resolver?.assetExts ?? []).map((e: string) => (e.startsWith('.') ? e : `.${e}`)),
-  );
-  if (assetExts.size === 0) return;
+function extractAssetsFromBundle(code: string): AssetInfo[] {
+  const assets: AssetInfo[] = [];
+  const seen = new Set<string>();
+  const registerAssetPattern = /registerAsset\(\{([^)]*?"fileSystemLocation"[^)]*?)\}\)/gs;
 
-  const platform = config.platform ?? 'ios';
-  const assetsDir = join(outputDir, 'assets');
+  for (const match of code.matchAll(registerAssetPattern)) {
+    const body = match[1];
+    if (!body) continue;
 
-  // 번들 소스에서 에셋 파일 수집 (node_modules 제외)
-  function walkDir(dir: string) {
-    let dirEntries;
-    try {
-      dirEntries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
+    const fileSystemLocation = readStringField(body, 'fileSystemLocation');
+    const httpServerLocation = readStringField(body, 'httpServerLocation');
+    const name = readStringField(body, 'name');
+    const type = readStringField(body, 'type');
+    const width = readNumberField(body, 'width');
+    const height = readNumberField(body, 'height');
+    const scales = readNumberArrayField(body, 'scales');
+
+    if (!fileSystemLocation || !httpServerLocation || !name || !type || !width || !height) {
+      continue;
     }
-    for (const entry of dirEntries) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === '.bungae')
-          continue;
-        walkDir(fullPath);
-      } else if (entry.isFile() && assetExts.has(extname(entry.name).toLowerCase())) {
-        copyAssetFile(fullPath, config.root, assetsDir, platform);
-      }
-    }
+
+    const filePath = resolveAssetFile(fileSystemLocation, name, type, scales);
+    if (!filePath) continue;
+
+    const key = `${fileSystemLocation}:${name}:${type}:${scales.join(',')}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    assets.push({
+      filePath,
+      httpServerLocation,
+      name,
+      type,
+      width,
+      height,
+      scales,
+    });
   }
 
-  walkDir(config.root);
+  return assets;
 }
 
-function copyAssetFile(filePath: string, projectRoot: string, assetsDir: string, platform: string) {
-  const ext = extname(filePath);
-  const nameWithoutExt = basename(filePath, ext);
-  const dir = dirname(filePath);
+function readStringField(body: string, field: string): string | null {
+  const match = body.match(new RegExp(`"${field}"\\s*:\\s*"([^"]*)"`));
+  return match?.[1] ?? null;
+}
 
-  // 스케일 변형 수집
-  const baseNameMatch = nameWithoutExt.match(SCALE_REGEX);
-  const baseName = baseNameMatch ? nameWithoutExt.replace(SCALE_REGEX, '') : nameWithoutExt;
+function readNumberField(body: string, field: string): number | null {
+  const match = body.match(new RegExp(`"${field}"\\s*:\\s*(\\d+(?:\\.\\d+)?)`));
+  return match?.[1] ? Number(match[1]) : null;
+}
 
-  // 디렉토리 내 같은 이름의 스케일 변형 찾기
-  let files: string[];
-  try {
-    files = readdirSync(dir);
-  } catch {
-    return;
+function readNumberArrayField(body: string, field: string): number[] {
+  const match = body.match(new RegExp(`"${field}"\\s*:\\s*\\[([^\\]]*)\\]`));
+  if (!match?.[1]) return [1];
+  const values = match[1]
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  return values.length > 0 ? values : [1];
+}
+
+function resolveAssetFile(
+  fileSystemLocation: string,
+  name: string,
+  type: string,
+  scales: number[],
+): string | null {
+  const candidates = new Set<string>();
+  candidates.add(join(fileSystemLocation, `${name}.${type}`));
+
+  for (const scale of scales) {
+    if (scale === 1) continue;
+    candidates.add(join(fileSystemLocation, `${name}@${scale}x.${type}`));
   }
 
-  for (const file of files) {
-    if (!file.endsWith(ext)) continue;
-    const fName = basename(file, ext);
-    if (fName !== baseName && !fName.startsWith(`${baseName}@`)) continue;
-
-    const scaleMatch = fName.match(SCALE_REGEX);
-    const scale = scaleMatch?.[1] ? parseFloat(scaleMatch[1]) : 1;
-
-    // 플랫폼별 스케일 필터링
-    if (platform === 'ios' && !IOS_SCALES.has(scale)) continue;
-
-    const relPath = relative(projectRoot, dir).replace(/\\/g, '/');
-    const destDir = join(assetsDir, relPath);
-    mkdirSync(destDir, { recursive: true });
-    copyFileSync(join(dir, file), join(destDir, file));
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
   }
+
+  return null;
 }
 
 /**
@@ -99,18 +117,10 @@ export async function buildWithZts(
   const napiResult = await buildWithNapi(config, outputPath);
   const code = napiResult.code;
   const map = napiResult.map;
-
-  // 에셋 파일 복사 (prod build)
-  if (!config.dev) {
-    try {
-      copyAssets(config, config.outDir);
-    } catch (err) {
-      logWarn(`Asset copy: ${err}`);
-    }
-  }
+  const assets = config.dev ? [] : extractAssetsFromBundle(code);
 
   // Signal completion
   onProgress?.(1, 1);
 
-  return { code, map };
+  return { code, map, assets };
 }

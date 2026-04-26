@@ -54,3 +54,4 @@ coverage/
 
 # RN CLI bundle output emitted by `bungae bundle --platform ios`
 examples/*/ios/assets/
+examples/*/.bundle-compare/
