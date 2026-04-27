@@ -7,7 +7,7 @@
  */
 
 import { readFileSync, existsSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { basename, dirname, join, relative } from 'node:path';
 
 // ===== Constants =====
 
@@ -194,7 +194,7 @@ export function createBabelTransformer(
  * ZTS가 `@react-native/babel-preset`을 자체 처리하지만 그 안의 `@react-native/babel-plugin-codegen`은
  * 미구현. RN 0.85+ New Arch에서 Fabric이 `DebuggingOverlay` 등을 자동 등록하면서 JS view config 부재가
  * 크래시로 이어짐 (View config not found for component `DebuggingOverlay`). 이 워크어라운드로 해당
- * 플러그인만 Babel 파이프라인으로 실행해서 번들에 view config를 직접 박음.
+ * 파일만 `@react-native/codegen`으로 schema화해서 번들에 view config를 직접 박음.
  *
  * ZTS 네이티브 구현은 ohah/zts#1589 (Metro 호환성 meta) A-1 항목.
  */
@@ -202,13 +202,14 @@ export const CODEGEN_NATIVE_COMPONENT_MARKER = 'codegenNativeComponent';
 
 /** .js/.ts 파일만 처리 (플러그인이 .jsx/.tsx 미지원) */
 const CODEGEN_FILENAME_PATTERN = /\.(js|ts)$/;
+const CODEGEN_EXPORT_PATTERN = /export\s+default[\s\S]*?\bcodegenNativeComponent\s*(?:<|\()/;
 
 export function createCodegenTransformer(
   projectRoot: string,
 ): (code: string, filename: string) => string | null {
-  let babel: any = null;
-  let codegenPlugin: any = null;
-  let babelOptions: any = null;
+  let flowParser: any = null;
+  let typeScriptParser: any = null;
+  let rnCodegen: any = null;
 
   // Diagnostic timer (BUNGAE_CODEGEN_PROFILE=1 to enable per-file logs)
   const profile = process.env.BUNGAE_CODEGEN_PROFILE === '1';
@@ -228,62 +229,89 @@ export function createCodegenTransformer(
     process.exit(130);
   });
 
-  function ensureBabel() {
-    if (babel) return;
-    babel = require('@babel/core');
+  let codegenResolvePaths: string[] | null = null;
+  function getCodegenResolvePaths() {
+    if (codegenResolvePaths) return codegenResolvePaths;
 
-    // Resolve from projectRoot first, fall back to bungae's own location.
-    // Bun의 deep-linked node_modules에서 일부 패키지가 workspace root에 symlink되지 않을 수 있음.
+    codegenResolvePaths = [projectRoot, __dirname];
     try {
-      const codegenPath = (() => {
-        try {
-          return require.resolve('@react-native/babel-plugin-codegen', {
-            paths: [projectRoot, __dirname],
-          });
-        } catch {
-          return require.resolve('@react-native/babel-plugin-codegen');
-        }
-      })();
-      codegenPlugin = require(codegenPath);
+      const reactNativePackage = require.resolve('react-native/package.json', {
+        paths: [projectRoot, __dirname],
+      });
+      codegenResolvePaths.push(dirname(reactNativePackage));
+    } catch {
+      // React Native is optional for non-RN projects; the direct codegen require below will report.
+    }
+    return codegenResolvePaths;
+  }
+
+  function requireCodegenModule(srcPath: string, libPath: string) {
+    for (const request of [srcPath, libPath]) {
+      try {
+        return require(require.resolve(request, { paths: getCodegenResolvePaths() }));
+      } catch {}
+    }
+
+    try {
+      return require(srcPath);
+    } catch {
+      return require(libPath);
+    }
+  }
+
+  function ensureCodegen() {
+    if (rnCodegen) return;
+
+    try {
+      const FlowParser = requireCodegenModule(
+        '@react-native/codegen/src/parsers/flow/parser',
+        '@react-native/codegen/lib/parsers/flow/parser',
+      ).FlowParser;
+      const TypeScriptParser = requireCodegenModule(
+        '@react-native/codegen/src/parsers/typescript/parser',
+        '@react-native/codegen/lib/parsers/typescript/parser',
+      ).TypeScriptParser;
+
+      flowParser = new FlowParser();
+      typeScriptParser = new TypeScriptParser();
+      rnCodegen = requireCodegenModule(
+        '@react-native/codegen/src/generators/RNCodegen',
+        '@react-native/codegen/lib/generators/RNCodegen',
+      );
     } catch (e: any) {
       process.stderr.write(
-        `[bungae:codegen] @react-native/babel-plugin-codegen not found (${e.message?.slice(0, 80)}) — view config inlining disabled\n`,
+        `[bungae:codegen] @react-native/codegen not found (${e.message?.slice(0, 80)}) — view config inlining disabled\n`,
       );
       throw e;
     }
+  }
 
-    // Parser 플러그인은 파일 확장자에 따라 per-call로 결정 (아래 transform에서).
-    // Flow/TS 타입 스트리핑은 ZTS가 후속 단계에서 처리하므로 preset 불필요.
-    babelOptions = {
-      babelrc: false,
-      configFile: false,
-      compact: false,
-      sourceMaps: false,
-      plugins: [codegenPlugin],
-    };
+  function generateViewConfig(code: string, filename: string): string {
+    ensureCodegen();
+
+    const schema = filename.endsWith('.ts')
+      ? typeScriptParser.parseString(code)
+      : flowParser.parseString(code);
+    const libraryName = basename(filename).replace(/NativeComponent\.(js|ts)$/, '');
+
+    return rnCodegen.generateViewConfig({
+      libraryName,
+      schema,
+    });
   }
 
   return (code: string, filename: string): string | null => {
     if (!CODEGEN_FILENAME_PATTERN.test(filename)) return null;
+    if (filename.endsWith('.d.ts')) return null;
     if (!code.includes(CODEGEN_NATIVE_COMPONENT_MARKER)) return null;
-
-    // RN NativeComponent 파일은 확장자로 언어 구분:
-    // - .js → Flow 제네릭(<T>)
-    // - .ts → TypeScript 제네릭(<T>), interface, as 등
-    // babel-plugin-codegen 내부 parseFile()도 같은 확장자 기준으로 분기.
-    const parserPlugins = filename.endsWith('.ts') ? ['typescript'] : ['flow'];
+    if (!CODEGEN_EXPORT_PATTERN.test(code)) return null;
 
     const t0 = performance.now();
     try {
-      ensureBabel();
-      const result = babel.transformSync(code, {
-        ...babelOptions,
-        filename,
-        parserOpts: { plugins: parserPlugins },
-      });
+      const result = generateViewConfig(code, filename);
       const dt = performance.now() - t0;
       totalMs += dt;
-      if (result?.code && result.code !== code) {
+      if (result && result.includes('__INTERNAL_VIEW_CONFIG')) {
         inlinedCount++;
         if (profile) {
           process.stderr.write(
@@ -294,7 +322,7 @@ export function createCodegenTransformer(
             `[bungae:codegen] ${filename.split('/').pop()}: view config inlined\n`,
           );
         }
-        return result.code;
+        return result;
       }
       skippedCount++;
       return null;

@@ -21,6 +21,7 @@ const external = [
   '@swc/core',
   '@react-native/babel-preset',
   '@react-native/babel-plugin-codegen',
+  '@react-native/codegen',
   // All @babel/* packages
   '@babel/generator',
   '@babel/traverse',

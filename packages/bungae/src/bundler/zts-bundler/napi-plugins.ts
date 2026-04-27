@@ -198,9 +198,7 @@ export interface MetroResolveRequestOptions {
   platform: Platform;
 }
 
-export function createMetroResolveRequestPlugin(
-  opts: MetroResolveRequestOptions,
-): ZtsPlugin {
+export function createMetroResolveRequestPlugin(opts: MetroResolveRequestOptions): ZtsPlugin {
   const { resolveRequest, platform } = opts;
   const metroPlatform = platform === 'web' ? null : platform;
 
@@ -239,14 +237,14 @@ export function createMetroResolveRequestPlugin(
 }
 
 /**
- * RN codegen view config 인라인 플러그인 — `@react-native/babel-plugin-codegen` 래핑.
+ * RN codegen view config 인라인 플러그인 — `@react-native/codegen` 직접 호출.
  *
  * ZTS가 `@react-native/babel-preset`을 네이티브 처리하지만 내부의 codegen 플러그인은 미구현이라,
  * `codegenNativeComponent<Props>('Name')` 호출이 런타임에 그대로 실행됨. RN 0.85+ New Arch에서
  * Fabric의 자동 컴포넌트 등록이 늘어나면서 View config not found 크래시 유발 (DebuggingOverlay 등).
  *
- * 이 플러그인은 node_modules 포함 모든 `.js`/`.ts` 파일에서 `codegenNativeComponent` 마커를 가진
- * 파일만 Babel로 한번 더 돌려서 view config를 static 객체로 치환.
+ * 이 플러그인은 node_modules 포함 모든 `.js`/`.ts` 파일에서 `export default codegenNativeComponent`
+ * spec만 schema화한 뒤 view config를 static 객체로 치환.
  *
  * ZTS 네이티브 구현은 ohah/zts#1589 참고.
  */
