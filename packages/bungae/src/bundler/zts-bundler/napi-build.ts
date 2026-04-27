@@ -5,7 +5,7 @@
  * Converts ResolvedConfig to BuildOptions and manages plugins in-process.
  */
 
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { resolve, join } from 'path';
 
 import {
@@ -38,6 +38,51 @@ type BungaeZtsBuildOptions = BuildOptions & {
   entryErrorGuard?: boolean;
   silentConsoleErrorPatterns?: string[];
 };
+
+/**
+ * tsconfig paths 중 ZTS alias로 안전하게 표현 가능한 trailing-wildcard 매핑을 읽는다.
+ *
+ * RN/Expo 템플릿의 `"@/*": ["./*"]` 같은 경로는 Metro가 기본적으로 해석하지만,
+ * ZTS NAPI에는 별도로 전달해야 한다. 전달하지 않으면 HMR/개발 번들에서 일부
+ * `require("@/...")`가 unresolved external처럼 남아 Hermes에서 실패한다.
+ */
+export function readTsConfigPathAliases(projectRoot: string): Record<string, string> {
+  const configPath = join(projectRoot, 'tsconfig.json');
+  if (!existsSync(configPath)) return {};
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+      compilerOptions?: {
+        baseUrl?: string;
+        paths?: Record<string, string[]>;
+      };
+    };
+    const paths = config.compilerOptions?.paths;
+    if (!paths) return {};
+
+    const baseUrl = config.compilerOptions?.baseUrl ?? '.';
+    const aliases: Record<string, string> = {};
+
+    for (const [key, targets] of Object.entries(paths)) {
+      const firstTarget = targets?.[0];
+      if (!firstTarget) continue;
+
+      // ZTS alias는 prefix 치환이다. `@/* -> ./*`처럼 양쪽이 trailing wildcard인
+      // 케이스만 prefix alias로 정확히 표현할 수 있다.
+      if (!key.endsWith('/*') || !firstTarget.endsWith('/*')) continue;
+
+      const aliasKey = key.slice(0, -2);
+      const aliasTarget = firstTarget.slice(0, -2) || '.';
+      if (!aliasKey) continue;
+
+      aliases[aliasKey] = resolve(projectRoot, baseUrl, aliasTarget);
+    }
+
+    return aliases;
+  } catch {
+    return {};
+  }
+}
 
 /**
  * 프로젝트 루트 기준으로 zts.node 경로를 탐색한다.
@@ -104,6 +149,14 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
     // 기본 true 유지 (디스크 산출물 필요).
     emitDiskSourcemap: !config.dev,
   };
+
+  const tsConfigAliases = readTsConfigPathAliases(config.root);
+  if (Object.keys(tsConfigAliases).length > 0) {
+    opts.alias = {
+      ...tsConfigAliases,
+      ...(opts.alias ?? {}),
+    };
+  }
 
   // Metro 호환 watchFolders — 그래프 밖 디렉토리도 watch 루트에 추가.
   // ZTS는 dev mode(watch)에서만 의미있지만, 상수 비용이라 항상 전달.
