@@ -196,6 +196,15 @@ export function createRequireContextPlugin(): ZtsPlugin {
 export interface MetroResolveRequestOptions {
   resolveRequest: CustomResolver;
   platform: Platform;
+  customResolverOptions?: Record<string, string>;
+  sourceExts?: readonly string[];
+  assetExts?: readonly string[];
+  nodeModulesPaths?: readonly string[];
+  mainFields?: readonly string[];
+  preferNativePlatform?: boolean;
+  unstable_enablePackageExports?: boolean;
+  unstable_conditionNames?: readonly string[];
+  unstable_conditionsByPlatform?: Readonly<Record<string, readonly string[]>>;
 }
 
 export function createMetroResolveRequestPlugin(opts: MetroResolveRequestOptions): ZtsPlugin {
@@ -217,6 +226,15 @@ export function createMetroResolveRequestPlugin(opts: MetroResolveRequestOptions
               originModulePath: args.importer ?? '',
               platform: metroPlatform,
               resolveRequest: fallbackResolver as never,
+              customResolverOptions: opts.customResolverOptions ?? {},
+              sourceExts: opts.sourceExts ?? [],
+              assetExts: opts.assetExts ?? [],
+              nodeModulesPaths: opts.nodeModulesPaths ?? [],
+              mainFields: opts.mainFields ?? [],
+              preferNativePlatform: opts.preferNativePlatform ?? true,
+              unstable_enablePackageExports: opts.unstable_enablePackageExports,
+              unstable_conditionNames: opts.unstable_conditionNames,
+              unstable_conditionsByPlatform: opts.unstable_conditionsByPlatform,
             },
             args.path,
             metroPlatform,

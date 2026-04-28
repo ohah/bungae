@@ -10,6 +10,7 @@ import type {
   ServerConfig,
   SymbolicatorConfig,
   ExperimentalConfig,
+  ReporterConfig,
 } from './types';
 
 /**
@@ -73,6 +74,7 @@ export const DEFAULT_TRANSFORMER: Required<TransformerConfig> = {
   inlineRequires: false,
   babelTransformerPath: '',
   babel: { presets: [], plugins: [] },
+  getTransformOptions: () => ({ transform: {} }),
 };
 
 /**
@@ -88,6 +90,11 @@ export const DEFAULT_EXPERIMENTAL: Required<ExperimentalConfig> = {
  */
 export const DEFAULT_SYMBOLICATOR: Required<SymbolicatorConfig> = {
   customizeFrame: () => undefined,
+  customizeStack: async (stack) => stack,
+};
+
+export const DEFAULT_REPORTER: ReporterConfig = {
+  update: () => {},
 };
 
 /**
@@ -215,6 +222,7 @@ export default function getDefaultConfig(root: string = process.cwd()): Resolved
     serializer: { ...DEFAULT_SERIALIZER },
     server: { ...DEFAULT_SERVER },
     symbolicator: { ...DEFAULT_SYMBOLICATOR },
+    reporter: { ...DEFAULT_REPORTER },
     experimental: { ...DEFAULT_EXPERIMENTAL },
   };
 }

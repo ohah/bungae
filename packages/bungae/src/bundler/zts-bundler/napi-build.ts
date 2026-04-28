@@ -31,6 +31,7 @@ import {
   type PluginConfig,
 } from './napi-plugins';
 import { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills } from './rn-constants';
+import { logWarn } from './utils';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
 
@@ -38,6 +39,45 @@ type BungaeZtsBuildOptions = BuildOptions & {
   entryErrorGuard?: boolean;
   silentConsoleErrorPatterns?: string[];
 };
+
+export async function resolveEffectiveTransformConfig(
+  config: ResolvedConfig,
+): Promise<ResolvedConfig> {
+  const hook = config.transformer.getTransformOptions;
+  if (!hook) return config;
+
+  const entryFile = resolve(config.root, config.entry);
+  const result = await hook(
+    [entryFile],
+    {
+      dev: config.dev,
+      hot: config.dev,
+      platform: config.platform === 'web' ? null : config.platform,
+      customTransformOptions: config.transformOptions,
+    },
+    () => [],
+  );
+
+  const inlineRequires = result?.transform?.inlineRequires;
+  if (inlineRequires === undefined) return config;
+
+  const nextConfig: ResolvedConfig = {
+    ...config,
+    transformer: {
+      ...config.transformer,
+      inlineRequires,
+    },
+  };
+
+  if (inlineRequires === true || typeof inlineRequires === 'object') {
+    const message =
+      'transformer.getTransformOptions returned inlineRequires, but ZTS does not yet implement the inline require transform.';
+    logWarn(message);
+    config.reporter.update({ type: 'client_log', level: 'warn', data: [message] });
+  }
+
+  return nextConfig;
+}
 
 /**
  * tsconfig paths 중 ZTS alias로 안전하게 표현 가능한 trailing-wildcard 매핑을 읽는다.
@@ -187,6 +227,12 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
       createMetroResolveRequestPlugin({
         resolveRequest: config.resolver.resolveRequest,
         platform: config.platform,
+        customResolverOptions: config.resolverOptions,
+        sourceExts: config.resolver.sourceExts,
+        assetExts: config.resolver.assetExts,
+        nodeModulesPaths: config.resolver.nodeModulesPaths,
+        mainFields: ['react-native', 'browser', 'module', 'main'],
+        preferNativePlatform: config.resolver.preferNativePlatform,
       }),
     );
   }
@@ -385,7 +431,8 @@ export async function buildWithNapi(
 ): Promise<NapiBuildResult> {
   init(findZtsAddon(config.root));
 
-  const opts = buildNapiOptions(config);
+  const effectiveConfig = await resolveEffectiveTransformConfig(config);
+  const opts = buildNapiOptions(effectiveConfig);
 
   // If outputPath specified, write to disk
   if (outputPath) {

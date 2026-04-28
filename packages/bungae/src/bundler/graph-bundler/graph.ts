@@ -147,7 +147,7 @@ export async function buildGraph(
         platform: config.platform,
         dev: config.dev,
         root: config.root,
-        inlineRequires: config.transformer.inlineRequires,
+        inlineRequires: config.transformer.inlineRequires === true,
       });
 
       if (cacheEntry) {
@@ -232,7 +232,7 @@ export async function buildGraph(
           platform: config.platform,
           dev: config.dev,
           root: config.root,
-          inlineRequires: config.transformer.inlineRequires,
+          inlineRequires: config.transformer.inlineRequires === true,
         },
         {
           code,

@@ -39,6 +39,16 @@ describe('Config Defaults', () => {
     expect(config.transformer.minifier).toBe('terser'); // Metro-compatible: Metro uses Terser by default
     expect(config.transformer.inlineRequires).toBe(false);
     expect(config.transformer.babel).toEqual({ presets: [], plugins: [] });
+    expect(config.transformer.getTransformOptions).toEqual(expect.any(Function));
+  });
+
+  test('should have default reporter and symbolicator hooks', async () => {
+    const config = getDefaultConfig();
+
+    expect(config.reporter.update).toEqual(expect.any(Function));
+    expect(config.symbolicator.customizeFrame).toEqual(expect.any(Function));
+    expect(config.symbolicator.customizeStack).toEqual(expect.any(Function));
+    await expect(config.symbolicator.customizeStack([], {})).resolves.toEqual([]);
   });
 
   test('should have default serializer config', () => {

@@ -45,6 +45,24 @@ export interface CustomResolutionContext {
   platform: string | null;
   /** 기본 해석기 (위임용). 무한 재귀 방지를 위해 호출 시 자기 자신은 제외됨 */
   resolveRequest: CustomResolver;
+  /** Metro custom resolver options from config and bundle query */
+  customResolverOptions: Record<string, string>;
+  /** Source file extensions */
+  sourceExts: readonly string[];
+  /** Asset file extensions */
+  assetExts: readonly string[];
+  /** Additional node_modules search paths */
+  nodeModulesPaths: readonly string[];
+  /** Package main fields */
+  mainFields: readonly string[];
+  /** Prefer .native.* files for native platforms */
+  preferNativePlatform: boolean;
+  /** Metro package exports flag placeholder */
+  unstable_enablePackageExports?: boolean;
+  /** Metro package exports condition names placeholder */
+  unstable_conditionNames?: readonly string[];
+  /** Metro package exports platform condition placeholders */
+  unstable_conditionsByPlatform?: Readonly<Record<string, readonly string[]>>;
 }
 
 export type CustomResolver = (
@@ -99,7 +117,7 @@ export interface TransformerConfig {
   /** Minifier to use */
   minifier?: 'bun' | 'terser' | 'esbuild' | 'swc';
   /** Enable inline requires */
-  inlineRequires?: boolean;
+  inlineRequires?: boolean | Record<string, boolean>;
   /**
    * Path to a custom file transformer (Metro-compatible).
    * The module must export a `transform({ src, filename, options })` function.
@@ -127,6 +145,33 @@ export interface TransformerConfig {
     presets?: (string | [string, Record<string, unknown>])[];
     plugins?: (string | [string, Record<string, unknown>])[];
   };
+  /**
+   * Metro-compatible transform option hook.
+   *
+   * The returned inlineRequires value is reflected in Bungae's effective JS
+   * config surface, but ZTS does not yet implement the actual lazy require
+   * transform.
+   */
+  getTransformOptions?: (
+    entryFiles: readonly string[],
+    options: {
+      dev: boolean;
+      hot: boolean;
+      platform: string | null;
+      customTransformOptions: Record<string, string>;
+    },
+    getDependenciesOf: (filePath: string) => Promise<readonly string[]> | readonly string[],
+  ) =>
+    | Promise<{
+        transform?: {
+          inlineRequires?: boolean | Record<string, boolean>;
+        };
+      }>
+    | {
+        transform?: {
+          inlineRequires?: boolean | Record<string, boolean>;
+        };
+      };
 }
 
 /**
@@ -219,6 +264,27 @@ export interface SymbolicatorConfig {
     | null
     | undefined
     | Promise<{ collapse?: boolean } | null | undefined>;
+  /**
+   * Whole-stack customization after per-frame customizeFrame hooks have run.
+   */
+  customizeStack?: (
+    stack: SymbolicatorFrame[],
+    extraData: unknown,
+  ) => SymbolicatorFrame[] | Promise<SymbolicatorFrame[]>;
+}
+
+export type ReportableEvent =
+  | { type: 'initialize_started'; port?: number; projectRoot?: string }
+  | { type: 'initialize_done'; port?: number; projectRoot?: string }
+  | { type: 'bundle_build_started'; bundleDetails?: Record<string, unknown> }
+  | { type: 'bundle_transform_progressed'; transformedFileCount: number; totalFileCount: number }
+  | { type: 'bundle_build_done'; bundleDetails?: Record<string, unknown> }
+  | { type: 'bundling_error'; error: Error }
+  | { type: 'client_log'; level: string; data: unknown[] }
+  | { type: 'transform_cache_reset' };
+
+export interface ReporterConfig {
+  update(event: ReportableEvent): void;
 }
 
 /**
@@ -347,6 +413,8 @@ export interface BungaeConfig {
   server?: ServerConfig;
   /** Symbolicator configuration (Metro 호환) */
   symbolicator?: SymbolicatorConfig;
+  /** Reporter configuration (Metro 호환 subset) */
+  reporter?: ReporterConfig;
   /** Experimental configuration */
   experimental?: ExperimentalConfig;
 }
@@ -355,7 +423,16 @@ export interface BungaeConfig {
  * Resolved configuration (with defaults applied)
  */
 export interface ResolvedConfig extends Required<
-  Omit<BungaeConfig, 'resolver' | 'transformer' | 'serializer' | 'server' | 'experimental'>
+  Omit<
+    BungaeConfig,
+    | 'resolver'
+    | 'transformer'
+    | 'serializer'
+    | 'server'
+    | 'symbolicator'
+    | 'reporter'
+    | 'experimental'
+  >
 > {
   resolver: Required<Omit<ResolverConfig, 'resolveRequest'>> &
     Pick<ResolverConfig, 'resolveRequest'>;
@@ -364,5 +441,6 @@ export interface ResolvedConfig extends Required<
     Pick<SerializerConfig, 'shouldAddToIgnoreList'>;
   server: Required<ServerConfig>;
   symbolicator: Required<SymbolicatorConfig>;
+  reporter: ReporterConfig;
   experimental: Required<ExperimentalConfig>;
 }

@@ -313,8 +313,52 @@ export async function serveWithGraph(
     }
   };
 
+  const baseMiddleware = (
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: (err?: unknown) => void,
+  ): void => {
+    handleRequest(req, res).then(
+      () => {
+        if (!res.headersSent && !res.writableEnded) next();
+      },
+      (err) => next(err),
+    );
+  };
+
+  const serverFacade = {
+    processRequest: baseMiddleware,
+    end: () => {},
+    getBundler: () => null,
+    getCreateModuleId: () => null,
+    getModules: () => [],
+    getOrderedDependencyPaths: () => [],
+  };
+  const enhancedMiddleware = server.enhanceMiddleware(baseMiddleware, serverFacade);
+
   // Create HTTP server
-  const httpServer = createHttpServer(handleRequest);
+  const httpServer = createHttpServer((req, res) => {
+    try {
+      enhancedMiddleware(req, res, (err?: unknown) => {
+        if (err) {
+          logError(`Middleware error: ${err instanceof Error ? err.message : String(err)}`);
+          if (!res.headersSent) {
+            res.statusCode = 500;
+            res.end('Internal Server Error');
+          }
+        } else if (!res.headersSent) {
+          res.statusCode = 404;
+          res.end('Not Found');
+        }
+      });
+    } catch (err) {
+      logError(`Middleware threw: ${err instanceof Error ? err.message : String(err)}`);
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.end('Internal Server Error');
+      }
+    }
+  });
 
   // Handle WebSocket upgrades
   httpServer.on('upgrade', (req: IncomingMessage, socket: Duplex, head: Buffer) => {

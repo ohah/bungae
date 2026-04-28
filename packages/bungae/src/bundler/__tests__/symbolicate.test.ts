@@ -105,7 +105,11 @@ describe('Symbolicate Endpoint Tests', () => {
     }
   });
 
-  async function startTestServer(entryFile: string, platform: 'ios' | 'android' = 'ios') {
+  async function startTestServer(
+    entryFile: string,
+    platform: 'ios' | 'android' = 'ios',
+    overrides: Parameters<typeof resolveConfig>[0] = {},
+  ) {
     const config = resolveConfig(
       {
         ...getDefaultConfig(testDir),
@@ -118,6 +122,7 @@ describe('Symbolicate Endpoint Tests', () => {
           forwardClientLogs: false,
           verifyConnections: false,
         },
+        ...overrides,
       },
       testDir,
     );
@@ -536,6 +541,39 @@ export default Component;
     expect(result).toHaveProperty('stack');
     // extraData is accepted but not used in current implementation
     // (Metro-compatible for future use)
+  });
+
+  test('should run customizeFrame before customizeStack and pass extraData', async () => {
+    const entryFile = join(testDir, 'index.js');
+    writeFileSync(entryFile, "console.log('test');", 'utf-8');
+
+    const calls: string[] = [];
+    await startTestServer('index.js', 'ios', {
+      symbolicator: {
+        customizeFrame: () => {
+          calls.push('frame');
+          return { collapse: true };
+        },
+        customizeStack: (stack, extraData) => {
+          calls.push(`stack:${(extraData as { marker?: string }).marker}`);
+          return stack.map((frame) => ({ ...frame, methodName: 'customized' }));
+        },
+      },
+    });
+
+    const result = await symbolicateRequest(
+      [
+        {
+          file: `http://localhost:${serverPort}/index.bundle?platform=ios&dev=true`,
+          lineNumber: 10,
+          column: 0,
+        },
+      ],
+      { marker: 'extra' },
+    );
+
+    expect(calls).toEqual(['frame', 'stack:extra']);
+    expect(result.stack[0]).toMatchObject({ collapse: true, methodName: 'customized' });
   });
 
   test('should handle source map with no mappings gracefully', async () => {

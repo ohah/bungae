@@ -55,6 +55,9 @@ resolver: {
 }
 ```
 
+`context.customResolverOptions`에는 top-level `resolverOptions`와 bundle query
+옵션(`?resolver.foo=bar`)이 함께 들어간다.
+
 `resolveRequest` 시그니처:
 
 ```ts
@@ -63,6 +66,12 @@ type CustomResolver = (
     originModulePath: string;
     platform: string | null;
     resolveRequest: CustomResolver;  // 위임
+    customResolverOptions: Record<string, string>;
+    sourceExts: readonly string[];
+    assetExts: readonly string[];
+    nodeModulesPaths: readonly string[];
+    mainFields: readonly string[];
+    preferNativePlatform: boolean;
   },
   moduleName: string,
   platform: string | null,
@@ -79,14 +88,27 @@ type ResolutionResult =
 ```ts
 transformer: {
   minifier: 'bun' | 'terser' | 'esbuild' | 'swc';  // 기본: 'terser'
-  inlineRequires: boolean;          // 기본: false (지원 한정)
+  inlineRequires: boolean | Record<string, boolean>;  // 기본: false (ZTS에서는 config surface만)
   babelTransformerPath?: string;    // 사용자 babel transformer (svg 등)
+  getTransformOptions?: (
+    entryFiles: readonly string[],
+    options: {
+      dev: boolean;
+      hot: boolean;
+      platform: string | null;
+      customTransformOptions: Record<string, string>;
+    },
+    getDependenciesOf: (filePath: string) => Promise<readonly string[]> | readonly string[],
+  ) => Promise<{ transform?: { inlineRequires?: boolean | Record<string, boolean> } }>;
   babel?: {
     presets?: (string | [string, Record<string, unknown>])[];
     plugins?: (string | [string, Record<string, unknown>])[];
   };
 }
 ```
+
+`getTransformOptions().transform.inlineRequires`는 effective JS config에는 반영하고
+warning을 낸다. 단, ZTS transform은 아직 lazy require 변환을 구현하지 않는다.
 
 ## `serializer`
 
@@ -131,11 +153,15 @@ server: {
   verifyConnections: boolean;
   unstable_serverRoot: string | null;
 
-  enhanceMiddleware?: (mw: ConnectMiddleware, server: unknown) => ConnectMiddleware;
+  enhanceMiddleware?: (mw: ConnectMiddleware, server: MetroLikeServerFacade) => ConnectMiddleware;
   rewriteRequestUrl?: (url: string) => string;
   silentConsoleErrorPatterns?: string[];   // RegExp source strings
 }
 ```
+
+`enhanceMiddleware`의 두 번째 인자는 `processRequest`, `end`, `getBundler`,
+`getCreateModuleId`, `getModules`, `getOrderedDependencyPaths`를 제공하는 stable
+facade다.
 
 ## `symbolicator`
 
@@ -146,10 +172,26 @@ symbolicator: {
     | null
     | undefined
     | Promise<{ collapse?: boolean } | null | undefined>;
+  customizeStack?: (
+    stack: SymbolicatorFrame[],
+    extraData: unknown,
+  ) => SymbolicatorFrame[] | Promise<SymbolicatorFrame[]>;
 }
 ```
 
 `{ collapse: true }` 반환 시 DevTools에서 프레임 숨김.
+
+## `reporter`
+
+```ts
+reporter: {
+  update(event: ReportableEvent): void;
+}
+```
+
+Bungae는 Metro 호환 subset 이벤트만 발행한다: `initialize_started`,
+`initialize_done`, `bundle_build_started`, `bundle_transform_progressed`,
+`bundle_build_done`, `bundling_error`, `client_log`, `transform_cache_reset`.
 
 ## `experimental`
 

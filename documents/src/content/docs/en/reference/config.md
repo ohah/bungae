@@ -55,6 +55,9 @@ resolver: {
 }
 ```
 
+`context.customResolverOptions` includes top-level `resolverOptions` plus bundle
+query options such as `?resolver.foo=bar`.
+
 `resolveRequest` signature:
 
 ```ts
@@ -63,6 +66,12 @@ type CustomResolver = (
     originModulePath: string;
     platform: string | null;
     resolveRequest: CustomResolver;  // delegate
+    customResolverOptions: Record<string, string>;
+    sourceExts: readonly string[];
+    assetExts: readonly string[];
+    nodeModulesPaths: readonly string[];
+    mainFields: readonly string[];
+    preferNativePlatform: boolean;
   },
   moduleName: string,
   platform: string | null,
@@ -79,14 +88,28 @@ type ResolutionResult =
 ```ts
 transformer: {
   minifier: 'bun' | 'terser' | 'esbuild' | 'swc';  // default: 'terser'
-  inlineRequires: boolean;          // default: false (limited support)
+  inlineRequires: boolean | Record<string, boolean>;  // default: false (config surface only in ZTS)
   babelTransformerPath?: string;    // user babel transformer (e.g. svg)
+  getTransformOptions?: (
+    entryFiles: readonly string[],
+    options: {
+      dev: boolean;
+      hot: boolean;
+      platform: string | null;
+      customTransformOptions: Record<string, string>;
+    },
+    getDependenciesOf: (filePath: string) => Promise<readonly string[]> | readonly string[],
+  ) => Promise<{ transform?: { inlineRequires?: boolean | Record<string, boolean> } }>;
   babel?: {
     presets?: (string | [string, Record<string, unknown>])[];
     plugins?: (string | [string, Record<string, unknown>])[];
   };
 }
 ```
+
+`getTransformOptions().transform.inlineRequires` is reflected in the effective JS
+configuration and emits a warning, but the ZTS transform does not yet implement
+lazy require rewriting.
 
 ## `serializer`
 
@@ -131,11 +154,15 @@ server: {
   verifyConnections: boolean;
   unstable_serverRoot: string | null;
 
-  enhanceMiddleware?: (mw: ConnectMiddleware, server: unknown) => ConnectMiddleware;
+  enhanceMiddleware?: (mw: ConnectMiddleware, server: MetroLikeServerFacade) => ConnectMiddleware;
   rewriteRequestUrl?: (url: string) => string;
   silentConsoleErrorPatterns?: string[];   // RegExp source strings
 }
 ```
+
+The second `enhanceMiddleware` argument is a stable facade with
+`processRequest`, `end`, `getBundler`, `getCreateModuleId`, `getModules`, and
+`getOrderedDependencyPaths`.
 
 ## `symbolicator`
 
@@ -146,10 +173,27 @@ symbolicator: {
     | null
     | undefined
     | Promise<{ collapse?: boolean } | null | undefined>;
+  customizeStack?: (
+    stack: SymbolicatorFrame[],
+    extraData: unknown,
+  ) => SymbolicatorFrame[] | Promise<SymbolicatorFrame[]>;
 }
 ```
 
 Returning `{ collapse: true }` hides the frame in DevTools.
+
+## `reporter`
+
+```ts
+reporter: {
+  update(event: ReportableEvent): void;
+}
+```
+
+Bungae emits a small Metro-compatible event subset:
+`initialize_started`, `initialize_done`, `bundle_build_started`,
+`bundle_transform_progressed`, `bundle_build_done`, `bundling_error`,
+`client_log`, and `transform_cache_reset`.
 
 ## `experimental`
 

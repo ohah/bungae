@@ -20,7 +20,7 @@ import { WebSocketServer, type WebSocket } from 'ws';
 
 import type { ResolvedConfig } from '../../../config/types';
 import { VERSION } from '../../../index';
-import { watchWithNapi } from '../napi-build';
+import { resolveEffectiveTransformConfig, watchWithNapi } from '../napi-build';
 import { setupTerminalActions } from '../terminal-actions';
 import { colors, logBundle, logInfo, logError, printBanner } from '../utils';
 import { loadDevMiddleware, type DevMiddleware } from './dev-middleware';
@@ -152,10 +152,43 @@ function formatHmrBreakdown(event: WatchRebuildEvent): string {
   );
 }
 
+function emitReport(
+  config: ResolvedConfig,
+  event: Parameters<ResolvedConfig['reporter']['update']>[0],
+) {
+  try {
+    config.reporter.update(event);
+  } catch {
+    // Reporter failures must not affect bundling.
+  }
+}
+
+function stableResolverOptionsKey(options: Record<string, string>): string {
+  return JSON.stringify(Object.entries(options).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function parseBundleResolverOptions(url: URL): Record<string, string> {
+  const options: Record<string, string> = {};
+  for (const [key, value] of url.searchParams) {
+    if (key.startsWith('resolver.')) {
+      options[key.slice('resolver.'.length)] = value;
+    } else if (key.startsWith('resolverOption.')) {
+      options[key.slice('resolverOption.'.length)] = value;
+    }
+  }
+  return options;
+}
+
 /**
  * Start dev server with zts bundler backend
  */
 export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () => Promise<void> }> {
+  emitReport(config, {
+    type: 'initialize_started',
+    port: config.server?.port ?? 8081,
+    projectRoot: config.root,
+  });
+  config = await resolveEffectiveTransformConfig(config);
   const { server } = config;
   const port = server?.port ?? 8081;
   const hostname = server?.host || '0.0.0.0';
@@ -193,19 +226,44 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
   /**
    * Get or create platform state. Spawns a new ZTS process if needed.
    */
-  function getOrCreatePlatform(platform: string): PlatformState {
-    let state = platforms.get(platform);
+  function getOrCreatePlatform(
+    platform: string,
+    bundleResolverOptions: Record<string, string> = {},
+  ): PlatformState {
+    const customResolverOptions = {
+      ...config.resolverOptions,
+      ...bundleResolverOptions,
+    };
+    const stateKey =
+      Object.keys(bundleResolverOptions).length === 0
+        ? platform
+        : `${platform}:${stableResolverOptionsKey(customResolverOptions)}`;
+    let state = platforms.get(stateKey);
     if (state) return state;
 
     const outputDir = mkdtempSync(join(tmpdir(), `bungae-zts-${platform}-`));
     const outputPath = join(outputDir, 'bundle.js');
     const sourceMapPath = `${outputPath}.map`;
-    const platformConfig: ResolvedConfig = { ...config, platform: platform as any };
+    const platformConfig: ResolvedConfig = {
+      ...config,
+      platform: platform as any,
+      resolverOptions: customResolverOptions,
+    };
     const buildStart = Date.now();
+
+    emitReport(config, {
+      type: 'bundle_build_started',
+      bundleDetails: { platform, entryFile: config.entry },
+    });
 
     const { handle } = watchWithNapi(platformConfig, outputPath, {
       onReady(event) {
         if (event.files) state!.fileCount = event.files;
+        emitReport(config, {
+          type: 'bundle_transform_progressed',
+          transformedFileCount: state!.fileCount,
+          totalFileCount: state!.fileCount,
+        });
         if (existsSync(outputPath)) {
           state!.bundle = readFileSync(outputPath, 'utf-8').replace(
             /\/\/# sourceMappingURL=[^\n]*/g,
@@ -221,9 +279,19 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             `./${config.entry}`,
             `(${state!.fileCount} files, ${sizeKB} KB, ${buildTime}ms)`,
           );
+          emitReport(config, {
+            type: 'bundle_build_done',
+            bundleDetails: {
+              platform,
+              entryFile: config.entry,
+              buildTime,
+              fileCount: state!.fileCount,
+            },
+          });
         } else {
           state!.buildError = 'Build produced no output';
           logBundle('failed', platform, `./${config.entry}`, state!.buildError);
+          emitReport(config, { type: 'bundling_error', error: new Error(state!.buildError) });
         }
       },
       onRebuild(event: WatchRebuildEvent) {
@@ -233,6 +301,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
         if (!event.success) {
           state!.buildError = event.error ?? 'Unknown build error';
           logError(`Build failed [${platform}]: ${state!.buildError}`);
+          emitReport(config, { type: 'bundling_error', error: new Error(state!.buildError) });
           sendToClients(formatHmrError(state!.buildError));
           return;
         }
@@ -277,6 +346,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             `Rebuilt ${colors.dim}[${platform}] (${changedCount} files, ${duration}ms, no code change)${breakdown}${colors.reset}`,
           );
         }
+        emitReport(config, {
+          type: 'bundle_build_done',
+          bundleDetails: { platform, changedFileCount: changedCount, duration },
+        });
       },
     });
 
@@ -292,7 +365,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       lastRebuildTime: Date.now(),
     };
 
-    platforms.set(platform, state);
+    platforms.set(stateKey, state);
     return state;
   }
 
@@ -388,6 +461,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
             .join(' ');
 
           console.log(`${badge} ${formatted}`);
+          emitReport(config, { type: 'client_log', level, data });
         }
       } catch {
         /* ignore */
@@ -438,7 +512,14 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
       // 완전히 도착하기 전에 호출되면 `readJsonBody` 의 `req.on('data')` 등록이 늦어
       // Node http (Bun 호환 포함) stream flow 가 꼬일 수 있다. 해소책: body 를 먼저
       // 읽은 뒤에 cache 조회.
-      await handleSymbolicateRequest(req, res, config, state, config.symbolicator.customizeFrame);
+      await handleSymbolicateRequest(
+        req,
+        res,
+        config,
+        state,
+        config.symbolicator.customizeFrame,
+        config.symbolicator.customizeStack,
+      );
       return;
     }
 
@@ -468,9 +549,10 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname.endsWith('.bundle') || url.pathname.endsWith('.bundle.js')) {
       // Detect platform from URL query param (?platform=ios)
       const platform = url.searchParams.get('platform') || defaultPlatform;
+      const bundleResolverOptions = parseBundleResolverOptions(url);
       // Metro-style request line — yellow BUNDLE badge + platform + URL.
       logBundle('request', platform, `${url.pathname}${url.search}`);
-      const state = getOrCreatePlatform(platform);
+      const state = getOrCreatePlatform(platform, bundleResolverOptions);
 
       // Wait for build if still in progress (new platform spawned on demand)
       if (state.bundle === null && state.buildError === null) {
@@ -605,7 +687,14 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     if (url.pathname === '/symbolicate' && req.method === 'POST') {
       const platform = url.searchParams.get('platform') || defaultPlatform;
       const state = platforms.get(platform) || defaultState;
-      await handleSymbolicateRequest(req, res, config, state, config.symbolicator.customizeFrame);
+      await handleSymbolicateRequest(
+        req,
+        res,
+        config,
+        state,
+        config.symbolicator.customizeFrame,
+        config.symbolicator.customizeStack,
+      );
       return;
     }
 
@@ -671,9 +760,17 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     );
   };
 
-  // Apply enhanceMiddleware. Second arg mirrors Metro's MetroServer slot —
-  // Bungae has no Metro-shaped server object, so plugins must treat it as opaque.
-  const enhancedMiddleware = server.enhanceMiddleware(baseMiddleware, {});
+  const serverFacade = {
+    processRequest: baseMiddleware,
+    end: () => {},
+    getBundler: () => null,
+    getCreateModuleId: () => null,
+    getModules: () => [],
+    getOrderedDependencyPaths: () => [],
+  };
+
+  // Apply enhanceMiddleware with a small Metro-like server facade.
+  const enhancedMiddleware = server.enhanceMiddleware(baseMiddleware, serverFacade);
 
   const httpServer = createHttpServer((req, res) => {
     try {
@@ -733,6 +830,8 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
     httpServer.listen(port, hostname, () => resolve());
   });
 
+  emitReport(config, { type: 'initialize_done', port, projectRoot: config.root });
+
   logInfo(`Dev server running on ${colors.bold}http://localhost:${port}${colors.reset}`);
   logInfo(
     `Bundler: ${colors.bold}zts${colors.reset} ${colors.dim}(Zig-based, dev mode + HMR)${colors.reset}`,
@@ -751,6 +850,7 @@ export async function serveWithZts(config: ResolvedConfig): Promise<{ stop: () =
           state.bundle = null;
           state.buildError = null;
         }
+        emitReport(config, { type: 'transform_cache_reset' });
       },
       projectRoot: config.root,
       port,
@@ -853,6 +953,7 @@ async function handleSymbolicateRequest(
   config: ResolvedConfig,
   state: { handle: WatchHandle; sourceMapCache: string | null },
   customizeFrame: ResolvedConfig['symbolicator']['customizeFrame'],
+  customizeStack: ResolvedConfig['symbolicator']['customizeStack'],
 ): Promise<void> {
   try {
     const body = await readJsonBody<{
@@ -862,9 +963,11 @@ async function handleSymbolicateRequest(
         column?: number;
         methodName?: string;
       }>;
+      extraData?: unknown;
     }>(req);
 
     const stack = body.stack || [];
+    const extraData = body.extraData;
 
     // 2) body 읽기 완료 후에 lazy sourcemap 조회 (build 단위 cache).
     const sourceMap = ((): string | null => {
@@ -876,7 +979,30 @@ async function handleSymbolicateRequest(
     })();
 
     if (!sourceMap) {
-      sendJson(res, 200, { stack, codeFrame: null });
+      const fallbackStack = await Promise.all(
+        stack.map(async (frame) => {
+          const resolved = { ...frame } as typeof frame & { collapse?: boolean };
+          try {
+            const customization = await customizeFrame({
+              file: resolved.file ?? null,
+              lineNumber: resolved.lineNumber ?? null,
+              column: resolved.column ?? null,
+              methodName: resolved.methodName ?? null,
+            });
+            if (customization?.collapse) resolved.collapse = true;
+          } catch {
+            // user customizeFrame errors are non-fatal
+          }
+          return resolved;
+        }),
+      );
+      let customizedStack: any[] = fallbackStack;
+      try {
+        customizedStack = (await customizeStack(fallbackStack, extraData)) as any[];
+      } catch {
+        customizedStack = fallbackStack;
+      }
+      sendJson(res, 200, { stack: customizedStack, codeFrame: null });
       return;
     }
 
@@ -943,13 +1069,20 @@ async function handleSymbolicateRequest(
         }),
       );
 
+      let customizedStack: any[] = symbolicatedStack;
+      try {
+        customizedStack = (await customizeStack(symbolicatedStack, extraData)) as any[];
+      } catch {
+        customizedStack = symbolicatedStack;
+      }
+
       // Code frame for first non-internal frame
       let codeFrame: {
         content: string;
         location: { row: number; column: number };
         fileName: string;
       } | null = null;
-      for (const frame of symbolicatedStack) {
+      for (const frame of customizedStack) {
         if (frame.file && frame.lineNumber != null && !frame.file.includes('.bundle')) {
           try {
             const source = readFileSync(frame.file, 'utf-8');
@@ -971,7 +1104,7 @@ async function handleSymbolicateRequest(
         }
       }
 
-      sendJson(res, 200, { stack: symbolicatedStack, codeFrame });
+      sendJson(res, 200, { stack: customizedStack, codeFrame });
     } finally {
       consumer.destroy();
     }

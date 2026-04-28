@@ -168,10 +168,22 @@ export function validateConfig(config: BungaeConfig): void {
 
     if (
       config.transformer.inlineRequires !== undefined &&
-      typeof config.transformer.inlineRequires !== 'boolean'
+      typeof config.transformer.inlineRequires !== 'boolean' &&
+      (typeof config.transformer.inlineRequires !== 'object' ||
+        config.transformer.inlineRequires === null ||
+        Array.isArray(config.transformer.inlineRequires))
     ) {
       throw new ConfigValidationError(
-        `Invalid config: \`transformer.inlineRequires\` must be a boolean, but received ${typeof config.transformer.inlineRequires}`,
+        `Invalid config: \`transformer.inlineRequires\` must be a boolean or object, but received ${typeof config.transformer.inlineRequires}`,
+      );
+    }
+
+    if (
+      config.transformer.getTransformOptions !== undefined &&
+      typeof config.transformer.getTransformOptions !== 'function'
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`transformer.getTransformOptions\` must be a function, but received ${typeof config.transformer.getTransformOptions}`,
       );
     }
 
@@ -197,6 +209,56 @@ export function validateConfig(config: BungaeConfig): void {
           `Invalid config: \`transformer.babel.presets\` must be an array`,
         );
       }
+    }
+  }
+
+  // Validate symbolicator
+  if (config.symbolicator !== undefined) {
+    if (
+      typeof config.symbolicator !== 'object' ||
+      config.symbolicator === null ||
+      Array.isArray(config.symbolicator)
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`symbolicator\` must be an object, but received ${typeof config.symbolicator}`,
+      );
+    }
+
+    if (
+      config.symbolicator.customizeFrame !== undefined &&
+      typeof config.symbolicator.customizeFrame !== 'function'
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`symbolicator.customizeFrame\` must be a function, but received ${typeof config.symbolicator.customizeFrame}`,
+      );
+    }
+
+    if (
+      config.symbolicator.customizeStack !== undefined &&
+      typeof config.symbolicator.customizeStack !== 'function'
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`symbolicator.customizeStack\` must be a function, but received ${typeof config.symbolicator.customizeStack}`,
+      );
+    }
+  }
+
+  // Validate reporter
+  if (config.reporter !== undefined) {
+    if (
+      typeof config.reporter !== 'object' ||
+      config.reporter === null ||
+      Array.isArray(config.reporter)
+    ) {
+      throw new ConfigValidationError(
+        `Invalid config: \`reporter\` must be an object, but received ${typeof config.reporter}`,
+      );
+    }
+
+    if (typeof config.reporter.update !== 'function') {
+      throw new ConfigValidationError(
+        `Invalid config: \`reporter.update\` must be a function, but received ${typeof config.reporter.update}`,
+      );
     }
   }
 

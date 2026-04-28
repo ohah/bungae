@@ -62,8 +62,34 @@ export async function handleSymbolicate(
     }
 
     if (!cachedBuild?.map) {
+      const fallbackStack = await Promise.all(
+        stack.map(async (frame) => {
+          const resolved = { ...frame } as typeof frame & { collapse?: boolean };
+          try {
+            const customization = await config.symbolicator.customizeFrame({
+              file: resolved.file ?? null,
+              lineNumber: resolved.lineNumber ?? null,
+              column: resolved.column ?? null,
+              methodName: resolved.methodName ?? null,
+            });
+            if (customization?.collapse) resolved.collapse = true;
+          } catch {
+            // user customizeFrame errors are non-fatal
+          }
+          return resolved;
+        }),
+      );
+      let customizedStack: any[] = fallbackStack;
+      try {
+        customizedStack = (await config.symbolicator.customizeStack(
+          fallbackStack,
+          body.extraData,
+        )) as any[];
+      } catch {
+        customizedStack = fallbackStack;
+      }
       sendJson(res, 200, {
-        stack: stack.map((frame) => ({ ...frame })),
+        stack: customizedStack,
         codeFrame: null,
       });
       return;
@@ -82,7 +108,7 @@ export async function handleSymbolicate(
     }
 
     // Symbolicate each frame
-    const symbolicatedStack = stack.map((frame) => {
+    const mappedStack = stack.map((frame) => {
       if (!frame.file || frame.lineNumber == null) {
         return { ...frame };
       }
@@ -140,6 +166,34 @@ export async function handleSymbolicate(
       }
     });
 
+    const symbolicatedStack = await Promise.all(
+      mappedStack.map(async (frame) => {
+        const resolved = { ...frame } as typeof frame & { collapse?: boolean };
+        try {
+          const customization = await config.symbolicator.customizeFrame({
+            file: resolved.file ?? null,
+            lineNumber: resolved.lineNumber ?? null,
+            column: resolved.column ?? null,
+            methodName: resolved.methodName ?? null,
+          });
+          if (customization?.collapse) resolved.collapse = true;
+        } catch {
+          // user customizeFrame errors are non-fatal
+        }
+        return resolved;
+      }),
+    );
+
+    let customizedStack: any[] = symbolicatedStack;
+    try {
+      customizedStack = (await config.symbolicator.customizeStack(
+        symbolicatedStack,
+        body.extraData,
+      )) as any[];
+    } catch {
+      customizedStack = symbolicatedStack;
+    }
+
     // Generate code frame
     let codeFrame: {
       content: string;
@@ -147,7 +201,7 @@ export async function handleSymbolicate(
       fileName: string;
     } | null = null;
 
-    for (const frame of symbolicatedStack) {
+    for (const frame of customizedStack) {
       if (frame.file && frame.lineNumber != null && !frame.file.includes('.bundle')) {
         try {
           const sourceCode = readFileSync(frame.file, 'utf-8');
@@ -175,7 +229,7 @@ export async function handleSymbolicate(
       }
     }
 
-    sendJson(res, 200, { stack: symbolicatedStack, codeFrame });
+    sendJson(res, 200, { stack: customizedStack, codeFrame });
   } catch (error) {
     console.error('Symbolication failed:', error);
     sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });

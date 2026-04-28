@@ -52,6 +52,7 @@ describe('mergeConfig', () => {
           inlineRequires: false,
           babelTransformerPath: '',
           babel: { presets: [], plugins: [] },
+          getTransformOptions: () => ({ transform: {} }),
         },
         experimental: {
           treeShaking: false,
@@ -82,6 +83,10 @@ describe('mergeConfig', () => {
         },
         symbolicator: {
           customizeFrame: () => undefined,
+          customizeStack: async (stack) => stack,
+        },
+        reporter: {
+          update: () => {},
         },
       },
       {},
