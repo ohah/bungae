@@ -182,8 +182,13 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   // plugin 이 fallback 으로 inline — 자동 상호 배타: ZTS 가 변환한 spec 은 코드에서
   // codegenNativeComponent 마커가 사라져 JS plugin 의 정규식 매칭 실패 → skip.
   // 결과: race condition 0 + ZTS 분만큼 lazy-load 비용 절감.
+  //
+  // Escape hatch: `BUNGAE_CODEGEN_FALLBACK=js` 가 모든 토글 우선. ZTS native 의
+  // regression / 버그 만났을 때 사용자가 즉시 JS only 로 우회 — `_NATIVE` 토글이
+  // 켜져 있어도 강제 비활성. 이슈 리포트와 함께 사용 권장.
   plugins.push(createCodegenPlugin(pluginConfig));
-  const useNativeCodegen = process.env.BUNGAE_CODEGEN_NATIVE === '1';
+  const forceJsFallback = process.env.BUNGAE_CODEGEN_FALLBACK === 'js';
+  const useNativeCodegen = !forceJsFallback && process.env.BUNGAE_CODEGEN_NATIVE === '1';
 
   plugins.push(createBabelPlugin(pluginConfig));
 
