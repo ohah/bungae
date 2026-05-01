@@ -18,6 +18,7 @@ import {
   createBabelTransformer,
   createCodegenTransformer,
   escapeRegex,
+  type BabelOptions,
 } from './plugin-core';
 
 export interface PluginConfig {
@@ -112,14 +113,16 @@ export function createAssetPlugin(config: PluginConfig): ZtsPlugin {
  * Only activates when custom plugins are detected in babel.config.js.
  * Babel is lazy-loaded on first transform to avoid startup latency.
  */
-export function createBabelPlugin(config: PluginConfig): ZtsPlugin {
+export function createBabelPlugin(config: PluginConfig, opts: BabelOptions = {}): ZtsPlugin {
   return {
     name: 'bungae:babel-transform',
     setup(build) {
-      // Skip entirely if no custom Babel plugins detected
-      if (!detectCustomPlugins(config.projectRoot)) return;
+      // bypassAllowlist 일 때는 detectCustomPlugins 건너뜀 — plugin 0 개여도 babel 활성.
+      if (!opts.bypassAllowlist && !detectCustomPlugins(config.projectRoot)) return;
 
-      const transformer = createBabelTransformer(config.projectRoot);
+      const transformer = createBabelTransformer(config.projectRoot, {
+        bypassAllowlist: opts.bypassAllowlist,
+      });
 
       const extPatterns = config.sourceExts.map((e) => e.replace(/^\./, '')).join('|');
       const sourcePattern = new RegExp(`\\.(${extPatterns})$`);
