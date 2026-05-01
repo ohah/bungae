@@ -208,6 +208,21 @@ export interface BabelOptions {
   bypassAllowlist?: boolean;
 }
 
+/**
+ * `<prefix>_NATIVE=1` / `<prefix>_FALLBACK=js` 환경변수를 단일 토글로 해석.
+ *
+ * - `fallback=true` (FALLBACK=js): JS pass-through 강제. native 는 자동 false (FALLBACK 우선).
+ * - `native=true` (NATIVE=1): ZTS native 강제. FALLBACK 켜져 있으면 native 무력화.
+ * - 둘 다 false: default (caller 가 자동 분기).
+ *
+ * codegen / babel 등 동일 토글 쌍을 가진 layer 의 공용 helper (#2348, #2393).
+ */
+export function parseToggleEnv(prefix: string): { fallback: boolean; native: boolean } {
+  const fallback = process.env[`${prefix}_FALLBACK`] === 'js';
+  const native = !fallback && process.env[`${prefix}_NATIVE`] === '1';
+  return { fallback, native };
+}
+
 export function createBabelTransformer(
   projectRoot: string,
   opts: BabelOptions = {},
