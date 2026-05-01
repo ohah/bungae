@@ -35,7 +35,7 @@ import { logWarn } from './utils';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
 
-import { analyzeBabelPlugins } from './plugin-core';
+import { analyzeBabelPlugins, parseToggleEnv } from './plugin-core';
 
 type BungaeZtsBuildOptions = BuildOptions & {
   entryErrorGuard?: boolean;
@@ -179,30 +179,19 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   const pluginConfig = getPluginConfig(config);
   plugins.push(createAssetPlugin(pluginConfig));
 
-  // ZTS native codegen + JS plugin hybrid (#2348). `BUNGAE_CODEGEN_NATIVE=1` 일 때
-  // ZTS 내장 plugin 이 *NativeComponent.{js,ts} 의 ~85% 를 inline (콜드 번들에서
-  // per-file 재파싱 비용 제거). 나머지 ~15% (cross-file type, 미지원 패턴) 는 JS
-  // plugin 이 fallback 으로 inline — 자동 상호 배타: ZTS 가 변환한 spec 은 코드에서
-  // codegenNativeComponent 마커가 사라져 JS plugin 의 정규식 매칭 실패 → skip.
-  // 결과: race condition 0 + ZTS 분만큼 lazy-load 비용 절감.
-  //
-  // Escape hatch: `BUNGAE_CODEGEN_FALLBACK=js` 가 모든 토글 우선. ZTS native 의
-  // regression / 버그 만났을 때 사용자가 즉시 JS only 로 우회 — `_NATIVE` 토글이
-  // 켜져 있어도 강제 비활성. 이슈 리포트와 함께 사용 권장.
-  plugins.push(createCodegenPlugin(pluginConfig));
-  const forceJsFallback = process.env.BUNGAE_CODEGEN_FALLBACK === 'js';
-  const useNativeCodegen = !forceJsFallback && process.env.BUNGAE_CODEGEN_NATIVE === '1';
+  // ZTS native + JS layer 토글 (#2348 codegen, #2393 babel).
+  //   `_NATIVE=1`   — 강제 ZTS only
+  //   `_FALLBACK=js` — 강제 JS pass-through (모든 토글 우선, escape hatch — regression 우회)
+  const codegenToggle = parseToggleEnv('BUNGAE_CODEGEN');
+  const babelToggle = parseToggleEnv('BUNGAE_BABEL');
 
-  // Babel plugin 토글 (#2393 § 5):
-  //   - default: ZTS native + allowlist 외 plugin 만 babel forward (자동 분기)
-  //   - `BUNGAE_BABEL_NATIVE=1`: babel plugin 자체 push 안 함 (강제 ZTS only,
-  //     allowlist 외 plugin 사용 시 미작동 위험 — 사용자가 명시 수락)
-  //   - `BUNGAE_BABEL_FALLBACK=js`: bypassAllowlist (모든 plugin babel forward,
-  //     모든 토글 우선 — escape hatch). codegen #76 의 FALLBACK 패턴 reuse.
-  const forceJsBabel = process.env.BUNGAE_BABEL_FALLBACK === 'js';
-  const forceNativeBabel = !forceJsBabel && process.env.BUNGAE_BABEL_NATIVE === '1';
-  if (!forceNativeBabel) {
-    plugins.push(createBabelPlugin(pluginConfig, { bypassAllowlist: forceJsBabel }));
+  // Codegen: JS plugin 항상 push — ZTS 가 변환하면 marker 사라져 JS plugin 자동 skip (race 0).
+  plugins.push(createCodegenPlugin(pluginConfig));
+  const useNativeCodegen = codegenToggle.native;
+
+  // Babel: NATIVE=1 → plugin 비활성. FALLBACK=js → bypassAllowlist (모든 plugin babel forward).
+  if (!babelToggle.native) {
+    plugins.push(createBabelPlugin(pluginConfig, { bypassAllowlist: babelToggle.fallback }));
   }
 
   // babel.config 의 알려진 plugin 자동 매핑 (#2393 1+2단계). babel forward 대신 ZTS native:
