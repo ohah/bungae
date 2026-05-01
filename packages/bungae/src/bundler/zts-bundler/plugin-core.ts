@@ -74,35 +74,103 @@ const ZTS_NATIVE_PLUGIN_PATTERNS = [
   'react-native-reanimated',
   // RN 기본 프리셋 (ZTS가 전체 처리)
   '@react-native/babel-preset',
+  // ZTS native — Bungae 가 babel.config 발견 시 자동 ZTS 옵션 매핑 (#2393).
+  // 이 plugin 들은 ZTS 측 동등 기능으로 변환되므로 babel forward 안 함.
+  'plugin-proposal-decorators',
+  'plugin-transform-decorators',
+  'babel-plugin-root-import',
 ];
 
-/**
- * Detect whether the project has custom Babel plugins that require runtime transformation.
- * Checks babel.config.js for plugins matching known patterns (reanimated, nativewind, worklet).
- *
- * @param projectRoot  Project root directory containing babel.config.js
- */
-/**
- * Check if a plugin name is handled natively by ZTS (should NOT be forwarded to Babel).
- */
 function isZtsNativePlugin(name: string): boolean {
   return ZTS_NATIVE_PLUGIN_PATTERNS.some((pattern) => name.includes(pattern));
 }
 
-export function detectCustomPlugins(projectRoot: string): boolean {
+/**
+ * 사용자 babel.config 의 알려진 plugin 들을 ZTS 옵션으로 자동 매핑 (#2393).
+ * - decorators → ZTS `experimentalDecorators` 옵션
+ * - root-import → ZTS `alias` 매핑
+ * 그 외 allowlist 외 plugin 이 있으면 babel pass-through 필요.
+ */
+export interface BabelPluginAnalysis {
+  /** allowlist 외 plugin 존재 — createBabelPlugin 활성 여부 */
+  needsBabel: boolean;
+  /** experimentalDecorators 자동 활성 (legacy 모드만 처리) */
+  experimentalDecorators: boolean;
+  /** root-import alias 매핑 — `{ '~': '/abs/path/to/src' }` 형태 */
+  rootImportAliases: Record<string, string>;
+}
+
+export function analyzeBabelPlugins(projectRoot: string): BabelPluginAnalysis {
+  const empty: BabelPluginAnalysis = {
+    needsBabel: false,
+    experimentalDecorators: false,
+    rootImportAliases: {},
+  };
   try {
     const configPath = join(projectRoot, 'babel.config.js');
-    if (!existsSync(configPath)) return false;
+    if (!existsSync(configPath)) return empty;
     const config = require(configPath);
     const plugins: unknown[] = config?.plugins || [];
-    // Any plugin NOT handled natively by ZTS → needs Babel
-    return plugins.some((p) => {
-      const name = typeof p === 'string' ? p : Array.isArray(p) ? p[0] : '';
-      return typeof name === 'string' && !isZtsNativePlugin(name);
-    });
+
+    let needsBabel = false;
+    let experimentalDecorators = false;
+    const rootImportAliases: Record<string, string> = {};
+
+    for (const entry of plugins) {
+      const name = typeof entry === 'string' ? entry : Array.isArray(entry) ? entry[0] : '';
+      if (typeof name !== 'string') continue;
+      const opts = Array.isArray(entry) ? entry[1] : undefined;
+
+      if (
+        name.includes('plugin-proposal-decorators') ||
+        name.includes('plugin-transform-decorators')
+      ) {
+        // legacy 만 ZTS 의 experimental_decorators 와 동등. Stage 3 (`version: '2022-03'`) 는
+        // ZTS es_decorator 사용. 본 PR 은 RN 의 흔한 케이스인 legacy 만 자동.
+        const version = (opts as { version?: string } | undefined)?.version;
+        if (version === undefined || version === 'legacy') {
+          experimentalDecorators = true;
+          continue;
+        }
+      }
+
+      if (name.includes('babel-plugin-root-import')) {
+        // 단일 또는 배열 두 형태 — `rootPathPrefix` + `rootPathSuffix`. 다중 entry 는
+        // `paths: [{ rootPathPrefix, rootPathSuffix }]` 배열.
+        const rootImportOpts = opts as
+          | { rootPathPrefix?: string; rootPathSuffix?: string; paths?: unknown[] }
+          | undefined;
+        const entries: { rootPathPrefix?: string; rootPathSuffix?: string }[] =
+          (rootImportOpts?.paths as { rootPathPrefix?: string; rootPathSuffix?: string }[]) ?? [
+            {
+              rootPathPrefix: rootImportOpts?.rootPathPrefix,
+              rootPathSuffix: rootImportOpts?.rootPathSuffix,
+            },
+          ];
+        for (const e of entries) {
+          const prefix = e.rootPathPrefix ?? '~/';
+          const suffix = e.rootPathSuffix ?? '.';
+          // ZTS alias 는 trailing slash 없는 prefix → 절대 경로. `~/` → `~`.
+          const aliasKey = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
+          rootImportAliases[aliasKey] = join(projectRoot, suffix);
+        }
+        continue;
+      }
+
+      if (!isZtsNativePlugin(name)) needsBabel = true;
+    }
+
+    return { needsBabel, experimentalDecorators, rootImportAliases };
   } catch {
-    return false;
+    return empty;
   }
+}
+
+/**
+ * @deprecated `analyzeBabelPlugins` 사용. 호환성 유지를 위해 남김.
+ */
+export function detectCustomPlugins(projectRoot: string): boolean {
+  return analyzeBabelPlugins(projectRoot).needsBabel;
 }
 
 /**

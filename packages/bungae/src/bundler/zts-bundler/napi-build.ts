@@ -35,9 +35,12 @@ import { logWarn } from './utils';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
 
+import { analyzeBabelPlugins } from './plugin-core';
+
 type BungaeZtsBuildOptions = BuildOptions & {
   entryErrorGuard?: boolean;
   silentConsoleErrorPatterns?: string[];
+  experimentalDecorators?: boolean;
 };
 
 export async function resolveEffectiveTransformConfig(
@@ -192,6 +195,12 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
 
   plugins.push(createBabelPlugin(pluginConfig));
 
+  // babel.config 의 알려진 plugin 자동 매핑 (#2393 1+2단계). babel forward 대신 ZTS native:
+  //   - decorators (legacy) → opts.experimentalDecorators
+  //   - babel-plugin-root-import → opts.alias 자동 추가
+  // 결과: 사용자 babel.config 수정 없이 babel forward 대상 축소.
+  const babelAnalysis = analyzeBabelPlugins(config.root);
+
   const opts: BungaeZtsBuildOptions = {
     entryPoints: [resolve(config.root, config.entry)],
     platform,
@@ -204,10 +213,16 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
     emitDiskSourcemap: !config.dev,
   };
 
+  if (babelAnalysis.experimentalDecorators) {
+    opts.experimentalDecorators = true;
+  }
+
   const tsConfigAliases = readTsConfigPathAliases(config.root);
-  if (Object.keys(tsConfigAliases).length > 0) {
+  const hasRootImportAliases = Object.keys(babelAnalysis.rootImportAliases).length > 0;
+  if (Object.keys(tsConfigAliases).length > 0 || hasRootImportAliases) {
     opts.alias = {
       ...tsConfigAliases,
+      ...babelAnalysis.rootImportAliases,
       ...(opts.alias ?? {}),
     };
   }
