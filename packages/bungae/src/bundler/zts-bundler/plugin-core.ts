@@ -202,8 +202,15 @@ export function detectCustomPlugins(projectRoot: string): boolean {
  * @param projectRoot  Project root directory containing babel.config.js
  * @returns  A transformer function: (code, filename) => transformed code or null
  */
+/** `BUNGAE_BABEL_FALLBACK=js` escape hatch 의 plugin/transformer 공용 옵션. */
+export interface BabelOptions {
+  /** allowlist 우회 — 모든 babel plugin 을 babel pass-through (ZTS native 매핑 무시). */
+  bypassAllowlist?: boolean;
+}
+
 export function createBabelTransformer(
   projectRoot: string,
+  opts: BabelOptions = {},
 ): (code: string, filename: string) => string | null {
   let babel: any = null;
   let babelOptions: any = null;
@@ -219,7 +226,8 @@ export function createBabelTransformer(
     const customPlugins: unknown[] = [];
     for (const plugin of plugins) {
       const name = extractBabelPluginName(plugin);
-      if (name && !isZtsNativePlugin(name)) {
+      // bypassAllowlist=true 일 때는 _모든_ plugin 을 babel 로 forward.
+      if (name && (opts.bypassAllowlist || !isZtsNativePlugin(name))) {
         // Preserve plugin options: ['plugin-name', { opt: val }] or just 'plugin-name'
         if (Array.isArray(plugin)) {
           try {

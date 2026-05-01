@@ -193,7 +193,17 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   const forceJsFallback = process.env.BUNGAE_CODEGEN_FALLBACK === 'js';
   const useNativeCodegen = !forceJsFallback && process.env.BUNGAE_CODEGEN_NATIVE === '1';
 
-  plugins.push(createBabelPlugin(pluginConfig));
+  // Babel plugin 토글 (#2393 § 5):
+  //   - default: ZTS native + allowlist 외 plugin 만 babel forward (자동 분기)
+  //   - `BUNGAE_BABEL_NATIVE=1`: babel plugin 자체 push 안 함 (강제 ZTS only,
+  //     allowlist 외 plugin 사용 시 미작동 위험 — 사용자가 명시 수락)
+  //   - `BUNGAE_BABEL_FALLBACK=js`: bypassAllowlist (모든 plugin babel forward,
+  //     모든 토글 우선 — escape hatch). codegen #76 의 FALLBACK 패턴 reuse.
+  const forceJsBabel = process.env.BUNGAE_BABEL_FALLBACK === 'js';
+  const forceNativeBabel = !forceJsBabel && process.env.BUNGAE_BABEL_NATIVE === '1';
+  if (!forceNativeBabel) {
+    plugins.push(createBabelPlugin(pluginConfig, { bypassAllowlist: forceJsBabel }));
+  }
 
   // babel.config 의 알려진 plugin 자동 매핑 (#2393 1+2단계). babel forward 대신 ZTS native:
   //   - decorators (legacy) → opts.experimentalDecorators
