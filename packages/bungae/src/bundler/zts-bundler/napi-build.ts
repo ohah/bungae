@@ -175,7 +175,16 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   // Build plugins from config
   const pluginConfig = getPluginConfig(config);
   plugins.push(createAssetPlugin(pluginConfig));
-  plugins.push(createCodegenPlugin(pluginConfig));
+
+  // ZTS native codegen 토글 (#2348). `BUNGAE_CODEGEN_NATIVE=1` 일 때 ZTS 내장 plugin 이
+  // `*NativeComponent.{js,ts}` 변환 — 콜드 번들에서 `@react-native/codegen` lazy load +
+  // 재파싱 비용 (~350ms) 제거. off 일 때 기존 JS 플러그인 (createCodegenPlugin) 사용 —
+  // RN core 100% 호환 보장. 두 path 동시 활성하면 중복 변환되므로 상호 배타.
+  const useNativeCodegen = process.env.BUNGAE_CODEGEN_NATIVE === '1';
+  if (!useNativeCodegen) {
+    plugins.push(createCodegenPlugin(pluginConfig));
+  }
+
   plugins.push(createBabelPlugin(pluginConfig));
 
   const opts: BungaeZtsBuildOptions = {
@@ -246,6 +255,9 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
     opts.strictExecutionOrder = true;
     opts.entryErrorGuard = true;
     opts.workletTransform = true;
+    // ZTS native codegen — JS 플러그인 (createCodegenPlugin) 과 상호 배타.
+    // 환경변수 토글 시에만 활성. RN preset 의 default = ZTS 측에서도 false 로 시작.
+    opts.codegenTransform = useNativeCodegen;
 
     // Reanimated runtime의 jsVersion과 대조를 위해 사용자 설치 worklets 패키지 버전을 주입.
     // 불일치 시 __DEV__ 모드에서 WorkletsError throw (serializable.native.ts:464).
