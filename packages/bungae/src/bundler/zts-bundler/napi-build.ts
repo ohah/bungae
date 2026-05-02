@@ -35,7 +35,7 @@ import { logWarn } from './utils';
 
 export { RN_GLOBAL_IDENTIFIERS, tryResolve, resolveRnPolyfills };
 
-import { analyzeBabelPlugins, parseToggleEnv } from './plugin-core';
+import { analyzeBabelPlugins } from './plugin-core';
 
 type BungaeZtsBuildOptions = BuildOptions & {
   entryErrorGuard?: boolean;
@@ -179,20 +179,18 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
   const pluginConfig = getPluginConfig(config);
   plugins.push(createAssetPlugin(pluginConfig));
 
-  // ZTS native + JS layer 토글 (#2348 codegen, #2393 babel).
-  //   `_NATIVE=1`   — 강제 ZTS only
-  //   `_FALLBACK=js` — 강제 JS pass-through (모든 토글 우선, escape hatch — regression 우회)
-  const codegenToggle = parseToggleEnv('BUNGAE_CODEGEN');
-  const babelToggle = parseToggleEnv('BUNGAE_BABEL');
+  // ZTS native default — JS layer 는 escape hatch (#2348 codegen, #2393 babel).
+  //   `BUNGAE_BABEL_FALLBACK=js` — 강제 JS babel pass-through (regression 우회)
+  //   codegen 은 ZTS RN preset 이 이미 default ON (bundler.zig:45) — opts override 는 buildNapiOptions 안.
+  const babelFallback = process.env.BUNGAE_BABEL_FALLBACK === 'js';
 
-  // Codegen: JS plugin 항상 push — ZTS 가 변환하면 marker 사라져 JS plugin 자동 skip (race 0).
+  // Codegen JS plugin 항상 push — ZTS 가 변환하면 marker 사라져 JS plugin 자동 skip (race 0).
+  // FALLBACK=js 일 때만 ZTS native 끄고 JS plugin 이 처리.
   plugins.push(createCodegenPlugin(pluginConfig));
-  const useNativeCodegen = codegenToggle.native;
 
-  // Babel: NATIVE=1 → plugin 비활성. FALLBACK=js → bypassAllowlist (모든 plugin babel forward).
-  if (!babelToggle.native) {
-    plugins.push(createBabelPlugin(pluginConfig, { bypassAllowlist: babelToggle.fallback }));
-  }
+  // Babel: 기본은 plugin no-op (detectCustomPlugins 가 user babel.config 보고 판단).
+  // FALLBACK=js 일 때 bypassAllowlist=true 로 모든 plugin babel forward.
+  plugins.push(createBabelPlugin(pluginConfig, { bypassAllowlist: babelFallback }));
 
   // babel.config 의 알려진 plugin 자동 매핑 (#2393 1+2단계). babel forward 대신 ZTS native:
   //   - decorators (legacy) → opts.experimentalDecorators
@@ -274,9 +272,12 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
     opts.strictExecutionOrder = true;
     opts.entryErrorGuard = true;
     opts.workletTransform = true;
-    // ZTS native codegen — JS 플러그인은 hybrid 로 항상 활성 (fallback). 본 옵션은
-    // ZTS 측 transform 훅 활성화. ZTS 가 처리하면 JS plugin 의 정규식 매칭 실패로 skip.
-    opts.codegenTransform = useNativeCodegen;
+    // ZTS native codegen — RN preset default 가 이미 true (zts/src/bundler/bundler.zig:45).
+    // FALLBACK=js 시에만 명시적 false 로 override → JS plugin 이 처리. 정상 경로에서는
+    // ZTS 가 marker 를 삭제해 JS plugin 의 정규식 매칭 실패 → skip.
+    if (process.env.BUNGAE_CODEGEN_FALLBACK === 'js') {
+      opts.codegenTransform = false;
+    }
 
     // Reanimated runtime의 jsVersion과 대조를 위해 사용자 설치 worklets 패키지 버전을 주입.
     // 불일치 시 __DEV__ 모드에서 WorkletsError throw (serializable.native.ts:464).
