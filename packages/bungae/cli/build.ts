@@ -125,6 +125,21 @@ async function build() {
   }
   console.log('  ✓ CJS build complete');
 
+  // Bun's CJS bundler emits `__require = import.meta.require;` as a dynamic-require
+  // polyfill, which Node rejects with SyntaxError ("Cannot use 'import.meta' outside a module").
+  // entry.cjs uses Node for `bungae build|bundle` — patch the polyfill back to plain `require`.
+  const { readFileSync, writeFileSync, readdirSync: readdirCjs } = await import('fs');
+  for (const file of readdirCjs(DIST)) {
+    if (!file.endsWith('.cjs')) continue;
+    const filePath = join(DIST, file);
+    const original = readFileSync(filePath, 'utf-8');
+    const patched = original.replace(/__require = import\.meta\.require;/g, '__require = require;');
+    if (patched !== original) {
+      writeFileSync(filePath, patched);
+    }
+  }
+  console.log('  ✓ CJS import.meta.require polyfill patched');
+
   // Generate type declarations using tsc
   // Note: Must override noEmit from root tsconfig.json
   console.log('📝 Generating type declarations...');
