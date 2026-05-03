@@ -208,6 +208,11 @@ function buildNapiOptions(config: ResolvedConfig): BungaeZtsBuildOptions {
     // serve 하므로 rebuild 경로의 `.map` 디스크 I/O 를 제거. production/one-shot 빌드는
     // 기본 true 유지 (디스크 산출물 필요).
     emitDiskSourcemap: !config.dev,
+    // Dev mode 모듈 ID + sourcemap `sources` 의 base — 이게 없으면 ZTS 가 절대 파일 경로
+    // (/Users/.../foo.tsx) 를 그대로 사용해 RN DevTools 에서 sourceURL 파싱 실패
+    // ("Can't parse requested URL"). config.root 기준 상대 경로로 normalize, root 밖
+    // (node_modules 등) 은 ZTS 가 자동으로 `node_modules/...` 형태로 fallback.
+    rootDir: config.root,
   };
 
   if (babelAnalysis.experimentalDecorators) {
