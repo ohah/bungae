@@ -45,8 +45,8 @@
     "benchmark:compare": "bun run packages/bungae/src/__tests__/benchmark/run-benchmark.ts --output markdown",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --deny-warnings --fix",
-    "format": "oxfmt",
-    "format:check": "oxfmt --check",
+    "format": "oxfmt '!zts/**'",
+    "format:check": "oxfmt --check '!zts/**'",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {},
@@ -57,7 +57,7 @@
     "@types/node": "^22",
     "bunup": "^0.16.20",
     "flow-remove-types": "^2.297.0",
-    "oxfmt": "latest",
+    "oxfmt": "0.41.0",
     "oxlint": "latest",
     "tsx": "^4.21.0",
     "typescript": "^5"
