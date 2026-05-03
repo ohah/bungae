@@ -40,11 +40,10 @@ import Animated, {
   Extrapolation,
 } from 'react-native-reanimated';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-// ~/  alias test (babel-plugin-root-import: ~/ → ./src)
-import { getGreeting, getVersion } from '~/utils/greeting';
-
 // SVG test (react-native-svg-transformer)
 import CheckIcon from '~/assets/check.svg';
+// ~/  alias test (babel-plugin-root-import: ~/ → ./src)
+import { getGreeting, getVersion } from '~/utils/greeting';
 
 // ES5 다운레벨 스트레스 테스트 — 번들 출력 검증용. 런타임엔 호출 안 해도 됨.
 import { es5DownlevelCases } from './src/es5-downlevel-cases';
@@ -461,12 +460,8 @@ function AppContent({ isDarkMode }: { isDarkMode: boolean }) {
                 SVG component loaded
               </Text>
             </View>
-            <Text style={{ color: textColor, fontSize: 13 }}>
-              ~/ alias: {getGreeting('dev')}
-            </Text>
-            <Text style={{ color: textColor, fontSize: 13 }}>
-              version: {getVersion()}
-            </Text>
+            <Text style={{ color: textColor, fontSize: 13 }}>~/ alias: {getGreeting('dev')}</Text>
+            <Text style={{ color: textColor, fontSize: 13 }}>version: {getVersion()}</Text>
           </View>
         </View>
       </View>
@@ -770,10 +765,7 @@ function PinchRotateDemo({
   const composed = Gesture.Simultaneous(pinch, rotate);
 
   const boxStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: scale.value },
-      { rotateZ: `${(angle.value * 180) / Math.PI}deg` },
-    ],
+    transform: [{ scale: scale.value }, { rotateZ: `${(angle.value * 180) / Math.PI}deg` }],
   }));
 
   const reset = () => {
@@ -1005,12 +997,7 @@ function SharedMorphDemo({
         </TouchableOpacity>
       </View>
       <View style={{ alignItems: 'center', paddingVertical: 20 }}>
-        <Animated.View
-          style={[
-            { justifyContent: 'center', alignItems: 'center' },
-            morphStyle,
-          ]}
-        >
+        <Animated.View style={[{ justifyContent: 'center', alignItems: 'center' }, morphStyle]}>
           <Animated.Text style={[{ color: '#fff', fontWeight: '700' }, labelStyle]}>
             expanded
           </Animated.Text>

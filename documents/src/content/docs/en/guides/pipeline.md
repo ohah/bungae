@@ -29,12 +29,12 @@ iOS:    .ios.ts → .ios.tsx → .ios.js → .native.ts → .ts → .tsx → .js
 
 ### Hook Points
 
-| Metro hook | Bungae mapping | Notes |
-| --- | --- | --- |
-| `resolver.resolveRequest` | Wrapped as a NAPI plugin | Can delegate via `context.resolveRequest()` |
-| `resolver.extraNodeModules` | ZTS `fallback` | Applied only when normal resolution fails |
-| `resolver.blockList` | ZTS `blockList` | Array of RegExps, blocked via regex match |
-| `resolver.nodeModulesPaths` | Extra paths for the ZTS resolver | Monorepo roots, etc. |
+| Metro hook                  | Bungae mapping                   | Notes                                       |
+| --------------------------- | -------------------------------- | ------------------------------------------- |
+| `resolver.resolveRequest`   | Wrapped as a NAPI plugin         | Can delegate via `context.resolveRequest()` |
+| `resolver.extraNodeModules` | ZTS `fallback`                   | Applied only when normal resolution fails   |
+| `resolver.blockList`        | ZTS `blockList`                  | Array of RegExps, blocked via regex match   |
+| `resolver.nodeModulesPaths` | Extra paths for the ZTS resolver | Monorepo roots, etc.                        |
 
 ## 2. Transformation
 
@@ -42,12 +42,12 @@ iOS:    .ios.ts → .ios.tsx → .ios.js → .native.ts → .ts → .tsx → .js
 
 A single-pass transpiler written in Zig:
 
-| Input | Handling |
-| --- | --- |
-| `.ts` / `.tsx` | Strips TypeScript type annotations / interface / enum / decorators |
-| `.jsx` / `.tsx` | JSX → `React.createElement` or the automatic runtime |
-| `.js` (Flow) | Flow type stripping (ZTS's Flow mode) |
-| Reanimated worklets | Transformed via the worklet AST plugin |
+| Input               | Handling                                                           |
+| ------------------- | ------------------------------------------------------------------ |
+| `.ts` / `.tsx`      | Strips TypeScript type annotations / interface / enum / decorators |
+| `.jsx` / `.tsx`     | JSX → `React.createElement` or the automatic runtime               |
+| `.js` (Flow)        | Flow type stripping (ZTS's Flow mode)                              |
+| Reanimated worklets | Transformed via the worklet AST plugin                             |
 
 Babel is not in this path. Output is ES5 (Hermes-compatible) by default, or your configured target.
 
@@ -55,13 +55,13 @@ Babel is not in this path. Output is ES5 (Hermes-compatible) by default, or your
 
 For things ZTS cannot handle natively or that are RN-specific transforms:
 
-| Plugin | Targets | Responsibility |
-| --- | --- | --- |
-| `bungae:asset` | Images / video / audio / fonts (assetExts) | Generates `AssetRegistry.registerAsset()` and handles iOS scale variants (1x/2x/3x) |
-| `bungae:codegen-view-config` | `*NativeComponent.{js,ts}` (RN 0.85+) | Calls `@react-native/babel-plugin-codegen` to inline the static view config |
-| `bungae:require-context` | `require.context()` calls | Statically evaluates and inlines the matching modules |
-| `bungae:metro-resolveRequest` | Every import | Invokes the user's `resolver.resolveRequest` |
-| `bungae:babel` | When `transformer.babelTransformerPath` is set | Chains a user-provided babel transformer (e.g. svg-transformer) |
+| Plugin                        | Targets                                        | Responsibility                                                                      |
+| ----------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `bungae:asset`                | Images / video / audio / fonts (assetExts)     | Generates `AssetRegistry.registerAsset()` and handles iOS scale variants (1x/2x/3x) |
+| `bungae:codegen-view-config`  | `*NativeComponent.{js,ts}` (RN 0.85+)          | Calls `@react-native/babel-plugin-codegen` to inline the static view config         |
+| `bungae:require-context`      | `require.context()` calls                      | Statically evaluates and inlines the matching modules                               |
+| `bungae:metro-resolveRequest` | Every import                                   | Invokes the user's `resolver.resolveRequest`                                        |
+| `bungae:babel`                | When `transformer.babelTransformerPath` is set | Chains a user-provided babel transformer (e.g. svg-transformer)                     |
 
 Each plugin is registered through ZTS's `onResolve` / `onLoad` / `onTransform` hooks. The NAPI hop costs roughly 0.05–0.3 ms per file.
 
@@ -69,11 +69,11 @@ Each plugin is registered through ZTS's `onResolve` / `onLoad` / `onTransform` h
 
 Areas where Babel still lingers (codegen view config, svg-transformer, …) are being moved to ZTS in stages:
 
-| Phase | Status |
-| --- | --- |
+| Phase                                    | Status                                                        |
+| ---------------------------------------- | ------------------------------------------------------------- |
 | Babel + Hermes Parser (Metro-equivalent) | Limited to a handful of files (NativeComponent codegen, etc.) |
-| ZTS native + some Babel | **Current** |
-| Fully native ZTS | In progress (native codegen — ohah/zts#1589, etc.) |
+| ZTS native + some Babel                  | **Current**                                                   |
+| Fully native ZTS                         | In progress (native codegen — ohah/zts#1589, etc.)            |
 
 ## 3. Serialization
 

@@ -11,14 +11,14 @@ bungae bundle --platform ios --minify
 
 옵션 분해:
 
-| 플래그 | 동작 |
-| --- | --- |
-| `--platform <ios\|android>` | 타겟 플랫폼 (필수) |
-| `--minify` | 미니파이 활성 |
-| `--dev false` | 프로덕션 모드 (Metro / RN CLI 호환) |
-| `--bundle-output <path>` | 출력 파일 경로 (기본: `outDir/main.jsbundle`) |
-| `--sourcemap-output <path>` | 소스맵 출력 |
-| `--assets-dest <dir>` | iOS 폴더 또는 Android `res/` |
+| 플래그                      | 동작                                          |
+| --------------------------- | --------------------------------------------- |
+| `--platform <ios\|android>` | 타겟 플랫폼 (필수)                            |
+| `--minify`                  | 미니파이 활성                                 |
+| `--dev false`               | 프로덕션 모드 (Metro / RN CLI 호환)           |
+| `--bundle-output <path>`    | 출력 파일 경로 (기본: `outDir/main.jsbundle`) |
+| `--sourcemap-output <path>` | 소스맵 출력                                   |
+| `--assets-dest <dir>`       | iOS 폴더 또는 Android `res/`                  |
 
 ## RN CLI 통합
 
@@ -57,12 +57,12 @@ transformer: {
 }
 ```
 
-| 옵션 | 특징 |
-| --- | --- |
-| `'terser'` | Metro 기본. 최고 압축률, 가장 느림 |
-| `'esbuild'` | 5~10x 빠름. 압축률 약간 손해 |
-| `'swc'` | esbuild 비슷. 속도 vs 압축 균형 |
-| `'bun'` | Bun 내장. 매우 빠름, 일부 케이스에서 호환성 이슈 |
+| 옵션        | 특징                                             |
+| ----------- | ------------------------------------------------ |
+| `'terser'`  | Metro 기본. 최고 압축률, 가장 느림               |
+| `'esbuild'` | 5~10x 빠름. 압축률 약간 손해                     |
+| `'swc'`     | esbuild 비슷. 속도 vs 압축 균형                  |
+| `'bun'`     | Bun 내장. 매우 빠름, 일부 케이스에서 호환성 이슈 |
 
 Metro 런타임 함수 (`__d`, `__r`, `__DEV__`) 는 모든 minifier에서 reserved 처리.
 
@@ -119,12 +119,12 @@ bungae bundle --reset-cache  # 캐시 무효화 후 빌드
 
 ExampleApp (RN 0.85, 1595 files):
 
-| 빌드 | 시간 | 크기 |
-| --- | --- | --- |
+| 빌드                 | 시간        | 크기    |
+| -------------------- | ----------- | ------- |
 | Bungae prod minified | **2215 ms** | 3580 KB |
-| Metro prod minified | 11547 ms | 2076 KB |
-| Bungae dev | 2329 ms | 8235 KB |
-| Metro dev | 12506 ms | 8437 KB |
+| Metro prod minified  | 11547 ms    | 2076 KB |
+| Bungae dev           | 2329 ms     | 8235 KB |
+| Metro dev            | 12506 ms    | 8437 KB |
 
 Bungae 번들 크기가 Metro보다 큰 이유는 minifier aggressiveness 차이. 추후 최적화 예정.
 

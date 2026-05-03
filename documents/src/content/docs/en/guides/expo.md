@@ -12,21 +12,23 @@ Bungae supports Expo through an **explicit wrapper**, following the `getDefaultC
 ```ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 ### Zero config (no config file)
 
 Bungae looks at your direct `package.json` dependencies and applies the wrapper automatically:
 
-| Your `package.json` deps | Behavior | First-build log |
-| --- | --- | --- |
-| `expo` or `expo-router` | Auto-applies `withExpo()` | `[bungae] expo: auto (detected expo@x.y)` |
-| Otherwise | Vanilla mode | `[bungae] expo: off (no expo dependency in package.json)` |
+| Your `package.json` deps | Behavior                  | First-build log                                           |
+| ------------------------ | ------------------------- | --------------------------------------------------------- |
+| `expo` or `expo-router`  | Auto-applies `withExpo()` | `[bungae] expo: auto (detected expo@x.y)`                 |
+| Otherwise                | Vanilla mode              | `[bungae] expo: off (no expo dependency in package.json)` |
 
 Auto-detection only inspects **your own `package.json`** — a hoisted `expo` from another workspace package in a monorepo will not produce a false positive.
 
@@ -36,12 +38,12 @@ When an explicit config file exists, auto-detection is disabled — your config 
 
 Following the `@expo/metro-config` mapping:
 
-| Area | Added |
-| --- | --- |
-| `serializer.runBeforeMainModule` | `expo/winter/index`, `@expo/metro-runtime` |
-| `resolver.assetExts` | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
-| `resolver.blockList` | `/\.expo[\\/]types/` (generated `.d.ts`) |
-| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning |
+| Area                                | Added                                          |
+| ----------------------------------- | ---------------------------------------------- |
+| `serializer.runBeforeMainModule`    | `expo/winter/index`, `@expo/metro-runtime`     |
+| `resolver.assetExts`                | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
+| `resolver.blockList`                | `/\.expo[\\/]types/` (generated `.d.ts`)       |
+| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning               |
 
 ### `runBeforeMainModule` order
 
@@ -70,11 +72,11 @@ A sibling ExpoApp in the same workspace will be auto-detected as long as `expo` 
 
 ## Explicit vs Auto-Detection: Which Should I Use?
 
-| Situation | Recommended |
-| --- | --- |
-| First try, get going fast | **Zero config** (auto-detection) |
+| Situation                       | Recommended                                            |
+| ------------------------------- | ------------------------------------------------------ |
+| First try, get going fast       | **Zero config** (auto-detection)                       |
 | Team project, want explicitness | `bungae init` → explicit config file with `withExpo()` |
-| Strict CI verification | Explicit (no auto-detection magic) |
+| Strict CI verification          | Explicit (no auto-detection magic)                     |
 
 Auto-detection rarely makes the wrong call, but the upside of an explicit config is that "why is this build pulling in the expo runtime?" has an immediate answer when you debug.
 
@@ -83,15 +85,17 @@ Auto-detection rarely makes the wrong call, but the upside of an explicit config
 Options you specify are preserved alongside what `withExpo()` adds:
 
 ```ts
-withExpo(defineConfig({
-  resolver: {
-    assetExts: ['.glb', '.gltf'],  // appended on top of expo's heic/avif/db
-    blockList: [/test\./],          // appended on top of .expo/types
-  },
-  serializer: {
-    runBeforeMainModule: ['/abs/path/early.js'],  // runs before winter/metro-runtime
-  },
-}))
+withExpo(
+  defineConfig({
+    resolver: {
+      assetExts: ['.glb', '.gltf'], // appended on top of expo's heic/avif/db
+      blockList: [/test\./], // appended on top of .expo/types
+    },
+    serializer: {
+      runBeforeMainModule: ['/abs/path/early.js'], // runs before winter/metro-runtime
+    },
+  }),
+);
 ```
 
 `assetExts` is normalized to dot-prefix and deduplicated, so if you specify `.avif`, expo's `avif` is not added again.

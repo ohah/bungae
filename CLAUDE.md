@@ -93,21 +93,23 @@ export default defineConfig({ root: __dirname, entry: 'index.js', bundler: 'zts'
 ```ts
 // bungae.config.ts
 import { defineConfig, withExpo } from 'bungae';
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 **Zero config (`bungae.config.*` 파일 없음):**
 
 `package.json` 의 직접 의존성을 보고 자동 적용:
 
-| 자기 `package.json` deps | 동작 | 첫 빌드 로그 |
-| --- | --- | --- |
-| `expo` 또는 `expo-router` | 자동으로 `withExpo()` 적용 | `[bungae] expo: auto (detected expo@x.y)` |
-| 그 외 | vanilla 모드 | `[bungae] expo: off (no expo dependency in package.json)` |
+| 자기 `package.json` deps  | 동작                       | 첫 빌드 로그                                              |
+| ------------------------- | -------------------------- | --------------------------------------------------------- |
+| `expo` 또는 `expo-router` | 자동으로 `withExpo()` 적용 | `[bungae] expo: auto (detected expo@x.y)`                 |
+| 그 외                     | vanilla 모드               | `[bungae] expo: off (no expo dependency in package.json)` |
 
 자동 감지는 **자기 `package.json`만** 봅니다 — 모노레포에서 다른 워크스페이스 패키지의 hoisted `expo`는 false-positive를 만들지 않습니다. 명시적 config 파일이 있으면 자동 감지는 끄고 사용자 config가 단일 진실의 원천.
 
@@ -115,12 +117,12 @@ export default withExpo(defineConfig({
 
 `@expo/metro-config`의 `getDefaultConfig` 매핑을 따라:
 
-| 영역 | 추가 |
-| --- | --- |
-| `serializer.runBeforeMainModule` | `expo/winter/index`, `@expo/metro-runtime` |
-| `resolver.assetExts` | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
-| `resolver.blockList` | `/\.expo[\\/]types/` (generated `.d.ts`) |
-| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning |
+| 영역                                | 추가                                           |
+| ----------------------------------- | ---------------------------------------------- |
+| `serializer.runBeforeMainModule`    | `expo/winter/index`, `@expo/metro-runtime`     |
+| `resolver.assetExts`                | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
+| `resolver.blockList`                | `/\.expo[\\/]types/` (generated `.d.ts`)       |
+| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning               |
 
 `@expo/metro-runtime`은 `expo-router`의 `dirname` 기준으로 resolve — expo-router가 require하는 동일 인스턴스 보장(monorepo hoisting 시 instance 분기 방지).
 
@@ -530,45 +532,45 @@ React Native 공식 문서에서도 "If you are using Hermes, you should not nee
 
 #### ✅ 지원 (Metro와 동일하게 그대로 사용 가능)
 
-| Hook | 위치 | 비고 |
-| --- | --- | --- |
-| `server.enhanceMiddleware` | `bundler/zts-bundler/server/index.ts` | dev server middleware wrapping. `withRozenite()` 같은 도구 그대로 사용 가능 |
-| `server.rewriteRequestUrl` | 동일 | jsc-safe normalize → user rewrite → normalize. Metro `Server.js:_rewriteAndNormalizeUrl` 동일 |
-| `server.useGlobalHotkey` / `forwardClientLogs` / `port` / `host` | — | 기본 옵션 |
-| `symbolicator.customizeFrame` | `handleSymbolicateRequest` | 프레임당 호출. `{ collapse: true }` 반환 시 DevTools에서 프레임 숨김 |
-| `watchFolders` | `napi-build.ts:buildNapiOptions` | 그래프 밖 디렉토리도 watch 루트에 추가. ZTS NAPI `watchFolders` 옵션으로 전달 (zts b104b82) |
-| `serializer.getModulesRunBeforeMainModule` / `getPolyfills` | `config/defaults.ts` | RN `InitializeCore` 자동 포함 |
-| `serializer.inlineSourceMap` / `shouldAddToIgnoreList` | `serializer/` | x_google_ignoreList 커스터마이징 |
-| `transformer.babelTransformerPath` | NAPI babel plugin | Metro와 동일하게 chained transformer. `assetPlugins` 유스케이스(react-native-svg-transformer 등)도 이걸로 |
-| `resolver.sourceExts` / `assetExts` / `platforms` / `preferNativePlatform` | NAPI plugin config | 플랫폼 확장자 처리 |
-| `resolver.blockList` | `napi-build.ts:buildNapiOptions` | RegExp 배열 그대로 ZTS에 전달. ZTS가 정규식 매칭으로 해석 차단 (zts #1419) |
-| `resolver.extraNodeModules` | `napi-build.ts:buildNapiOptions` | ZTS `fallback` 옵션으로 매핑. 일반 해석 실패 시에만 적용 (zts #1416) |
-| `resolver.resolveRequest` | `napi-build.ts:buildNapiOptions` | Metro 시그니처(`context, moduleName, platform`) 그대로. 내부적으로 ZTS `onResolve` 플러그인 콜백으로 래핑. 위임 시 `context.resolveRequest()` 호출 |
+| Hook                                                                       | 위치                                  | 비고                                                                                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server.enhanceMiddleware`                                                 | `bundler/zts-bundler/server/index.ts` | dev server middleware wrapping. `withRozenite()` 같은 도구 그대로 사용 가능                                                                        |
+| `server.rewriteRequestUrl`                                                 | 동일                                  | jsc-safe normalize → user rewrite → normalize. Metro `Server.js:_rewriteAndNormalizeUrl` 동일                                                      |
+| `server.useGlobalHotkey` / `forwardClientLogs` / `port` / `host`           | —                                     | 기본 옵션                                                                                                                                          |
+| `symbolicator.customizeFrame`                                              | `handleSymbolicateRequest`            | 프레임당 호출. `{ collapse: true }` 반환 시 DevTools에서 프레임 숨김                                                                               |
+| `watchFolders`                                                             | `napi-build.ts:buildNapiOptions`      | 그래프 밖 디렉토리도 watch 루트에 추가. ZTS NAPI `watchFolders` 옵션으로 전달 (zts b104b82)                                                        |
+| `serializer.getModulesRunBeforeMainModule` / `getPolyfills`                | `config/defaults.ts`                  | RN `InitializeCore` 자동 포함                                                                                                                      |
+| `serializer.inlineSourceMap` / `shouldAddToIgnoreList`                     | `serializer/`                         | x_google_ignoreList 커스터마이징                                                                                                                   |
+| `transformer.babelTransformerPath`                                         | NAPI babel plugin                     | Metro와 동일하게 chained transformer. `assetPlugins` 유스케이스(react-native-svg-transformer 등)도 이걸로                                          |
+| `resolver.sourceExts` / `assetExts` / `platforms` / `preferNativePlatform` | NAPI plugin config                    | 플랫폼 확장자 처리                                                                                                                                 |
+| `resolver.blockList`                                                       | `napi-build.ts:buildNapiOptions`      | RegExp 배열 그대로 ZTS에 전달. ZTS가 정규식 매칭으로 해석 차단 (zts #1419)                                                                         |
+| `resolver.extraNodeModules`                                                | `napi-build.ts:buildNapiOptions`      | ZTS `fallback` 옵션으로 매핑. 일반 해석 실패 시에만 적용 (zts #1416)                                                                               |
+| `resolver.resolveRequest`                                                  | `napi-build.ts:buildNapiOptions`      | Metro 시그니처(`context, moduleName, platform`) 그대로. 내부적으로 ZTS `onResolve` 플러그인 콜백으로 래핑. 위임 시 `context.resolveRequest()` 호출 |
 
 #### 🚧 미지원 (ZTS Zig 측 작업 필요 — 보류 중)
 
 ZTS는 Zig 기반 번들러 바이너리를 통해 동작하므로, 다음 hook들은 NAPI 인터페이스에 옵션 추가 + Zig 측 구현이 필요합니다. Bungae JS만으로는 구현 불가.
 
-| Hook | 차단 이유 |
-| --- | --- |
+| Hook                                                  | 차단 이유                                                                                                   |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
 | `transformer.getTransformOptions` (inlineRequires 등) | per-file async 옵션 결정. Zig transform pass 추가 필요 (특히 inlineRequires는 콜드 스타트 최적화 효과 있음) |
-| `transformer.minifierPath` | ZTS 내장 minifier만 사용. 외부 minifier 교체는 사용자 수요 낮아 보류 |
+| `transformer.minifierPath`                            | ZTS 내장 minifier만 사용. 외부 minifier 교체는 사용자 수요 낮아 보류                                        |
 
 #### ⏸ 보류 (낮은 우선순위 / 인터페이스 검토 필요)
 
-| Hook | 사유 |
-| --- | --- |
-| `reporter` | Metro의 `ReportableEvent` 인터페이스가 거대함 (20+ 종). ZTS는 `onReady`/`onRebuild` 두 콜백만 노출 → 1:1 매핑 어려움. 실사용 빈도 낮음 |
-| `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 케이스 커버. 필요 시 추가 |
+| Hook                          | 사유                                                                                                                                   |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `reporter`                    | Metro의 `ReportableEvent` 인터페이스가 거대함 (20+ 종). ZTS는 `onReady`/`onRebuild` 두 콜백만 노출 → 1:1 매핑 어려움. 실사용 빈도 낮음 |
+| `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 케이스 커버. 필요 시 추가                                                                                |
 
 #### ❌ 의도적 제외
 
-| Hook | 사유 |
-| --- | --- |
-| `serializer.customSerializer` | 번들 출력 포맷 통째 교체. RAM bundle 등이 주 유스케이스인데 Hermes로 거의 obsolete. 구현 안 함 |
-| `serializer.processModuleFilter` | 번들 포함 모듈 필터링. `resolver.blockList` 또는 `onResolve` 플러그인으로 우회 가능 |
-| `serializer.createModuleIdFactory` | Module ID 생성 커스터마이즈. ZTS는 경로 hash 기반 stable ID — CodePush/Expo Updates 작동에 충분. 별도 옵션 불필요 |
-| `transformer.assetPlugins` | per-asset 변환 (SVG → Component 등). `transformer.babelTransformerPath`로 동등 효과 (react-native-svg-transformer가 같은 메커니즘 사용) |
+| Hook                               | 사유                                                                                                                                    |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `serializer.customSerializer`      | 번들 출력 포맷 통째 교체. RAM bundle 등이 주 유스케이스인데 Hermes로 거의 obsolete. 구현 안 함                                          |
+| `serializer.processModuleFilter`   | 번들 포함 모듈 필터링. `resolver.blockList` 또는 `onResolve` 플러그인으로 우회 가능                                                     |
+| `serializer.createModuleIdFactory` | Module ID 생성 커스터마이즈. ZTS는 경로 hash 기반 stable ID — CodePush/Expo Updates 작동에 충분. 별도 옵션 불필요                       |
+| `transformer.assetPlugins`         | per-asset 변환 (SVG → Component 등). `transformer.babelTransformerPath`로 동등 효과 (react-native-svg-transformer가 같은 메커니즘 사용) |
 
 아래 두 항목은 [구현하지 않는 Metro 기능](#구현하지-않는-metro-기능) 섹션 참고.
 

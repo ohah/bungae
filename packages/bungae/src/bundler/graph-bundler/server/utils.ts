@@ -82,11 +82,7 @@ export async function readJsonBody<T>(req: IncomingMessage): Promise<T> {
   // (call site 가 missing field 를 안전하게 처리해야 함).
   const augmented = req as IncomingMessage & MiddlewareAugmentedRequest;
   if (req.complete && !req.readable) {
-    return (
-      parseCachedBody<T>(augmented.body) ??
-      parseCachedBody<T>(augmented.rawBody) ??
-      ({} as T)
-    );
+    return parseCachedBody<T>(augmented.body) ?? parseCachedBody<T>(augmented.rawBody) ?? ({} as T);
   }
   return new Promise((resolve, reject) => {
     let body = '';

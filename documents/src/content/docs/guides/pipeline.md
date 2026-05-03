@@ -29,12 +29,12 @@ iOS:    .ios.ts → .ios.tsx → .ios.js → .native.ts → .ts → .tsx → .js
 
 ### Hook 지점
 
-| Metro hook | Bungae 매핑 | 비고 |
-| --- | --- | --- |
-| `resolver.resolveRequest` | NAPI plugin으로 wrap | `context.resolveRequest()` 위임 가능 |
-| `resolver.extraNodeModules` | ZTS `fallback` | 일반 해석 실패 시에만 적용 |
-| `resolver.blockList` | ZTS `blockList` | RegExp 배열, 정규식 매칭으로 차단 |
-| `resolver.nodeModulesPaths` | ZTS resolver의 추가 경로 | 모노레포 root 등 |
+| Metro hook                  | Bungae 매핑              | 비고                                 |
+| --------------------------- | ------------------------ | ------------------------------------ |
+| `resolver.resolveRequest`   | NAPI plugin으로 wrap     | `context.resolveRequest()` 위임 가능 |
+| `resolver.extraNodeModules` | ZTS `fallback`           | 일반 해석 실패 시에만 적용           |
+| `resolver.blockList`        | ZTS `blockList`          | RegExp 배열, 정규식 매칭으로 차단    |
+| `resolver.nodeModulesPaths` | ZTS resolver의 추가 경로 | 모노레포 root 등                     |
 
 ## 2. Transformation (코드 변환)
 
@@ -42,12 +42,12 @@ iOS:    .ios.ts → .ios.tsx → .ios.js → .native.ts → .ts → .tsx → .js
 
 Zig로 작성된 단일 패스 트랜스파일러:
 
-| 입력 | 처리 |
-| --- | --- |
-| `.ts` / `.tsx` | TypeScript 타입 어노테이션 / interface / enum / decorator 제거 |
-| `.jsx` / `.tsx` | JSX → `React.createElement` 또는 automatic runtime |
-| `.js` (Flow) | Flow 타입 스트리핑 (ZTS의 Flow 모드) |
-| Reanimated worklet | AST plugin으로 worklet 함수 변환 |
+| 입력               | 처리                                                           |
+| ------------------ | -------------------------------------------------------------- |
+| `.ts` / `.tsx`     | TypeScript 타입 어노테이션 / interface / enum / decorator 제거 |
+| `.jsx` / `.tsx`    | JSX → `React.createElement` 또는 automatic runtime             |
+| `.js` (Flow)       | Flow 타입 스트리핑 (ZTS의 Flow 모드)                           |
+| Reanimated worklet | AST plugin으로 worklet 함수 변환                               |
 
 Babel을 거치지 않습니다. 결과 코드는 ES5 (Hermes 호환) 또는 사용자 지정 target.
 
@@ -55,13 +55,13 @@ Babel을 거치지 않습니다. 결과 코드는 ES5 (Hermes 호환) 또는 사
 
 ZTS가 처리할 수 없거나 RN-specific transform:
 
-| 플러그인 | 대상 | 책임 |
-| --- | --- | --- |
-| `bungae:asset` | 이미지/비디오/오디오/폰트 등 (assetExts) | `AssetRegistry.registerAsset()` 생성. iOS scale variant (1x/2x/3x) |
-| `bungae:codegen-view-config` | `*NativeComponent.{js,ts}` (RN 0.85+) | `@react-native/babel-plugin-codegen` 호출 → static view config 인라인 |
-| `bungae:require-context` | `require.context()` 호출 | 정적 평가 → 매칭되는 모듈 인라인 |
-| `bungae:metro-resolveRequest` | 모든 import | 사용자의 `resolver.resolveRequest` 호출 |
-| `bungae:babel` | `transformer.babelTransformerPath` 지정 시 | 사용자 babel transformer chain (svg-transformer 등) |
+| 플러그인                      | 대상                                       | 책임                                                                  |
+| ----------------------------- | ------------------------------------------ | --------------------------------------------------------------------- |
+| `bungae:asset`                | 이미지/비디오/오디오/폰트 등 (assetExts)   | `AssetRegistry.registerAsset()` 생성. iOS scale variant (1x/2x/3x)    |
+| `bungae:codegen-view-config`  | `*NativeComponent.{js,ts}` (RN 0.85+)      | `@react-native/babel-plugin-codegen` 호출 → static view config 인라인 |
+| `bungae:require-context`      | `require.context()` 호출                   | 정적 평가 → 매칭되는 모듈 인라인                                      |
+| `bungae:metro-resolveRequest` | 모든 import                                | 사용자의 `resolver.resolveRequest` 호출                               |
+| `bungae:babel`                | `transformer.babelTransformerPath` 지정 시 | 사용자 babel transformer chain (svg-transformer 등)                   |
 
 각 플러그인은 ZTS의 `onResolve` / `onLoad` / `onTransform` hook으로 등록됩니다. NAPI hop 비용은 파일당 0.05~0.3 ms 수준.
 
@@ -69,11 +69,11 @@ ZTS가 처리할 수 없거나 RN-specific transform:
 
 Babel이 일부 남아 있는 영역(codegen view config, svg-transformer 등)은 단계적으로 ZTS로 이관 중:
 
-| Phase | 상태 |
-| --- | --- |
-| Babel + Hermes Parser (Metro 동일) | 일부 파일만 (NativeComponent codegen 등) |
-| ZTS 네이티브 + 일부 Babel | **현재** |
-| 완전 ZTS 네이티브 | 진행 중 (codegen native — ohah/zts#1589 등) |
+| Phase                              | 상태                                        |
+| ---------------------------------- | ------------------------------------------- |
+| Babel + Hermes Parser (Metro 동일) | 일부 파일만 (NativeComponent codegen 등)    |
+| ZTS 네이티브 + 일부 Babel          | **현재**                                    |
+| 완전 ZTS 네이티브                  | 진행 중 (codegen native — ohah/zts#1589 등) |
 
 ## 3. Serialization (번들 직렬화)
 

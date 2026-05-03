@@ -15,15 +15,15 @@ Metro의 가장 큰 강점은 React Native 생태계와의 완벽한 통합입�
 
 대신 무거운 부분만 갈아끼웠습니다:
 
-| 단계 | Metro | Bungae |
-| --- | --- | --- |
-| Transformer | Babel (worker pool) | **ZTS (Zig, in-process NAPI)** |
-| Bundler | Metro (Node.js) | **ZTS (Zig)** |
-| HTTP/WS Server | metro-server (Connect) | **Bun.serve()** |
-| File I/O | Node fs | **Bun.file()** |
-| HMR Protocol | Metro 표준 | **Metro 표준 (그대로)** |
-| HMR Client | RN 내장 HMRClient.js | **RN 내장 HMRClient.js (그대로)** |
-| Dev middleware | @react-native/dev-middleware | **그대로** |
+| 단계           | Metro                        | Bungae                            |
+| -------------- | ---------------------------- | --------------------------------- |
+| Transformer    | Babel (worker pool)          | **ZTS (Zig, in-process NAPI)**    |
+| Bundler        | Metro (Node.js)              | **ZTS (Zig)**                     |
+| HTTP/WS Server | metro-server (Connect)       | **Bun.serve()**                   |
+| File I/O       | Node fs                      | **Bun.file()**                    |
+| HMR Protocol   | Metro 표준                   | **Metro 표준 (그대로)**           |
+| HMR Client     | RN 내장 HMRClient.js         | **RN 내장 HMRClient.js (그대로)** |
+| Dev middleware | @react-native/dev-middleware | **그대로**                        |
 
 ZTS는 Babel 없이 TypeScript / JSX / Flow / Reanimated worklet까지 모두 Zig로 처리합니다. 코드 한 줄을 변환하는 데 필요한 가장 빠른 경로 — 파서·타입 스트리퍼·코드 생성기 — 를 통째로 네이티브화한 게 핵심입니다.
 

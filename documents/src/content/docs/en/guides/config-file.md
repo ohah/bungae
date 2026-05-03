@@ -33,11 +33,13 @@ export default defineConfig({
 ```ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 See [Expo integration](/bungae/guides/expo/) for what `withExpo()` adds.
@@ -52,8 +54,8 @@ defineConfig({
   bundler: 'zts',
 
   // Mode
-  dev: false,         // Same as CLI --dev
-  minify: true,       // Same as CLI --minify
+  dev: false, // Same as CLI --dev
+  minify: true, // Same as CLI --minify
 
   // Output
   outDir: './dist',
@@ -64,7 +66,7 @@ defineConfig({
   // Resolver
   resolver: {
     sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
-    assetExts: ['.png', '.jpg', '.svg', /* ... */],
+    assetExts: ['.png', '.jpg', '.svg' /* ... */],
     platforms: ['ios', 'android', 'native'],
     preferNativePlatform: true,
     nodeModulesPaths: [
@@ -87,7 +89,7 @@ defineConfig({
 
   // Transformer
   transformer: {
-    minifier: 'terser',  // 'bun' | 'terser' | 'esbuild' | 'swc'
+    minifier: 'terser', // 'bun' | 'terser' | 'esbuild' | 'swc'
     inlineRequires: false,
     babelTransformerPath: 'react-native-svg-transformer/react-native',
     babel: {

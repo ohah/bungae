@@ -1,6 +1,6 @@
 import { describe, test, expect } from 'bun:test';
-import type { IncomingMessage } from 'http';
 import { EventEmitter } from 'events';
+import type { IncomingMessage } from 'http';
 
 import { readJsonBody } from '../utils';
 
@@ -49,9 +49,7 @@ describe('readJsonBody', () => {
     fake.readable = false;
     fake.complete = true;
     fake.body = { stack: [{ file: 'x', lineNumber: 1 }] };
-    const body = await readJsonBody<{ stack: { file: string; lineNumber: number }[] }>(
-      asReq(fake),
-    );
+    const body = await readJsonBody<{ stack: { file: string; lineNumber: number }[] }>(asReq(fake));
     expect(body.stack).toHaveLength(1);
     expect(body.stack[0]!.file).toBe('x');
   });

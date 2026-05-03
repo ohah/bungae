@@ -15,15 +15,15 @@ Metro's biggest strength is its tight integration with the React Native ecosyste
 
 Only the heavy parts have been swapped out:
 
-| Stage | Metro | Bungae |
-| --- | --- | --- |
-| Transformer | Babel (worker pool) | **ZTS (Zig, in-process NAPI)** |
-| Bundler | Metro (Node.js) | **ZTS (Zig)** |
-| HTTP/WS Server | metro-server (Connect) | **Bun.serve()** |
-| File I/O | Node fs | **Bun.file()** |
-| HMR Protocol | Metro standard | **Metro standard (unchanged)** |
-| HMR Client | RN built-in HMRClient.js | **RN built-in HMRClient.js (unchanged)** |
-| Dev middleware | @react-native/dev-middleware | **unchanged** |
+| Stage          | Metro                        | Bungae                                   |
+| -------------- | ---------------------------- | ---------------------------------------- |
+| Transformer    | Babel (worker pool)          | **ZTS (Zig, in-process NAPI)**           |
+| Bundler        | Metro (Node.js)              | **ZTS (Zig)**                            |
+| HTTP/WS Server | metro-server (Connect)       | **Bun.serve()**                          |
+| File I/O       | Node fs                      | **Bun.file()**                           |
+| HMR Protocol   | Metro standard               | **Metro standard (unchanged)**           |
+| HMR Client     | RN built-in HMRClient.js     | **RN built-in HMRClient.js (unchanged)** |
+| Dev middleware | @react-native/dev-middleware | **unchanged**                            |
 
 ZTS handles TypeScript, JSX, Flow, and even Reanimated worklets entirely in Zig — without Babel. The key idea is to take the shortest path needed to transform a single line of code — parser, type stripper, code generator — and make all of it native.
 

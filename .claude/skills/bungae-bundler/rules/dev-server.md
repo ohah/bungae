@@ -25,18 +25,18 @@ WebSocket은 `ws` 모듈의 `WebSocketServer({ noServer: true })` 를 별도로 
 
 ### 라우트 구조 (ZTS 기준)
 
-| 경로 | 처리 |
-| --- | --- |
-| `/index.bundle?platform=...` | 번들 응답. `Accept: multipart/mixed` 시 progress + chunk 형식, 그 외엔 plain JS |
-| `/index.bundle.map` / `/index.map` | 소스맵 |
-| `/symbolicate` (POST) | 스택 트레이스 심볼리케이션 + `symbolicator.customizeFrame` 적용 |
-| `/assets/*` / `/node_modules/*` | 정적 에셋 |
-| `/status` | `packager-status:running` (RN healthcheck) |
-| `/reload` | 모든 클라이언트 reload 브로드캐스트 |
-| `/devmenu` | 개발 메뉴 열기 |
-| `/open-url` (POST) | URL 열기 |
-| `/json/*`, `/open-debugger`, `/debugger-frontend/*`, `/launch-js-devtools` | `@react-native/dev-middleware` 위임 |
-| `/hot` (WebSocket) | HMR 클라이언트 연결 |
+| 경로                                                                       | 처리                                                                            |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `/index.bundle?platform=...`                                               | 번들 응답. `Accept: multipart/mixed` 시 progress + chunk 형식, 그 외엔 plain JS |
+| `/index.bundle.map` / `/index.map`                                         | 소스맵                                                                          |
+| `/symbolicate` (POST)                                                      | 스택 트레이스 심볼리케이션 + `symbolicator.customizeFrame` 적용                 |
+| `/assets/*` / `/node_modules/*`                                            | 정적 에셋                                                                       |
+| `/status`                                                                  | `packager-status:running` (RN healthcheck)                                      |
+| `/reload`                                                                  | 모든 클라이언트 reload 브로드캐스트                                             |
+| `/devmenu`                                                                 | 개발 메뉴 열기                                                                  |
+| `/open-url` (POST)                                                         | URL 열기                                                                        |
+| `/json/*`, `/open-debugger`, `/debugger-frontend/*`, `/launch-js-devtools` | `@react-native/dev-middleware` 위임                                             |
+| `/hot` (WebSocket)                                                         | HMR 클라이언트 연결                                                             |
 
 dev-middleware 경로 prefix 매칭은 `devMiddlewarePathPrefixes` 배열 기반.
 
@@ -128,12 +128,12 @@ if (customization?.collapse) resolved.collapse = true;
 
 ZTS는 자체 메시지 타입을 사용. NAPI `--watch` 모드의 `onRebuild` 콜백에서 변경 분석 후 클라이언트로 전송.
 
-| 메시지 | 시점 |
-| --- | --- |
-| `hmr:update-start` | 업데이트 시작 |
-| `hmr:update` (`{ modules: [...] }`) | 변경 모듈 코드 전송 |
-| `hmr:update-done` | 업데이트 완료 |
-| `hmr:reload` | 그래프 구조 변경 시 전체 리로드 |
+| 메시지                              | 시점                            |
+| ----------------------------------- | ------------------------------- |
+| `hmr:update-start`                  | 업데이트 시작                   |
+| `hmr:update` (`{ modules: [...] }`) | 변경 모듈 코드 전송             |
+| `hmr:update-done`                   | 업데이트 완료                   |
+| `hmr:reload`                        | 그래프 구조 변경 시 전체 리로드 |
 
 서버 → 클라이언트 예시:
 
@@ -155,12 +155,12 @@ sendToClients({ type: 'hmr:update-done' });
 
 graph 번들러는 Metro의 `HMRClient.js`를 그대로 사용하기 위해 Metro 프로토콜과 1:1 호환:
 
-| 메시지 | 시점 |
-| --- | --- |
-| `update-start` | 업데이트 시작 |
+| 메시지                                                     | 시점                |
+| ---------------------------------------------------------- | ------------------- |
+| `update-start`                                             | 업데이트 시작       |
 | `update` (`{ revisionId, added, modified, deleted, ... }`) | 모듈 추가/수정/삭제 |
-| `update-done` | 완료 |
-| `error` | 빌드 실패 |
+| `update-done`                                              | 완료                |
+| `error`                                                    | 빌드 실패           |
 
 이 방식을 선택한 이유는 `CLAUDE.md` 의 "HMR 구현 전략" 섹션 참고 (Metro 호환 채택).
 
@@ -204,8 +204,12 @@ ZTS 바이너리가 의존성 그래프 기반으로 자체 watch. JS 측은 `on
 
 ```typescript
 const { handle } = watchWithNapi(platformConfig, outputPath, {
-  onReady(event) { /* 초기 빌드 완료 */ },
-  onRebuild(event) { /* 증분 빌드 + HMR 메시지 전송 */ },
+  onReady(event) {
+    /* 초기 빌드 완료 */
+  },
+  onRebuild(event) {
+    /* 증분 빌드 + HMR 메시지 전송 */
+  },
 });
 ```
 
@@ -230,14 +234,14 @@ Metro 호환 단축키. 두 번들러 모두 동일하게 지원.
 
 구현: `packages/bungae/src/bundler/graph-bundler/terminal-actions.ts` (ZTS 서버에서도 import해서 사용).
 
-| 키 | 동작 |
-| --- | --- |
+| 키  | 동작                    |
+| --- | ----------------------- |
 | `r` | Reload (전체 앱 리로드) |
-| `d` | Open Dev Menu |
-| `i` | Open iOS Simulator |
-| `a` | Open Android Emulator |
-| `j` | Open Chrome DevTools |
-| `c` | Clear cache |
+| `d` | Open Dev Menu           |
+| `i` | Open iOS Simulator      |
+| `a` | Open Android Emulator   |
+| `j` | Open Chrome DevTools    |
+| `c` | Clear cache             |
 
 활성화 조건:
 

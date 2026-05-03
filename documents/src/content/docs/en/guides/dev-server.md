@@ -15,14 +15,14 @@ Default port `8081` (same as Metro). The RN app fetches from this address automa
 
 ## Routes
 
-| Route | Behavior |
-| --- | --- |
-| `GET /index.bundle?platform=ios&dev=true` | iOS bundle (multipart/mixed response) |
-| `GET /index.bundle?platform=android&dev=true` | Android bundle |
-| `GET /assets/...` | Static assets |
-| `WS /` | HMR message channel |
-| `POST /symbolicate` | Stack trace symbolication |
-| `GET /open-stack-frame?file=...&line=N` | Open file in IDE |
+| Route                                         | Behavior                              |
+| --------------------------------------------- | ------------------------------------- |
+| `GET /index.bundle?platform=ios&dev=true`     | iOS bundle (multipart/mixed response) |
+| `GET /index.bundle?platform=android&dev=true` | Android bundle                        |
+| `GET /assets/...`                             | Static assets                         |
+| `WS /`                                        | HMR message channel                   |
+| `POST /symbolicate`                           | Stack trace symbolication             |
+| `GET /open-stack-frame?file=...&line=N`       | Open file in IDE                      |
 
 Wrap with `server.enhanceMiddleware` to register additional routes (for example, `withRozenite()` adds `/rozenite/*` and `/rn_fusebox.html`).
 
@@ -57,14 +57,14 @@ server: {
 
 ## Terminal shortcuts
 
-| Key | Action |
-| --- | --- |
+| Key | Action                  |
+| --- | ----------------------- |
 | `r` | Reload (reload the app) |
-| `d` | Open Dev Menu |
-| `i` | Open iOS Simulator |
-| `a` | Open Android Emulator |
-| `j` | Open Chrome DevTools |
-| `c` | Clear cache |
+| `d` | Open Dev Menu           |
+| `i` | Open iOS Simulator      |
+| `a` | Open Android Emulator   |
+| `j` | Open Chrome DevTools    |
+| `c` | Clear cache             |
 
 To disable:
 

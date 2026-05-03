@@ -7,38 +7,38 @@ description: BungaeConfig 전체 필드
 
 ## 최상위 필드
 
-| 필드 | 타입 | 기본 | 설명 |
-| --- | --- | --- | --- |
-| `root` | `string` | `process.cwd()` | 프로젝트 루트 |
-| `entry` | `string` | `'index.js'` | 엔트리 파일 |
-| `platform` | `'ios' \| 'android' \| 'web'` | `'ios'` | 타겟 플랫폼 |
-| `dev` | `boolean` | `false` | 개발 모드 |
-| `minify` | `boolean` | `false` | 미니파이 |
-| `mode` | `'development' \| 'production'` | `'production'` | Metro 호환 |
-| `outDir` | `string` | `'dist'` | 출력 디렉토리 |
-| `bundler` | `'zts' \| 'graph'` | `'zts'` | `zts`가 기본값. `graph`는 레거시 fallback |
+| 필드       | 타입                            | 기본            | 설명                                      |
+| ---------- | ------------------------------- | --------------- | ----------------------------------------- |
+| `root`     | `string`                        | `process.cwd()` | 프로젝트 루트                             |
+| `entry`    | `string`                        | `'index.js'`    | 엔트리 파일                               |
+| `platform` | `'ios' \| 'android' \| 'web'`   | `'ios'`         | 타겟 플랫폼                               |
+| `dev`      | `boolean`                       | `false`         | 개발 모드                                 |
+| `minify`   | `boolean`                       | `false`         | 미니파이                                  |
+| `mode`     | `'development' \| 'production'` | `'production'`  | Metro 호환                                |
+| `outDir`   | `string`                        | `'dist'`        | 출력 디렉토리                             |
+| `bundler`  | `'zts' \| 'graph'`              | `'zts'`         | `zts`가 기본값. `graph`는 레거시 fallback |
 
 ### 빌드 출력 (CLI 호환)
 
-| 필드 | 설명 |
-| --- | --- |
-| `bundleOutput` | 출력 번들 경로 |
-| `sourcemapOutput` | 소스맵 경로 |
-| `sourceMap` | 소스맵 생성 여부 |
-| `sourceMapUrl` | 소스맵 URL override |
-| `sourcemapSourcesRoot` | 소스맵 소스 루트 |
-| `sourcemapUseAbsolutePath` | 절대 경로 사용 |
-| `assetsDest` | 에셋 출력 디렉토리 |
-| `assetCatalogDest` | iOS 에셋 카탈로그 경로 |
-| `bundleEncoding` | 인코딩 (`utf8` 등) |
-| `resetCache` | 캐시 초기화 |
-| `maxWorkers` | 워커 스레드 수 (`0` = auto) |
-| `watchFolders` | 추가 watch 디렉토리 |
-| `sourceExts` | 추가 소스 확장자 |
-| `transformOptions` | 커스텀 transform 옵션 |
-| `resolverOptions` | 커스텀 resolver 옵션 |
-| `unstableTransformProfile` | JS 엔진 프로필 |
-| `interactive` | 인터랙티브 단축키 |
+| 필드                       | 설명                        |
+| -------------------------- | --------------------------- |
+| `bundleOutput`             | 출력 번들 경로              |
+| `sourcemapOutput`          | 소스맵 경로                 |
+| `sourceMap`                | 소스맵 생성 여부            |
+| `sourceMapUrl`             | 소스맵 URL override         |
+| `sourcemapSourcesRoot`     | 소스맵 소스 루트            |
+| `sourcemapUseAbsolutePath` | 절대 경로 사용              |
+| `assetsDest`               | 에셋 출력 디렉토리          |
+| `assetCatalogDest`         | iOS 에셋 카탈로그 경로      |
+| `bundleEncoding`           | 인코딩 (`utf8` 등)          |
+| `resetCache`               | 캐시 초기화                 |
+| `maxWorkers`               | 워커 스레드 수 (`0` = auto) |
+| `watchFolders`             | 추가 watch 디렉토리         |
+| `sourceExts`               | 추가 소스 확장자            |
+| `transformOptions`         | 커스텀 transform 옵션       |
+| `resolverOptions`          | 커스텀 resolver 옵션        |
+| `unstableTransformProfile` | JS 엔진 프로필              |
+| `interactive`              | 인터랙티브 단축키           |
 
 ## `resolver`
 
@@ -65,7 +65,7 @@ type CustomResolver = (
   context: {
     originModulePath: string;
     platform: string | null;
-    resolveRequest: CustomResolver;  // 위임
+    resolveRequest: CustomResolver; // 위임
     customResolverOptions: Record<string, string>;
     sourceExts: readonly string[];
     assetExts: readonly string[];
@@ -197,7 +197,7 @@ Bungae는 Metro 호환 subset 이벤트만 발행한다: `initialize_started`,
 
 ```ts
 experimental: {
-  treeShaking: boolean;  // 기본: false. 미사용 export 제거 (위험: 동적 require 깨질 수 있음)
+  treeShaking: boolean; // 기본: false. 미사용 export 제거 (위험: 동적 require 깨질 수 있음)
 }
 ```
 
