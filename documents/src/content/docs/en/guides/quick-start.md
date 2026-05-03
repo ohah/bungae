@@ -24,14 +24,14 @@ The app fetches `http://localhost:8081/index.bundle?platform=ios`. When the firs
 
 ### Shortcuts (Metro-compatible)
 
-| Key | Action |
-| --- | --- |
+| Key | Action                  |
+| --- | ----------------------- |
 | `r` | Reload (reload the app) |
-| `d` | Open Dev Menu |
-| `i` | Open iOS Simulator |
-| `a` | Open Android Emulator |
-| `j` | Open Chrome DevTools |
-| `c` | Clear cache |
+| `d` | Open Dev Menu           |
+| `i` | Open iOS Simulator      |
+| `a` | Open Android Emulator   |
+| `j` | Open Chrome DevTools    |
+| `c` | Clear cache             |
 
 ## 2) Edit code → HMR
 
@@ -39,7 +39,7 @@ Save a change to `App.tsx`:
 
 ```tsx
 export default function App() {
-  return <Text>Hello, Bungae</Text>;  // edit
+  return <Text>Hello, Bungae</Text>; // edit
 }
 ```
 
@@ -83,20 +83,22 @@ Stack traces in DevTools map back to your source location (`App.tsx:60`) accurat
 // bungae.config.ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 See [Expo integration](/bungae/guides/expo/) for details.
 
 ## Common gotchas
 
-| Symptom | Cause / fix |
-| --- | --- |
-| `Cannot find module` (RN library) | Add the monorepo root `node_modules`: `resolver.nodeModulesPaths: [join(__dirname, '../../node_modules')]` |
-| `View config not found for component X` | RN 0.85+ Fabric. Bungae invokes `@react-native/babel-plugin-codegen` automatically — invalidate the cache and rebuild: `bun bungae start --reset-cache` |
-| Expo polyfills not applied | Missing `withExpo()` wrapper, or no `expo` dependency in `package.json` |
-| Recurring `silentConsoleErrorPatterns` warning | `withExpo()` adds the winter polyfill patterns automatically. You can also add them manually via ServerConfig.silentConsoleErrorPatterns |
+| Symptom                                        | Cause / fix                                                                                                                                             |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cannot find module` (RN library)              | Add the monorepo root `node_modules`: `resolver.nodeModulesPaths: [join(__dirname, '../../node_modules')]`                                              |
+| `View config not found for component X`        | RN 0.85+ Fabric. Bungae invokes `@react-native/babel-plugin-codegen` automatically — invalidate the cache and rebuild: `bun bungae start --reset-cache` |
+| Expo polyfills not applied                     | Missing `withExpo()` wrapper, or no `expo` dependency in `package.json`                                                                                 |
+| Recurring `silentConsoleErrorPatterns` warning | `withExpo()` adds the winter polyfill patterns automatically. You can also add them manually via ServerConfig.silentConsoleErrorPatterns                |

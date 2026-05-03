@@ -57,7 +57,6 @@
     "postinstall": "cd ../.. && git submodule update --init --remote zts && cd zts/packages/core && bun run build"
   },
   "dependencies": {
-    "@zts/core": "file:../../zts/packages/core",
     "@babel/core": "^7.28.6",
     "@babel/generator": "^7.28.6",
     "@babel/plugin-transform-class-properties": "^7.28.6",
@@ -73,6 +72,7 @@
     "@react-native-community/cli-server-api": "^15.0.0",
     "@react-native/dev-middleware": "^0.83.1",
     "@swc/core": "^1.15.11",
+    "@zts/core": "file:../../zts/packages/core",
     "babel-plugin-syntax-hermes-parser": "^0.33.3",
     "babel-plugin-transform-define": "^2.1.4",
     "babel-plugin-transform-flow-enums": "^0.0.2",

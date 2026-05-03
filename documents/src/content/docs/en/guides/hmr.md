@@ -11,12 +11,12 @@ description: Metro HMR protocol compatibility and Fast Refresh behavior.
 
 A custom HMR protocol is possible, but:
 
-| Aspect | Metro-compatible (Bungae's choice) | Custom protocol |
-| --- | --- | --- |
-| Initial implementation cost | Low | High |
-| RN upgrades | Tracked automatically | Verify on every RN minor |
-| Migration | None | User config changes required |
-| Flipper / DevTools | Compatible | Separate handling |
+| Aspect                      | Metro-compatible (Bungae's choice) | Custom protocol              |
+| --------------------------- | ---------------------------------- | ---------------------------- |
+| Initial implementation cost | Low                                | High                         |
+| RN upgrades                 | Tracked automatically              | Verify on every RN minor     |
+| Migration                   | None                               | User config changes required |
+| Flipper / DevTools          | Compatible                         | Separate handling            |
 
 → The Metro protocol is already the de facto standard in the RN ecosystem. Following it wins on both compatibility and maintenance.
 
@@ -108,11 +108,11 @@ ZTS's incremental builds are typically in the millisecond range. Even on a 100k-
 
 Some projects, like [Rollipop](https://github.com/callstack/rollipop), use a custom HMR client and protocol (e.g. `hmr:update` / `hmr:reload`). Trade-offs:
 
-| | Custom HMR | Metro-compatible |
-| --- | --- | --- |
-| Protocol freedom | High | Bound to RN standard |
-| RN upgrade cost | Verify each time | Automatic |
-| Extra features (e.g. chunked updates) | Implementable | Limited by RN standard |
+|                                       | Custom HMR       | Metro-compatible       |
+| ------------------------------------- | ---------------- | ---------------------- |
+| Protocol freedom                      | High             | Bound to RN standard   |
+| RN upgrade cost                       | Verify each time | Automatic              |
+| Extra features (e.g. chunked updates) | Implementable    | Limited by RN standard |
 
 Bungae prioritizes Metro compatibility, so it doesn't ship a custom client. We'll revisit if the Metro protocol's limits become clear.
 

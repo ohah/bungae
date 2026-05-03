@@ -45,7 +45,7 @@ Files matching `assetExts` (`.png`, `.jpg`, `.svg`, …) are rewritten into RN `
 
 ```js
 // foo.png → automatically transformed
-module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({
+module.exports = require('react-native/Libraries/Image/AssetRegistry').registerAsset({
   __packager_asset: true,
   scales: [1, 2, 3],
   hash: '...',
@@ -94,10 +94,10 @@ Currently an internal API. We plan to expose `config.plugins?: ZtsPlugin[]` to u
 
 ## NAPI Hop Cost
 
-| Hook | Call frequency | Recommendation |
-| --- | --- | --- |
-| `onResolve` | Every import (potentially tens of thousands) | Take the fast path first; minimize async |
-| `onLoad` | When a new file is first read | Cache I/O |
-| `onTransform` | Once per file | Memoize results by content hash |
+| Hook          | Call frequency                               | Recommendation                           |
+| ------------- | -------------------------------------------- | ---------------------------------------- |
+| `onResolve`   | Every import (potentially tens of thousands) | Take the fast path first; minimize async |
+| `onLoad`      | When a new file is first read                | Cache I/O                                |
+| `onTransform` | Once per file                                | Memoize results by content hash          |
 
 `bungae:codegen-view-config` is a good template: it does a cheap `code.includes('codegenNativeComponent')` check before reaching for the heavier babel transform.

@@ -103,7 +103,9 @@ function ensureGitignore(cwd: string): boolean {
   } catch {
     return false;
   }
-  if (content.split(/\r?\n/).some((line) => line.trim() === '.bungae' || line.trim() === '.bungae/')) {
+  if (
+    content.split(/\r?\n/).some((line) => line.trim() === '.bungae' || line.trim() === '.bungae/')
+  ) {
     return false;
   }
   const trailing = content.endsWith('\n') ? '' : '\n';

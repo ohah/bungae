@@ -5,11 +5,11 @@ description: Install Bungae and run your first build (under 5 minutes)
 
 ## Prerequisites
 
-| Requirement | Version |
-| --- | --- |
-| **Bun** | 1.3+ |
-| **React Native** | 0.74+ (0.85 recommended) |
-| **Node.js** | 20+ (used for parts of the CLI compatibility layer) |
+| Requirement      | Version                                             |
+| ---------------- | --------------------------------------------------- |
+| **Bun**          | 1.3+                                                |
+| **React Native** | 0.74+ (0.85 recommended)                            |
+| **Node.js**      | 20+ (used for parts of the CLI compatibility layer) |
 
 Xcode for iOS and Android Studio + Gradle for Android need to be installed as usual.
 
@@ -79,11 +79,13 @@ import { defineConfig, withExpo } from 'bungae';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 ## Register CLI shortcuts (optional)

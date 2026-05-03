@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "documents/**"
-      - ".github/workflows/docs.yml"
+      - 'documents/**'
+      - '.github/workflows/docs.yml'
   pull_request:
     branches: [main]
     paths:
-      - "documents/**"
-      - ".github/workflows/docs.yml"
+      - 'documents/**'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 permissions:
@@ -19,7 +19,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: "pages"
+  group: 'pages'
   cancel-in-progress: true
 
 jobs:
@@ -32,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
 
       - uses: oven-sh/setup-bun@v2
         with:

@@ -12,21 +12,23 @@ Bungae는 `@expo/metro-config` 의 `getDefaultConfig` 패턴을 따라 **명시�
 ```ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 ### Zero config (config 파일 없음)
 
 `package.json` 의 직접 의존성을 보고 자동 적용:
 
-| 자기 `package.json` deps | 동작 | 첫 빌드 로그 |
-| --- | --- | --- |
-| `expo` 또는 `expo-router` | 자동으로 `withExpo()` 적용 | `[bungae] expo: auto (detected expo@x.y)` |
-| 그 외 | vanilla 모드 | `[bungae] expo: off (no expo dependency in package.json)` |
+| 자기 `package.json` deps  | 동작                       | 첫 빌드 로그                                              |
+| ------------------------- | -------------------------- | --------------------------------------------------------- |
+| `expo` 또는 `expo-router` | 자동으로 `withExpo()` 적용 | `[bungae] expo: auto (detected expo@x.y)`                 |
+| 그 외                     | vanilla 모드               | `[bungae] expo: off (no expo dependency in package.json)` |
 
 자동 감지는 **자기 `package.json` 만** 봅니다 — 모노레포에서 다른 워크스페이스 패키지의 hoisted `expo` 는 false-positive를 만들지 않습니다.
 
@@ -36,12 +38,12 @@ export default withExpo(defineConfig({
 
 `@expo/metro-config` 의 매핑을 따라:
 
-| 영역 | 추가 |
-| --- | --- |
-| `serializer.runBeforeMainModule` | `expo/winter/index`, `@expo/metro-runtime` |
-| `resolver.assetExts` | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
-| `resolver.blockList` | `/\.expo[\\/]types/` (generated `.d.ts`) |
-| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning |
+| 영역                                | 추가                                           |
+| ----------------------------------- | ---------------------------------------------- |
+| `serializer.runBeforeMainModule`    | `expo/winter/index`, `@expo/metro-runtime`     |
+| `resolver.assetExts`                | `heic`, `avif`, `db` (expo-image, expo-sqlite) |
+| `resolver.blockList`                | `/\.expo[\\/]types/` (generated `.d.ts`)       |
+| `server.silentConsoleErrorPatterns` | iOS 26.4 winter polyfill warning               |
 
 ### `runBeforeMainModule` 순서
 
@@ -70,11 +72,11 @@ ExampleApp이 `expo` 의존성을 직접 갖지 않고, 워크스페이스 루�
 
 ## 명시 vs 자동 감지: 어느 쪽?
 
-| 상황 | 권장 |
-| --- | --- |
-| 첫 시도, 빠르게 시작 | **Zero config** (자동 감지) |
+| 상황                     | 권장                                                 |
+| ------------------------ | ---------------------------------------------------- |
+| 첫 시도, 빠르게 시작     | **Zero config** (자동 감지)                          |
 | 팀 프로젝트, 명시성 원함 | `bungae init` → 명시 config 파일 + `withExpo()` 명시 |
-| CI 환경 검증 강화 | 명시 (자동 감지의 마법성 제거) |
+| CI 환경 검증 강화        | 명시 (자동 감지의 마법성 제거)                       |
 
 자동 감지가 잘못된 결정을 내리는 케이스는 거의 없지만, "왜 이 빌드가 expo runtime을 끼고 있지?" 가 디버깅 시 즉시 답이 나오는 게 명시 config의 장점입니다.
 
@@ -83,15 +85,17 @@ ExampleApp이 `expo` 의존성을 직접 갖지 않고, 워크스페이스 루�
 `withExpo()` 가 추가하는 것에 더해 사용자가 명시한 옵션도 보존됩니다:
 
 ```ts
-withExpo(defineConfig({
-  resolver: {
-    assetExts: ['.glb', '.gltf'],  // expo의 heic/avif/db에 더해 추가됨
-    blockList: [/test\./],          // .expo/types에 더해 추가됨
-  },
-  serializer: {
-    runBeforeMainModule: ['/abs/path/early.js'],  // winter/metro-runtime 앞에 옴
-  },
-}))
+withExpo(
+  defineConfig({
+    resolver: {
+      assetExts: ['.glb', '.gltf'], // expo의 heic/avif/db에 더해 추가됨
+      blockList: [/test\./], // .expo/types에 더해 추가됨
+    },
+    serializer: {
+      runBeforeMainModule: ['/abs/path/early.js'], // winter/metro-runtime 앞에 옴
+    },
+  }),
+);
 ```
 
 `assetExts` 는 dot prefix 정규화 후 dedup. 즉 사용자가 `.avif` 를 명시했다면 expo의 `avif` 는 다시 추가되지 않습니다.

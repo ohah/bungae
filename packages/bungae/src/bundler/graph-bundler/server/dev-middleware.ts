@@ -2,8 +2,8 @@
  * DevMiddleware loader for @react-native/dev-middleware
  */
 
-import { createRequire } from 'module';
 import type { IncomingMessage, ServerResponse } from 'http';
+import { createRequire } from 'module';
 import type { Duplex } from 'stream';
 
 import type { WebSocket } from 'ws';

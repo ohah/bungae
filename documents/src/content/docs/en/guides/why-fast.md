@@ -7,12 +7,12 @@ description: The quantitative basis and mechanisms behind Bungae's 5x speedup ov
 
 ExampleApp (RN 0.85, 1595 files, iOS, production minified):
 
-| Bundler | Mode | Build time | Bundle size |
-| --- | --- | --- | --- |
-| **Bungae (ZTS)** | dev | **2329 ms** | 8235 KB |
-| **Bungae (ZTS)** | production minified | **2215 ms** | 3580 KB |
-| Metro | development | 12506 ms | 8437 KB |
-| Metro | production minified | 11547 ms | 2076 KB |
+| Bundler          | Mode                | Build time  | Bundle size |
+| ---------------- | ------------------- | ----------- | ----------- |
+| **Bungae (ZTS)** | dev                 | **2329 ms** | 8235 KB     |
+| **Bungae (ZTS)** | production minified | **2215 ms** | 3580 KB     |
+| Metro            | development         | 12506 ms    | 8437 KB     |
+| Metro            | production minified | 11547 ms    | 2076 KB     |
 
 → **5.2× shorter build time** (production).
 
@@ -64,12 +64,12 @@ This is why `bungae start` brings up the dev server in milliseconds.
 
 Profiling the build, the time distribution looks roughly like this:
 
-| Stage | Share |
-| --- | --- |
-| ZTS native transform (1595 files) | ~70% |
-| Dependency graph build + serialize | ~20% |
-| `@react-native/babel-plugin-codegen` (NativeComponent view config) | ~10% |
-| Other (NAPI hop, plugin orchestration) | <1% |
+| Stage                                                              | Share |
+| ------------------------------------------------------------------ | ----- |
+| ZTS native transform (1595 files)                                  | ~70%  |
+| Dependency graph build + serialize                                 | ~20%  |
+| `@react-native/babel-plugin-codegen` (NativeComponent view config) | ~10%  |
+| Other (NAPI hop, plugin orchestration)                             | <1%   |
 
 ZTS itself is the critical path. In other words, the faster ZTS gets, the faster Bungae gets. ZTS is under active optimization (#1589 codegen native, mini-type-stripper, etc.).
 

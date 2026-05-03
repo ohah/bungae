@@ -28,10 +28,10 @@
 
 ### 의도적 제외
 
-| 항목 | 제외 이유 |
-| --- | --- |
-| `cacheStores` | Bun 자체 캐시 사용. 롤리팝도 동일 |
-| YAML config | Metro에서도 deprecated. 신규 프로젝트 불필요 |
+| 항목          | 제외 이유                                    |
+| ------------- | -------------------------------------------- |
+| `cacheStores` | Bun 자체 캐시 사용. 롤리팝도 동일            |
+| YAML config   | Metro에서도 deprecated. 신규 프로젝트 불필요 |
 
 ---
 
@@ -294,46 +294,46 @@ ZTS 번들러 기준 (`bundler: 'zts'`).
 
 ### ✅ 동일 시그니처로 그대로 사용 가능
 
-| Metro | Bungae | 비고 |
-| --- | --- | --- |
-| `resolver.sourceExts` / `assetExts` / `platforms` / `blockList` | 동일 | 그대로 |
-| `transformer.babelTransformerPath` | 동일 | chained transformer (decorator pattern) |
-| `serializer.getModulesRunBeforeMainModule` | 동일 | RN `InitializeCore` 자동 |
-| `serializer.getPolyfills` | 동일 | — |
-| `serializer.shouldAddToIgnoreList` | 동일 | x_google_ignoreList 커스터마이징 |
-| `server.port` / `host` / `useGlobalHotkey` / `forwardClientLogs` | 동일 | — |
-| `server.enhanceMiddleware` | 동일 | ✨ Rozenite 등 그대로 동작 |
-| `server.rewriteRequestUrl` | 동일 | ✨ jsc-safe normalize 처리 포함 |
-| `symbolicator.customizeFrame` | 동일 | ✨ `{ collapse: true }` LogBox 동작 |
+| Metro                                                            | Bungae | 비고                                    |
+| ---------------------------------------------------------------- | ------ | --------------------------------------- |
+| `resolver.sourceExts` / `assetExts` / `platforms` / `blockList`  | 동일   | 그대로                                  |
+| `transformer.babelTransformerPath`                               | 동일   | chained transformer (decorator pattern) |
+| `serializer.getModulesRunBeforeMainModule`                       | 동일   | RN `InitializeCore` 자동                |
+| `serializer.getPolyfills`                                        | 동일   | —                                       |
+| `serializer.shouldAddToIgnoreList`                               | 동일   | x_google_ignoreList 커스터마이징        |
+| `server.port` / `host` / `useGlobalHotkey` / `forwardClientLogs` | 동일   | —                                       |
+| `server.enhanceMiddleware`                                       | 동일   | ✨ Rozenite 등 그대로 동작              |
+| `server.rewriteRequestUrl`                                       | 동일   | ✨ jsc-safe normalize 처리 포함         |
+| `symbolicator.customizeFrame`                                    | 동일   | ✨ `{ collapse: true }` LogBox 동작     |
 
 ### ⚠️ 구조 변경 / 단순화
 
-| Metro | Bungae | 비고 |
-| --- | --- | --- |
-| `transformer.minifierPath` | `transformer.minifier` | enum (`'bun'\|'terser'\|'esbuild'\|'swc'`) |
-| `cacheVersion` / `cacheStores` | (자체 캐시 시스템) | 의도적 제외 |
-| `resetCache` | `resetCache` 또는 CLI `--reset-cache` | — |
+| Metro                          | Bungae                                | 비고                                       |
+| ------------------------------ | ------------------------------------- | ------------------------------------------ |
+| `transformer.minifierPath`     | `transformer.minifier`                | enum (`'bun'\|'terser'\|'esbuild'\|'swc'`) |
+| `cacheVersion` / `cacheStores` | (자체 캐시 시스템)                    | 의도적 제외                                |
+| `resetCache`                   | `resetCache` 또는 CLI `--reset-cache` | —                                          |
 
 ### 🚧 ZTS 미지원 (Zig 작업 필요)
 
-| Metro | 차단 이유 |
-| --- | --- |
-| `resolver.resolveRequest` | ZTS resolver가 Zig에서 컴파일됨. JS 콜백 호출 메커니즘 부재 |
-| `resolver.extraNodeModules` | NAPI BuildOptions에 옵션 자체 없음 |
-| `watchFolders` | NAPI watch는 그래프 외부 폴더 추가 옵션 부재 (현재 빈 배열 hardcoded) |
-| `transformer.getTransformOptions` / `assetPlugins` | transformation은 Zig 측 책임 |
-| `serializer.customSerializer` / `processModuleFilter` / `createModuleIdFactory` | 직렬화도 Zig 측 책임 |
+| Metro                                                                           | 차단 이유                                                             |
+| ------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| `resolver.resolveRequest`                                                       | ZTS resolver가 Zig에서 컴파일됨. JS 콜백 호출 메커니즘 부재           |
+| `resolver.extraNodeModules`                                                     | NAPI BuildOptions에 옵션 자체 없음                                    |
+| `watchFolders`                                                                  | NAPI watch는 그래프 외부 폴더 추가 옵션 부재 (현재 빈 배열 hardcoded) |
+| `transformer.getTransformOptions` / `assetPlugins`                              | transformation은 Zig 측 책임                                          |
+| `serializer.customSerializer` / `processModuleFilter` / `createModuleIdFactory` | 직렬화도 Zig 측 책임                                                  |
 
 ### ⏸ 보류 (낮은 우선순위)
 
-| Metro | 사유 |
-| --- | --- |
-| `reporter` | `ReportableEvent` 인터페이스 거대 (20+ 종) + ROI 낮음 |
-| `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 커버 |
+| Metro                         | 사유                                                  |
+| ----------------------------- | ----------------------------------------------------- |
+| `reporter`                    | `ReportableEvent` 인터페이스 거대 (20+ 종) + ROI 낮음 |
+| `symbolicator.customizeStack` | `customizeFrame`만으로 대부분 커버                    |
 
 ### ❌ 의도적 제외
 
-| Metro | 사유 |
-| --- | --- |
-| `cacheStores` | Bun 자체 캐시 사용 |
-| YAML config | Metro에서도 deprecated |
+| Metro         | 사유                   |
+| ------------- | ---------------------- |
+| `cacheStores` | Bun 자체 캐시 사용     |
+| YAML config   | Metro에서도 deprecated |

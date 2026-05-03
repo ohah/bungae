@@ -7,38 +7,38 @@ Use inside `bungae.config.ts` or under the `bungae` key in `package.json`.
 
 ## Top-level Fields
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `root` | `string` | `process.cwd()` | Project root |
-| `entry` | `string` | `'index.js'` | Entry file |
-| `platform` | `'ios' \| 'android' \| 'web'` | `'ios'` | Target platform |
-| `dev` | `boolean` | `false` | Development mode |
-| `minify` | `boolean` | `false` | Minify output |
-| `mode` | `'development' \| 'production'` | `'production'` | Metro-compatible alias |
-| `outDir` | `string` | `'dist'` | Output directory |
-| `bundler` | `'zts' \| 'graph'` | `'zts'` | `zts` is the default. `graph` is a legacy fallback |
+| Field      | Type                            | Default         | Description                                        |
+| ---------- | ------------------------------- | --------------- | -------------------------------------------------- |
+| `root`     | `string`                        | `process.cwd()` | Project root                                       |
+| `entry`    | `string`                        | `'index.js'`    | Entry file                                         |
+| `platform` | `'ios' \| 'android' \| 'web'`   | `'ios'`         | Target platform                                    |
+| `dev`      | `boolean`                       | `false`         | Development mode                                   |
+| `minify`   | `boolean`                       | `false`         | Minify output                                      |
+| `mode`     | `'development' \| 'production'` | `'production'`  | Metro-compatible alias                             |
+| `outDir`   | `string`                        | `'dist'`        | Output directory                                   |
+| `bundler`  | `'zts' \| 'graph'`              | `'zts'`         | `zts` is the default. `graph` is a legacy fallback |
 
 ### Build Output (CLI-compatible)
 
-| Field | Description |
-| --- | --- |
-| `bundleOutput` | Output bundle path |
-| `sourcemapOutput` | Source map path |
-| `sourceMap` | Whether to generate source maps |
-| `sourceMapUrl` | Source map URL override |
-| `sourcemapSourcesRoot` | Source map sources root |
-| `sourcemapUseAbsolutePath` | Use absolute paths |
-| `assetsDest` | Asset output directory |
-| `assetCatalogDest` | iOS asset catalog path |
-| `bundleEncoding` | Encoding (e.g. `utf8`) |
-| `resetCache` | Reset cache |
-| `maxWorkers` | Worker thread count (`0` = auto) |
-| `watchFolders` | Additional watch directories |
-| `sourceExts` | Additional source extensions |
-| `transformOptions` | Custom transform options |
-| `resolverOptions` | Custom resolver options |
-| `unstableTransformProfile` | JS engine profile |
-| `interactive` | Interactive hotkeys |
+| Field                      | Description                      |
+| -------------------------- | -------------------------------- |
+| `bundleOutput`             | Output bundle path               |
+| `sourcemapOutput`          | Source map path                  |
+| `sourceMap`                | Whether to generate source maps  |
+| `sourceMapUrl`             | Source map URL override          |
+| `sourcemapSourcesRoot`     | Source map sources root          |
+| `sourcemapUseAbsolutePath` | Use absolute paths               |
+| `assetsDest`               | Asset output directory           |
+| `assetCatalogDest`         | iOS asset catalog path           |
+| `bundleEncoding`           | Encoding (e.g. `utf8`)           |
+| `resetCache`               | Reset cache                      |
+| `maxWorkers`               | Worker thread count (`0` = auto) |
+| `watchFolders`             | Additional watch directories     |
+| `sourceExts`               | Additional source extensions     |
+| `transformOptions`         | Custom transform options         |
+| `resolverOptions`          | Custom resolver options          |
+| `unstableTransformProfile` | JS engine profile                |
+| `interactive`              | Interactive hotkeys              |
 
 ## `resolver`
 
@@ -65,7 +65,7 @@ type CustomResolver = (
   context: {
     originModulePath: string;
     platform: string | null;
-    resolveRequest: CustomResolver;  // delegate
+    resolveRequest: CustomResolver; // delegate
     customResolverOptions: Record<string, string>;
     sourceExts: readonly string[];
     assetExts: readonly string[];
@@ -199,7 +199,7 @@ Bungae emits a small Metro-compatible event subset:
 
 ```ts
 experimental: {
-  treeShaking: boolean;  // default: false. Removes unused exports (risk: may break dynamic require)
+  treeShaking: boolean; // default: false. Removes unused exports (risk: may break dynamic require)
 }
 ```
 

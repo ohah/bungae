@@ -7,12 +7,12 @@ description: Bungae가 Metro 대비 5x 빠른 정량적 근거와 메커니즘
 
 ExampleApp(RN 0.85, 1595 files, iOS, production minified) 기준:
 
-| 번들러 | 모드 | 빌드 시간 | 번들 크기 |
-| --- | --- | --- | --- |
-| **Bungae (ZTS)** | dev | **2329 ms** | 8235 KB |
-| **Bungae (ZTS)** | production minified | **2215 ms** | 3580 KB |
-| Metro | development | 12506 ms | 8437 KB |
-| Metro | production minified | 11547 ms | 2076 KB |
+| 번들러           | 모드                | 빌드 시간   | 번들 크기 |
+| ---------------- | ------------------- | ----------- | --------- |
+| **Bungae (ZTS)** | dev                 | **2329 ms** | 8235 KB   |
+| **Bungae (ZTS)** | production minified | **2215 ms** | 3580 KB   |
+| Metro            | development         | 12506 ms    | 8437 KB   |
+| Metro            | production minified | 11547 ms    | 2076 KB   |
 
 → **빌드 시간 5.2× 단축** (production 기준).
 
@@ -64,12 +64,12 @@ Dev server는 Bun이 제공하는 API를 직접 사용:
 
 직접 측정해보면 빌드 시간 분포는 대략 이렇습니다:
 
-| 단계 | 비중 |
-| --- | --- |
-| ZTS native transform (1595 files) | ~70% |
-| 의존성 그래프 빌드 + serialize | ~20% |
+| 단계                                                               | 비중 |
+| ------------------------------------------------------------------ | ---- |
+| ZTS native transform (1595 files)                                  | ~70% |
+| 의존성 그래프 빌드 + serialize                                     | ~20% |
 | `@react-native/babel-plugin-codegen` (NativeComponent view config) | ~10% |
-| 그 외 (NAPI hop, plugin orchestration) | <1% |
+| 그 외 (NAPI hop, plugin orchestration)                             | <1%  |
 
 ZTS 자체가 critical path. 즉 ZTS가 빨라질수록 Bungae가 빨라집니다. ZTS는 활발히 최적화 중 (#1589 codegen native, mini-type-stripper 등).
 

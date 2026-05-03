@@ -24,14 +24,14 @@ bun android
 
 ### 단축키 (Metro 호환)
 
-| 키 | 동작 |
-| --- | --- |
-| `r` | Reload (앱 리로드) |
-| `d` | Open Dev Menu |
-| `i` | Open iOS Simulator |
+| 키  | 동작                  |
+| --- | --------------------- |
+| `r` | Reload (앱 리로드)    |
+| `d` | Open Dev Menu         |
+| `i` | Open iOS Simulator    |
 | `a` | Open Android Emulator |
-| `j` | Open Chrome DevTools |
-| `c` | Clear cache |
+| `j` | Open Chrome DevTools  |
+| `c` | Clear cache           |
 
 ## 2) 코드 변경 → HMR
 
@@ -39,7 +39,7 @@ bun android
 
 ```tsx
 export default function App() {
-  return <Text>Hello, Bungae</Text>;  // 수정
+  return <Text>Hello, Bungae</Text>; // 수정
 }
 ```
 
@@ -83,20 +83,22 @@ DevTools에서 stack trace가 사용자 코드 위치(`App.tsx:60`)로 정확히
 // bungae.config.ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 자세한 동작은 [Expo 통합](/bungae/guides/expo/) 참고.
 
 ## 자주 막히는 곳
 
-| 증상 | 원인 / 해결 |
-| --- | --- |
-| `Cannot find module` (RN 라이브러리) | 모노레포 root `node_modules` 추가: `resolver.nodeModulesPaths: [join(__dirname, '../../node_modules')]` |
-| `View config not found for component X` | RN 0.85+ Fabric. Bungae가 자동으로 `@react-native/babel-plugin-codegen` 호출하므로 cache 무효화 후 재빌드: `bun bungae start --reset-cache` |
-| Expo 관련 폴리필 미적용 | `withExpo()` 래핑 안 함 또는 `package.json`에 `expo` 의존성 누락 |
-| `silentConsoleErrorPatterns` warning 계속 뜸 | `withExpo()` 가 winter polyfill 패턴을 자동으로 추가. 수동으로 ServerConfig.silentConsoleErrorPatterns에도 가능 |
+| 증상                                         | 원인 / 해결                                                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Cannot find module` (RN 라이브러리)         | 모노레포 root `node_modules` 추가: `resolver.nodeModulesPaths: [join(__dirname, '../../node_modules')]`                                     |
+| `View config not found for component X`      | RN 0.85+ Fabric. Bungae가 자동으로 `@react-native/babel-plugin-codegen` 호출하므로 cache 무효화 후 재빌드: `bun bungae start --reset-cache` |
+| Expo 관련 폴리필 미적용                      | `withExpo()` 래핑 안 함 또는 `package.json`에 `expo` 의존성 누락                                                                            |
+| `silentConsoleErrorPatterns` warning 계속 뜸 | `withExpo()` 가 winter polyfill 패턴을 자동으로 추가. 수동으로 ServerConfig.silentConsoleErrorPatterns에도 가능                             |

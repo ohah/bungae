@@ -15,14 +15,14 @@ bungae start
 
 ## 라우트
 
-| 라우트 | 동작 |
-| --- | --- |
-| `GET /index.bundle?platform=ios&dev=true` | iOS bundle (multipart/mixed 응답) |
-| `GET /index.bundle?platform=android&dev=true` | Android bundle |
-| `GET /assets/...` | 정적 에셋 |
-| `WS /` | HMR 메시지 채널 |
-| `POST /symbolicate` | 스택 트레이스 심볼리케이션 |
-| `GET /open-stack-frame?file=...&line=N` | IDE에서 파일 열기 |
+| 라우트                                        | 동작                              |
+| --------------------------------------------- | --------------------------------- |
+| `GET /index.bundle?platform=ios&dev=true`     | iOS bundle (multipart/mixed 응답) |
+| `GET /index.bundle?platform=android&dev=true` | Android bundle                    |
+| `GET /assets/...`                             | 정적 에셋                         |
+| `WS /`                                        | HMR 메시지 채널                   |
+| `POST /symbolicate`                           | 스택 트레이스 심볼리케이션        |
+| `GET /open-stack-frame?file=...&line=N`       | IDE에서 파일 열기                 |
 
 `server.enhanceMiddleware` 로 wrap하면 추가 라우트 등록 가능 (예: `withRozenite()` 가 `/rozenite/*` 와 `/rn_fusebox.html` 추가).
 
@@ -57,14 +57,14 @@ server: {
 
 ## 터미널 단축키
 
-| 키 | 동작 |
-| --- | --- |
-| `r` | Reload (앱 리로드) |
-| `d` | Open Dev Menu |
-| `i` | Open iOS Simulator |
+| 키  | 동작                  |
+| --- | --------------------- |
+| `r` | Reload (앱 리로드)    |
+| `d` | Open Dev Menu         |
+| `i` | Open iOS Simulator    |
 | `a` | Open Android Emulator |
-| `j` | Open Chrome DevTools |
-| `c` | Clear cache |
+| `j` | Open Chrome DevTools  |
+| `c` | Clear cache           |
 
 비활성화:
 

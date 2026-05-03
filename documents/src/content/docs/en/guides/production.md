@@ -11,14 +11,14 @@ bungae bundle --platform ios --minify
 
 Flag breakdown:
 
-| Flag | Behavior |
-| --- | --- |
-| `--platform <ios\|android>` | Target platform (required) |
-| `--minify` | Enable minification |
-| `--dev false` | Production mode (Metro / RN CLI compatible) |
-| `--bundle-output <path>` | Output file path (default: `outDir/main.jsbundle`) |
-| `--sourcemap-output <path>` | Source map output |
-| `--assets-dest <dir>` | iOS folder or Android `res/` |
+| Flag                        | Behavior                                           |
+| --------------------------- | -------------------------------------------------- |
+| `--platform <ios\|android>` | Target platform (required)                         |
+| `--minify`                  | Enable minification                                |
+| `--dev false`               | Production mode (Metro / RN CLI compatible)        |
+| `--bundle-output <path>`    | Output file path (default: `outDir/main.jsbundle`) |
+| `--sourcemap-output <path>` | Source map output                                  |
+| `--assets-dest <dir>`       | iOS folder or Android `res/`                       |
 
 ## RN CLI integration
 
@@ -57,12 +57,12 @@ transformer: {
 }
 ```
 
-| Option | Characteristics |
-| --- | --- |
-| `'terser'` | Metro default. Best compression, slowest |
-| `'esbuild'` | 5–10x faster. Slightly worse compression |
-| `'swc'` | Similar to esbuild. Balanced speed vs compression |
-| `'bun'` | Bun built-in. Very fast, occasional compatibility issues |
+| Option      | Characteristics                                          |
+| ----------- | -------------------------------------------------------- |
+| `'terser'`  | Metro default. Best compression, slowest                 |
+| `'esbuild'` | 5–10x faster. Slightly worse compression                 |
+| `'swc'`     | Similar to esbuild. Balanced speed vs compression        |
+| `'bun'`     | Bun built-in. Very fast, occasional compatibility issues |
 
 Metro runtime functions (`__d`, `__r`, `__DEV__`) are reserved across all minifiers.
 
@@ -119,12 +119,12 @@ Cache lives in `.bungae-cache/` (keyed by source file hash). Default expiry is 7
 
 ExampleApp (RN 0.85, 1595 files):
 
-| Build | Time | Size |
-| --- | --- | --- |
+| Build                | Time        | Size    |
+| -------------------- | ----------- | ------- |
 | Bungae prod minified | **2215 ms** | 3580 KB |
-| Metro prod minified | 11547 ms | 2076 KB |
-| Bungae dev | 2329 ms | 8235 KB |
-| Metro dev | 12506 ms | 8437 KB |
+| Metro prod minified  | 11547 ms    | 2076 KB |
+| Bungae dev           | 2329 ms     | 8235 KB |
+| Metro dev            | 12506 ms    | 8437 KB |
 
 Bungae's bundle is larger than Metro's due to differences in minifier aggressiveness. Further optimization is planned.
 

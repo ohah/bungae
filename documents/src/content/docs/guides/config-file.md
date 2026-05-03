@@ -33,11 +33,13 @@ export default defineConfig({
 ```ts
 import { defineConfig, withExpo } from 'bungae';
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 `withExpo()` 가 무엇을 채우는지는 [Expo 통합](/bungae/guides/expo/) 참고.
@@ -52,8 +54,8 @@ defineConfig({
   bundler: 'zts',
 
   // 모드
-  dev: false,         // CLI --dev 와 같음
-  minify: true,       // CLI --minify 와 같음
+  dev: false, // CLI --dev 와 같음
+  minify: true, // CLI --minify 와 같음
 
   // 출력
   outDir: './dist',
@@ -64,7 +66,7 @@ defineConfig({
   // Resolver
   resolver: {
     sourceExts: ['.tsx', '.ts', '.jsx', '.js', '.mjs', '.cjs', '.json'],
-    assetExts: ['.png', '.jpg', '.svg', /* ... */],
+    assetExts: ['.png', '.jpg', '.svg' /* ... */],
     platforms: ['ios', 'android', 'native'],
     preferNativePlatform: true,
     nodeModulesPaths: [
@@ -87,7 +89,7 @@ defineConfig({
 
   // Transformer
   transformer: {
-    minifier: 'terser',  // 'bun' | 'terser' | 'esbuild' | 'swc'
+    minifier: 'terser', // 'bun' | 'terser' | 'esbuild' | 'swc'
     inlineRequires: false,
     babelTransformerPath: 'react-native-svg-transformer/react-native',
     babel: {

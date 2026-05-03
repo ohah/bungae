@@ -45,7 +45,7 @@ export function createMyPlugin(): ZtsPlugin {
 
 ```js
 // foo.png → 자동 변환됨
-module.exports = require("react-native/Libraries/Image/AssetRegistry").registerAsset({
+module.exports = require('react-native/Libraries/Image/AssetRegistry').registerAsset({
   __packager_asset: true,
   scales: [1, 2, 3],
   hash: '...',
@@ -94,10 +94,10 @@ RN 0.85+ Fabric의 `View config not found` 크래시 방지 워크어라운드.
 
 ## NAPI hop 비용
 
-| Hook | 호출 빈도 | 권장 |
-| --- | --- | --- |
-| `onResolve` | 모든 import (수만 회 가능) | 빠른 path 우선, async 줄이기 |
-| `onLoad` | 새 파일 진입 시 | I/O 캐싱 |
-| `onTransform` | 매 파일 1회 | content hash로 결과 메모이즈 |
+| Hook          | 호출 빈도                  | 권장                         |
+| ------------- | -------------------------- | ---------------------------- |
+| `onResolve`   | 모든 import (수만 회 가능) | 빠른 path 우선, async 줄이기 |
+| `onLoad`      | 새 파일 진입 시            | I/O 캐싱                     |
+| `onTransform` | 매 파일 1회                | content hash로 결과 메모이즈 |
 
 `bungae:codegen-view-config` 가 좋은 예시: `code.includes('codegenNativeComponent')` 로 가벼운 검사 후에만 무거운 babel transform 수행.

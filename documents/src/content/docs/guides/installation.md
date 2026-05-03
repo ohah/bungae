@@ -5,11 +5,11 @@ description: Bungae 설치 + 첫 빌드 (5분 이내)
 
 ## 사전 요구사항
 
-| 요구사항 | 버전 |
-| --- | --- |
-| **Bun** | 1.3+ |
-| **React Native** | 0.74+ (0.85 권장) |
-| **Node.js** | 20+ (CLI 일부 호환에 사용) |
+| 요구사항         | 버전                       |
+| ---------------- | -------------------------- |
+| **Bun**          | 1.3+                       |
+| **React Native** | 0.74+ (0.85 권장)          |
+| **Node.js**      | 20+ (CLI 일부 호환에 사용) |
 
 iOS는 Xcode, Android는 Android Studio + Gradle은 평소대로 설치돼 있어야 합니다.
 
@@ -79,11 +79,13 @@ import { defineConfig, withExpo } from 'bungae';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default withExpo(defineConfig({
-  root: __dirname,
-  entry: 'index.js',
-  bundler: 'zts',
-}));
+export default withExpo(
+  defineConfig({
+    root: __dirname,
+    entry: 'index.js',
+    bundler: 'zts',
+  }),
+);
 ```
 
 ## CLI 단축키 등록 (선택)

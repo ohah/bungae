@@ -5,10 +5,10 @@
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
+import { withRozenite } from '@rozenite/metro';
 // Use source files directly during development (avoid dist/index.js issues)
 import { defineConfig } from 'bungae';
 import type { BungaeConfig } from 'bungae';
-import { withRozenite } from '@rozenite/metro';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
